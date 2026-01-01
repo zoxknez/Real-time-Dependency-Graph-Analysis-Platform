@@ -1,0 +1,178 @@
+syntax = "proto3";
+
+package shared.event.v1;
+
+option java_package = "com.inversedeps.shared.event.v1";
+option go_package = "github.com/inverse-deps/platform/gen/go/shared/event/v1;eventv1";
+
+import "google/protobuf/any.proto";
+import "google/protobuf/timestamp.proto";
+
+// ═══════════════════════════════════════════════════════════════
+// EVENT ENVELOPE - Mandatory wrapper for all events
+// ═══════════════════════════════════════════════════════════════
+//
+// Every event in the system MUST be wrapped in this envelope.
+// This ensures:
+// - Traceability (trace_id, span_id)
+// - Idempotency (event_id + idempotency_key)
+// - Schema evolution (schema_version)
+// - Dead Letter Queue processing (can route by event_type)
+// - Audit trail (producer, occurred_at)
+
+message EventEnvelope {
+  // ─────────────────────────────────────────────────────────────
+  // Identity & Routing
+  // ─────────────────────────────────────────────────────────────
+  
+  // Globally unique event identifier (UUID v7 recommended for sortability)
+  string event_id = 1;
+  
+  // Fully qualified event type (e.g., "domain.package.v1.PackagePublished")
+  string event_type = 2;
+  
+  // Schema version for this event type (e.g., "1.0.0")
+  string schema_version = 3;
+  
+  // Partition key for Kafka/Redpanda (determines ordering)
+  // Usually: ecosystem + package_name (e.g., "npm:react")
+  string partition_key = 4;
+  
+  // ─────────────────────────────────────────────────────────────
+  // Timestamps
+  // ─────────────────────────────────────────────────────────────
+  
+  // When the event actually occurred (business time)
+  google.protobuf.Timestamp occurred_at = 5;
+  
+  // When the event was produced/published (system time)
+  google.protobuf.Timestamp published_at = 6;
+  
+  // ─────────────────────────────────────────────────────────────
+  // Provenance & Tracing
+  // ─────────────────────────────────────────────────────────────
+  
+  // Producer service info
+  ProducerInfo producer = 7;
+  
+  // OpenTelemetry trace context
+  TraceContext trace_context = 8;
+  
+  // ─────────────────────────────────────────────────────────────
+  // Idempotency & Processing
+  // ─────────────────────────────────────────────────────────────
+  
+  // Idempotency key for exactly-once processing in sinks
+  // Usually: hash(event_type + business_key + version)
+  string idempotency_key = 9;
+  
+  // Correlation ID for request/response flows
+  optional string correlation_id = 10;
+  
+  // Causation ID (event_id that caused this event)
+  optional string causation_id = 11;
+  
+  // ─────────────────────────────────────────────────────────────
+  // Payload
+  // ─────────────────────────────────────────────────────────────
+  
+  // The actual event data (strongly typed via oneof or Any)
+  google.protobuf.Any payload = 12;
+  
+  // Optional metadata (custom headers, feature flags, etc.)
+  map<string, string> metadata = 13;
+}
+
+// Producer service information
+message ProducerInfo {
+  // Service name (e.g., "registry-ingestor")
+  string service_name = 1;
+  
+  // Service version (e.g., "1.2.3")
+  string service_version = 2;
+  
+  // Instance ID (for horizontal scaling)
+  optional string instance_id = 3;
+}
+
+// OpenTelemetry W3C Trace Context
+message TraceContext {
+  // W3C traceparent format trace ID (32 hex chars)
+  string trace_id = 1;
+  
+  // W3C traceparent format span ID (16 hex chars)
+  string span_id = 2;
+  
+  // Trace flags (sampling decision)
+  uint32 trace_flags = 3;
+  
+  // Optional trace state (vendor-specific data)
+  optional string trace_state = 4;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DEAD LETTER ENVELOPE - For failed events
+// ═══════════════════════════════════════════════════════════════
+
+message DeadLetterEnvelope {
+  // Original event that failed
+  EventEnvelope original_event = 1;
+  
+  // Failure information
+  FailureInfo failure = 2;
+  
+  // Number of retry attempts
+  int32 retry_count = 3;
+  
+  // First failure timestamp
+  google.protobuf.Timestamp first_failure_at = 4;
+  
+  // Last failure timestamp
+  google.protobuf.Timestamp last_failure_at = 5;
+}
+
+message FailureInfo {
+  // Error code (application-specific)
+  string error_code = 1;
+  
+  // Human-readable error message
+  string error_message = 2;
+  
+  // Stack trace (if available)
+  optional string stack_trace = 3;
+  
+  // Service that failed to process
+  string failed_service = 4;
+  
+  // Processing stage where failure occurred
+  string failed_stage = 5;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EVENT BATCH - For high-throughput scenarios
+// ═══════════════════════════════════════════════════════════════
+
+message EventBatch {
+  // Batch identifier
+  string batch_id = 1;
+  
+  // All events in this batch (must share same partition_key)
+  repeated EventEnvelope events = 2;
+  
+  // Batch metadata
+  BatchMetadata metadata = 3;
+}
+
+message BatchMetadata {
+  // Total event count
+  int32 event_count = 1;
+  
+  // Compressed size in bytes (if applicable)
+  optional int64 compressed_size_bytes = 2;
+  
+  // Compression algorithm used
+  optional string compression = 3;
+  
+  // Batch creation timestamp
+  google.protobuf.Timestamp created_at = 4;
+}

@@ -1,0 +1,93 @@
+[workspace]
+resolver = "2"
+members = [
+    "apps/ingestion",
+    "apps/analysis",
+    "apps/graph-writer",
+    "apps/vector-writer",
+    "apps/api",
+    "packages/models",
+    "packages/storage"
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Inverse Dependencies Team"]
+license = "MIT"
+repository = "https://github.com/inverse-deps/platform"
+
+[workspace.dependencies]
+# Async Runtime
+tokio = { version = "1.43", features = ["full"] }
+
+# Kafka/Redpanda
+rdkafka = { version = "0.36", features = ["cmake-build"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Protobuf & gRPC
+prost = "0.13"
+prost-types = "0.13"
+tonic = "0.12"
+tonic-build = "0.12"
+
+# Error Handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# HTTP Client
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "gzip"] }
+
+# Web Framework
+axum = { version = "0.8", features = ["macros"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# GraphQL
+async-graphql = "7.0"
+async-graphql-axum = "7.0"
+
+# Database Clients
+neo4rs = "0.8"            # Memgraph (Bolt protocol)
+qdrant-client = "1.12"    # Qdrant Vector DB
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"] }
+
+# Tracing & Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "registry", "fmt"] }
+opentelemetry = "0.27"
+opentelemetry-otlp = "0.27"
+tracing-opentelemetry = "0.28"
+
+# Utilities
+uuid = { version = "1.11", features = ["v4", "v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+config = "0.14"
+dotenvy = "0.15"
+dashmap = "6.0"
+metrics = "0.23"
+metrics-exporter-prometheus = "0.15"
+async-trait = "0.1"
+governor = "0.6"
+
+# Tree-sitter (AST parsing)
+tree-sitter = "0.24"
+tree-sitter-javascript = "0.23"
+tree-sitter-python = "0.23"
+tree-sitter-rust = "0.23"
+
+# ML/Embeddings
+rust-bert = "0.22"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+opt-level = 0
+debug = true

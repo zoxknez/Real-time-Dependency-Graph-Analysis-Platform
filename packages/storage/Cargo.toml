@@ -1,0 +1,24 @@
+[package]
+name = "storage"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+# Database clients
+neo4rs.workspace = true
+qdrant-client.workspace = true
+sqlx.workspace = true
+
+# Connection pooling
+deadpool = { version = "0.10", features = ["managed"] }
+
+models = { path = "../models" }

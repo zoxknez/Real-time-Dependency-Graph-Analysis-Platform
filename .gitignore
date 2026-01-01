@@ -1,0 +1,35 @@
+# Generated files
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker volumes
+/data/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Proto generated
+/gen/
+
+# Node (for frontend)
+node_modules/
+.pnpm-store/
+web/dist/
+web/.next/

@@ -1,0 +1,36 @@
+[package]
+name = "ingestion"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio.workspace = true
+rdkafka.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+config.workspace = true
+dotenvy.workspace = true
+prost.workspace = true
+sqlx = { workspace = true, features = ["macros", "migrate", "chrono", "uuid", "json"] }
+dashmap.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+axum.workspace = true
+async-trait.workspace = true
+governor.workspace = true
+futures = "0.3"
+
+models = { path = "../../packages/models" }
+storage = { path = "../../packages/storage" }
+
+[build-dependencies]
+tonic-build = "0.12"

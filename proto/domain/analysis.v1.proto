@@ -1,0 +1,181 @@
+syntax = "proto3";
+
+package domain.analysis.v1;
+
+option java_package = "com.inversedeps.domain.analysis.v1";
+option go_package = "github.com/inverse-deps/platform/gen/go/domain/analysis/v1;analysisv1";
+
+import "domain/package.v1.proto";
+
+// ═══════════════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════════════
+
+enum SymbolKind {
+  SYMBOL_KIND_UNSPECIFIED = 0;
+  SYMBOL_KIND_FUNCTION = 1;
+  SYMBOL_KIND_CLASS = 2;
+  SYMBOL_KIND_METHOD = 3;
+  SYMBOL_KIND_CONSTANT = 4;
+  SYMBOL_KIND_VARIABLE = 5;
+  SYMBOL_KIND_TYPE = 6;
+  SYMBOL_KIND_INTERFACE = 7;
+  SYMBOL_KIND_ENUM = 8;
+  SYMBOL_KIND_MODULE = 9;
+}
+
+enum VisibilityKind {
+  VISIBILITY_KIND_UNSPECIFIED = 0;
+  VISIBILITY_KIND_PUBLIC = 1;
+  VISIBILITY_KIND_PRIVATE = 2;
+  VISIBILITY_KIND_PROTECTED = 3;
+  VISIBILITY_KIND_INTERNAL = 4;
+}
+
+enum AnalysisStatus {
+  ANALYSIS_STATUS_UNSPECIFIED = 0;
+  ANALYSIS_STATUS_PENDING = 1;
+  ANALYSIS_STATUS_IN_PROGRESS = 2;
+  ANALYSIS_STATUS_COMPLETED = 3;
+  ANALYSIS_STATUS_FAILED = 4;
+  ANALYSIS_STATUS_SKIPPED = 5;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AST & SYMBOL EXTRACTION
+// ═══════════════════════════════════════════════════════════════
+
+// Represents a parsed symbol from source code
+message Symbol {
+  string id = 1;                      // Unique symbol ID
+  string name = 2;                    // Symbol name
+  string qualified_path = 3;          // "module.Class.method"
+  SymbolKind kind = 4;
+  VisibilityKind visibility = 5;
+  string signature = 6;               // Full signature string
+  SourceLocation location = 7;
+  repeated Parameter parameters = 8;  // For functions/methods
+  string return_type = 9;
+  string documentation = 10;
+  repeated float doc_embedding = 11;  // Vector embedding of docs
+}
+
+message SourceLocation {
+  string file_path = 1;
+  int32 start_line = 2;
+  int32 start_column = 3;
+  int32 end_line = 4;
+  int32 end_column = 5;
+}
+
+message Parameter {
+  string name = 1;
+  string type = 2;
+  bool optional = 3;
+  string default_value = 4;
+}
+
+// Collection of all public symbols in a package version
+message PublicAPI {
+  domain.package.v1.PackageId package_id = 1;
+  string version = 2;
+  repeated Symbol symbols = 3;
+  int64 analyzed_at_ts = 4;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DIFF ANALYSIS
+// ═══════════════════════════════════════════════════════════════
+
+// Complete diff between two versions
+message APIDiff {
+  domain.package.v1.PackageId package_id = 1;
+  string from_version = 2;
+  string to_version = 3;
+  repeated SymbolChange changes = 4;
+  DiffSummary summary = 5;
+  int64 analyzed_at_ts = 6;
+}
+
+message SymbolChange {
+  string symbol_id = 1;
+  string symbol_path = 2;
+  domain.package.v1.ChangeType change_type = 3;
+  Symbol before = 4;              // null if added
+  Symbol after = 5;               // null if removed
+  float breaking_confidence = 6;  // 0.0 - 1.0
+  string change_reason = 7;       // Human-readable explanation
+}
+
+message DiffSummary {
+  int32 added_count = 1;
+  int32 removed_count = 2;
+  int32 modified_count = 3;
+  int32 breaking_count = 4;
+  float overall_breaking_risk = 5;  // 0.0 - 1.0
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ANALYSIS JOBS
+// ═══════════════════════════════════════════════════════════════
+
+// Job request to analyze a package version
+message AnalysisJob {
+  string job_id = 1;
+  domain.package.v1.PackageVersion target = 2;
+  AnalysisJobConfig config = 3;
+  int64 created_at_ts = 4;
+  AnalysisStatus status = 5;
+  string error_message = 6;
+}
+
+message AnalysisJobConfig {
+  bool extract_symbols = 1;
+  bool generate_embeddings = 2;
+  bool diff_with_previous = 3;
+  int32 max_file_size_kb = 4;
+  repeated string include_patterns = 5;  // Glob patterns
+  repeated string exclude_patterns = 6;
+}
+
+// Result of an analysis job
+message AnalysisResult {
+  string job_id = 1;
+  domain.package.v1.PackageId package_id = 2;
+  string version = 3;
+  PublicAPI public_api = 4;
+  APIDiff diff = 5;                       // null if no previous version
+  AnalysisMetrics metrics = 6;
+  int64 completed_at_ts = 7;
+}
+
+message AnalysisMetrics {
+  int64 duration_ms = 1;
+  int32 files_analyzed = 2;
+  int32 symbols_extracted = 3;
+  int64 source_size_bytes = 4;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EMBEDDINGS
+// ═══════════════════════════════════════════════════════════════
+
+message EmbeddingRequest {
+  string id = 1;
+  string text = 2;
+  EmbeddingType type = 3;
+}
+
+enum EmbeddingType {
+  EMBEDDING_TYPE_UNSPECIFIED = 0;
+  EMBEDDING_TYPE_DESCRIPTION = 1;
+  EMBEDDING_TYPE_DOCUMENTATION = 2;
+  EMBEDDING_TYPE_CODE = 3;
+}
+
+message EmbeddingResult {
+  string id = 1;
+  repeated float vector = 2;  // 384 dimensions for all-MiniLM-L6-v2
+  string model = 3;
+  int64 generated_at_ts = 4;
+}

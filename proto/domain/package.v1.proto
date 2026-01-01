@@ -1,0 +1,174 @@
+syntax = "proto3";
+
+package domain.package.v1;
+
+option java_package = "com.inversedeps.domain.package.v1";
+option go_package = "github.com/inverse-deps/platform/gen/go/domain/package/v1;packagev1";
+
+// ═══════════════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════════════
+
+enum Ecosystem {
+  ECOSYSTEM_UNSPECIFIED = 0;
+  ECOSYSTEM_NPM = 1;
+  ECOSYSTEM_PYPI = 2;
+  ECOSYSTEM_CARGO = 3;
+  ECOSYSTEM_MAVEN = 4;
+  ECOSYSTEM_NUGET = 5;
+  ECOSYSTEM_GO = 6;
+}
+
+enum ChangeType {
+  CHANGE_TYPE_UNSPECIFIED = 0;
+  CHANGE_TYPE_API_REMOVAL = 1;           // Public symbol removed
+  CHANGE_TYPE_SIGNATURE_CHANGE = 2;      // Function signature changed
+  CHANGE_TYPE_TYPE_CHANGE = 3;           // Return/param type changed
+  CHANGE_TYPE_BEHAVIOR_CHANGE = 4;       // Semantic change detected
+  CHANGE_TYPE_DEPRECATION = 5;           // Marked as deprecated
+  CHANGE_TYPE_MAJOR_VERSION = 6;         // Major version bump
+}
+
+enum DependencyType {
+  DEPENDENCY_TYPE_UNSPECIFIED = 0;
+  DEPENDENCY_TYPE_RUNTIME = 1;
+  DEPENDENCY_TYPE_DEV = 2;
+  DEPENDENCY_TYPE_PEER = 3;
+  DEPENDENCY_TYPE_OPTIONAL = 4;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CORE MESSAGES
+// ═══════════════════════════════════════════════════════════════
+
+// Represents a unique package identifier
+message PackageId {
+  Ecosystem ecosystem = 1;
+  string name = 2;
+}
+
+// Full package metadata
+message Package {
+  PackageId id = 1;
+  string description = 2;
+  string repository_url = 3;
+  string homepage_url = 4;
+  string license = 5;
+  repeated string keywords = 6;
+  int64 created_at_ts = 7;
+  int64 updated_at_ts = 8;
+  PackageStats stats = 9;
+}
+
+message PackageStats {
+  int64 weekly_downloads = 1;
+  int64 total_downloads = 2;
+  int32 dependent_count = 3;
+  int32 version_count = 4;
+  float health_score = 5;  // 0.0 - 1.0
+}
+
+// Package version details
+message PackageVersion {
+  PackageId package_id = 1;
+  string version = 2;
+  int64 published_at_ts = 3;
+  string tarball_url = 4;
+  string sha256_checksum = 5;
+  repeated Dependency dependencies = 6;
+  int64 size_bytes = 7;
+}
+
+message Dependency {
+  PackageId package_id = 1;
+  string version_constraint = 2;  // "^1.0.0", ">=2.0,<3.0"
+  DependencyType type = 3;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EVENTS (Redpanda Topics)
+// ═══════════════════════════════════════════════════════════════
+
+// Event: New package version published
+message PackagePublished {
+  string event_id = 1;
+  int64 event_ts = 2;
+  PackageVersion version = 3;
+}
+
+// Event: Breaking change detected between versions
+message BreakingChangeDetected {
+  string event_id = 1;
+  int64 event_ts = 2;
+  PackageId package_id = 3;
+  string from_version = 4;
+  string to_version = 5;
+  float confidence_score = 6;       // 0.0 - 1.0
+  ChangeType change_type = 7;
+  string change_description = 8;
+  repeated float description_embedding = 9;  // Vector for Qdrant
+  repeated SymbolDiff affected_symbols = 10;
+}
+
+message SymbolDiff {
+  string symbol_path = 1;           // "module.Class.method"
+  string before_signature = 2;
+  string after_signature = 3;
+  ChangeType change_type = 4;
+}
+
+// Event: Package metadata updated
+message PackageMetadataUpdated {
+  string event_id = 1;
+  int64 event_ts = 2;
+  Package package = 3;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// API MESSAGES
+// ═══════════════════════════════════════════════════════════════
+
+message GetPackageRequest {
+  PackageId id = 1;
+}
+
+message GetPackageResponse {
+  Package package = 1;
+  repeated PackageVersion recent_versions = 2;
+}
+
+message GetDependentsRequest {
+  PackageId id = 1;
+  int32 depth = 2;      // Max traversal depth
+  int32 limit = 3;      // Max results
+  int32 offset = 4;
+}
+
+message GetDependentsResponse {
+  repeated DependencyEdge edges = 1;
+  int32 total_count = 2;
+}
+
+message DependencyEdge {
+  PackageId from = 1;
+  PackageId to = 2;
+  string version_constraint = 3;
+  DependencyType type = 4;
+  int32 depth = 5;
+}
+
+message SearchPackagesRequest {
+  string query = 1;
+  Ecosystem ecosystem = 2;
+  int32 limit = 3;
+  bool semantic_search = 4;  // Use vector similarity
+}
+
+message SearchPackagesResponse {
+  repeated PackageSearchResult results = 1;
+}
+
+message PackageSearchResult {
+  Package package = 1;
+  float relevance_score = 2;
+}
