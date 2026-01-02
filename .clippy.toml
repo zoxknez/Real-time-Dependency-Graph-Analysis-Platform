@@ -1,0 +1,42 @@
+# Clippy Configuration
+# See https://rust-lang.github.io/rust-clippy/master/index.html
+
+# Maximum allowed complexity for functions
+cognitive-complexity-threshold = 30
+
+# Maximum allowed nesting for control flow
+too-many-arguments-threshold = 10
+
+# Enable additional lint groups
+warn-on-all-wildcard-imports = true
+
+# Allow certain patterns that are common in this codebase
+allowed-wildcard-imports = [
+    "async_graphql::*",
+    "anyhow::*",
+    "tracing::*",
+]
+
+# Type complexity threshold
+type-complexity-threshold = 500
+
+# Avoid false positives for certain patterns
+literal-representation-threshold = 4
+
+# Maximum doc comment line length (disabled for flexibility)
+# doc-valid-idents = []
+
+# Single char binding names to allow
+single-char-binding-names-threshold = 4
+
+# MSRV for lint compatibility
+msrv = "1.75"
+
+# Allowed script names in identifiers
+# allowed-scripts = ["Latin"]
+
+# Maximum lines for a single function
+too-many-lines-threshold = 200
+
+# Threshold for vec![] vs vec![] with capacity
+vec-init-len-threshold = 10
