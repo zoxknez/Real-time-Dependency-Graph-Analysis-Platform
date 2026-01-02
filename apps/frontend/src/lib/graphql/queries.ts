@@ -126,6 +126,47 @@ export const GET_GRAPH_STATS = gql`
   }
 `;
 
+// Search packages by name (fuzzy search)
+export const SEARCH_PACKAGES = gql`
+  query SearchPackages(
+    $query: String!
+    $ecosystem: Ecosystem
+    $first: Int = 20
+  ) {
+    searchPackages(
+      query: $query
+      ecosystem: $ecosystem
+      first: $first
+    ) {
+      edges {
+        node {
+          ...PackageFields
+        }
+        cursor
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      totalCount
+    }
+  }
+  ${PACKAGE_FRAGMENT}
+`;
+
+// Get package with versions and dependencies count
+export const GET_PACKAGE_DETAILS = gql`
+  query GetPackageDetails($id: ID!) {
+    package(id: $id) {
+      ...PackageFields
+    }
+    reverseDependents(packageId: $id, maxDepth: 1, first: 1) {
+      totalCount
+    }
+  }
+  ${PACKAGE_FRAGMENT}
+`;
+
 // ═══════════════════════════════════════════════════════════════
 // SUBSCRIPTIONS (if WebSocket available)
 // ═══════════════════════════════════════════════════════════════

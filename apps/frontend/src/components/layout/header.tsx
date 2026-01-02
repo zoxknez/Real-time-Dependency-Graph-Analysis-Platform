@@ -5,27 +5,38 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
-  Bell,
   Sun,
   Moon,
   Command,
   User,
   LogOut,
   Settings,
+  Star,
 } from "lucide-react";
 import { useTheme } from "@/components/providers/theme-provider";
 import { cn } from "@/lib/utils";
+import { NotificationCenter } from "@/components/ui/notification-center";
+import { FavoritesPanel } from "@/components/ui/favorites-panel";
+import { useHistoryStore } from "@/lib/stores";
 
 export function Header() {
   const { theme, toggleTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showFavorites, setShowFavorites] = useState(false);
   const router = useRouter();
+  const { addToHistory } = useHistoryStore();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
+      // Track search in history
+      addToHistory({
+        id: `search-${Date.now()}`,
+        type: "search",
+        query: searchQuery.trim(),
+      });
       router.push(`/explore?q=${encodeURIComponent(searchQuery.trim())}`);
     }
   };
@@ -70,11 +81,17 @@ export function Header() {
 
       {/* Right Actions */}
       <div className="flex items-center gap-2 ml-6">
-        {/* Notifications */}
-        <button className="relative p-2.5 rounded-xl theme-interactive transition-all duration-200">
-          <Bell className="w-5 h-5" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-accent-500 animate-pulse" />
+        {/* Favorites */}
+        <button 
+          onClick={() => setShowFavorites(true)}
+          className="relative p-2.5 rounded-xl theme-interactive transition-all duration-200"
+          title="Favorites & Recent"
+        >
+          <Star className="w-5 h-5" />
         </button>
+
+        {/* Notifications */}
+        <NotificationCenter />
 
         {/* Theme Toggle */}
         <button
@@ -154,6 +171,9 @@ export function Header() {
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Favorites Panel */}
+      <FavoritesPanel isOpen={showFavorites} onClose={() => setShowFavorites(false)} />
     </header>
   );
 }

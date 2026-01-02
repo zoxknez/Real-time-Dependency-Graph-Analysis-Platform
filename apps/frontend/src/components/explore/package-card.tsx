@@ -1,9 +1,10 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Package as PackageIcon, ArrowRight, GitBranch, ExternalLink } from "lucide-react";
+import { Package as PackageIcon, ArrowRight, GitBranch, ExternalLink, Star } from "lucide-react";
 import { cn, formatEcosystemName, getEcosystemBadgeClass, getEcosystemColor } from "@/lib/utils";
 import { Package } from "@/lib/graphql/types";
+import { useFavoritesStore } from "@/lib/stores";
 
 interface PackageCardProps {
   package: Package;
@@ -24,9 +25,16 @@ const registryLinks: Record<string, (name: string) => string> = {
 
 export function PackageCard({ package: pkg, onClick, isSelected, depth }: PackageCardProps) {
   const registryLink = registryLinks[pkg.ecosystem.toLowerCase()]?.(pkg.name);
+  const { isFavorite, toggleFavorite } = useFavoritesStore();
+  const isFav = isFavorite(pkg.id);
 
   const handleExternalClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+  };
+
+  const handleFavoriteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleFavorite({ id: pkg.id, name: pkg.name, ecosystem: pkg.ecosystem });
   };
 
   return (
@@ -37,7 +45,7 @@ export function PackageCard({ package: pkg, onClick, isSelected, depth }: Packag
       whileHover={{ scale: 1.01 }}
       onClick={onClick}
       className={cn(
-        "glass-card p-5 cursor-pointer transition-all duration-200",
+        "glass-card p-5 cursor-pointer transition-all duration-200 group",
         isSelected
           ? "border-primary-500/50 shadow-glow ring-1 ring-primary-500/20"
           : "theme-border hover:border-primary-500/30"
@@ -93,13 +101,27 @@ export function PackageCard({ package: pkg, onClick, isSelected, depth }: Packag
           </div>
         </div>
 
-        {/* Arrow */}
-        <ArrowRight
-          className={cn(
-            "w-5 h-5 transition-all",
-            isSelected ? "text-primary-400" : "theme-text-faint"
-          )}
-        />
+        {/* Actions */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleFavoriteClick}
+            className={cn(
+              "p-2 rounded-lg transition-all duration-200",
+              isFav 
+                ? "text-warning bg-warning/10" 
+                : "theme-text-faint opacity-0 group-hover:opacity-100 theme-interactive"
+            )}
+            title={isFav ? "Remove from favorites" : "Add to favorites"}
+          >
+            <Star className={cn("w-4 h-4", isFav && "fill-current")} />
+          </button>
+          <ArrowRight
+            className={cn(
+              "w-5 h-5 transition-all",
+              isSelected ? "text-primary-400" : "theme-text-faint"
+            )}
+          />
+        </div>
       </div>
     </motion.div>
   );

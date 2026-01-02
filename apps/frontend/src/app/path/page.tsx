@@ -26,6 +26,7 @@ import { GET_DEPENDENCY_PATH } from "@/lib/graphql/queries";
 import { cn, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass } from "@/lib/utils";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { SkeletonCard } from "@/components/ui/skeleton";
+import { QueryError, EmptyState } from "@/components/ui/error-display";
 
 // Popular path examples
 const EXAMPLE_PATHS = [
@@ -241,6 +242,20 @@ function PathPageContent() {
                 ))}
               </div>
             </div>
+          </motion.div>
+        )}
+
+        {error && !loading && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <QueryError
+              error={error}
+              onRetry={() => fromPackage && toPackage && findPath({
+                variables: { from: fromPackage, to: toPackage, maxHops },
+              })}
+            />
           </motion.div>
         )}
 

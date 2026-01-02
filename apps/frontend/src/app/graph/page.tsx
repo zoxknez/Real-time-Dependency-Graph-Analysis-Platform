@@ -32,6 +32,7 @@ import { GraphLegend } from "@/components/graph/graph-legend";
 import { NodeTooltip } from "@/components/graph/node-tooltip";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { SkeletonCard } from "@/components/ui/skeleton";
+import { QueryError, EmptyState } from "@/components/ui/error-display";
 
 // Dynamic import for SSR compatibility
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -79,7 +80,7 @@ function GraphPageContent() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const [getReverseDeps, { data: reverseDepsData, loading }] = useLazyQuery(GET_REVERSE_DEPENDENTS);
+  const [getReverseDeps, { data: reverseDepsData, loading, error }] = useLazyQuery(GET_REVERSE_DEPENDENTS);
 
   // Compute graph statistics
   const graphStats = useMemo(() => {
@@ -368,12 +369,19 @@ function GraphPageContent() {
                 <Loader2 className="w-12 h-12 animate-spin mb-4" />
                 <p>Loading graph data...</p>
               </>
+            ) : error ? (
+              <QueryError 
+                error={error} 
+                onRetry={() => packageId && getReverseDeps({ 
+                  variables: { packageId, maxDepth, first: 500 } 
+                })} 
+              />
             ) : (
-              <>
-                <GitBranch className="w-16 h-16 mb-4 opacity-50" />
-                <p className="text-lg font-medium">Enter a package to visualize</p>
-                <p className="text-sm mt-2">e.g., cargo:tokio, pypi:requests</p>
-              </>
+              <EmptyState
+                icon={GitBranch}
+                title="Enter a package to visualize"
+                description="Enter a package ID like cargo:tokio or pypi:requests to see its dependency graph"
+              />
             )}
           </div>
         )}

@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Package,
   Layers,
+  GitCompare,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -49,6 +50,12 @@ const navigation = [
     href: "/path",
     icon: Route,
     description: "Find Dependency Paths",
+  },
+  {
+    name: "Compare",
+    href: "/compare",
+    icon: GitCompare,
+    description: "Compare Packages",
   },
   {
     name: "Live Feed",

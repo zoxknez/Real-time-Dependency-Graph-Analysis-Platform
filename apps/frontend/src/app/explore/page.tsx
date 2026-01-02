@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLazyQuery } from "@apollo/client";
@@ -19,10 +19,11 @@ import { PackageDetail } from "@/components/explore/package-detail";
 import { EcosystemFilter } from "@/components/explore/ecosystem-filter";
 import { SearchInput } from "@/components/ui/search-input";
 import { SkeletonCard } from "@/components/ui/skeleton";
+import { QueryError, EmptyState } from "@/components/ui/error-display";
 
 const ecosystems = ["ALL", "NPM", "PY_PI", "CARGO", "MAVEN", "GO"];
 
-export default function ExplorePage() {
+function ExplorePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const initialQuery = searchParams.get("q") || "";
@@ -168,17 +169,11 @@ export default function ExplorePage() {
 
           {/* Error State */}
           {packageError && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="glass-card p-6 flex items-center gap-4 border-danger/30"
-            >
-              <AlertCircle className="w-6 h-6 text-danger flex-shrink-0" />
-              <div>
-                <p className="font-medium theme-text-primary">Error loading package</p>
-                <p className="text-sm theme-text-muted">{packageError.message}</p>
-              </div>
-            </motion.div>
+            <QueryError
+              error={packageError}
+              onRetry={() => searchQuery && handleSearch(searchQuery)}
+              minimal
+            />
           )}
 
           {/* No Results */}
@@ -296,5 +291,19 @@ export default function ExplorePage() {
         </motion.div>
       </div>
     </div>
+  );
+}
+
+export default function ExplorePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="h-[calc(100vh-8rem)] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-primary-400 animate-spin" />
+        </div>
+      }
+    >
+      <ExplorePageContent />
+    </Suspense>
   );
 }

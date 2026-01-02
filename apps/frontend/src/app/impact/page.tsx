@@ -28,6 +28,7 @@ import { GET_IMPACT_RADIUS } from "@/lib/graphql/queries";
 import { cn, formatNumber, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass } from "@/lib/utils";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { SkeletonCard, SkeletonText } from "@/components/ui/skeleton";
+import { QueryError, EmptyState } from "@/components/ui/error-display";
 
 // Severity thresholds
 const getSeverity = (impactedPackages: number): { level: string; color: string; bgColor: string; icon: typeof Shield } => {
@@ -292,15 +293,18 @@ function ImpactPageContent() {
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="glass-card p-6 border-danger/30"
           >
-            <div className="flex items-center gap-4">
-              <AlertTriangle className="w-8 h-8 text-danger" />
-              <div>
-                <h3 className="text-lg font-semibold theme-text-primary">Error</h3>
-                <p className="theme-text-muted">{error.message}</p>
-              </div>
-            </div>
+            <QueryError
+              error={error}
+              onRetry={() => packageId && getImpact({
+                variables: {
+                  packageId,
+                  vulnerableVersionRange: versionRange || null,
+                  maxDepth,
+                  limit: 100,
+                },
+              })}
+            />
           </motion.div>
         )}
 
