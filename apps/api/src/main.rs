@@ -19,7 +19,7 @@ mod middleware;
 
 use anyhow::Result;
 use async_graphql::http::GraphiQLSource;
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
 use axum::{
     extract::State,
     response::{Html, IntoResponse, Json},
@@ -28,6 +28,7 @@ use axum::{
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tower::ServiceExt;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::info;
@@ -99,6 +100,9 @@ async fn main() -> Result<()> {
     // Security headers middleware
     let security_headers = SecurityHeadersLayer::default_headers();
 
+    // Clone schema for WebSocket subscription service
+    let ws_schema = schema.clone();
+
     // Create combined state
     let combined_state = CombinedState {
         schema,
@@ -112,6 +116,7 @@ async fn main() -> Result<()> {
         .route("/ready", get(ready_handler))
         .route("/metrics", get(metrics::metrics_handler))
         .route("/graphql", get(graphql_playground).post(graphql_handler))
+        .route_service("/graphql/ws", GraphQLSubscription::new(ws_schema))
         .layer(axum::Extension(metrics_handle))
         .layer(security_headers)
         .layer(cors)
@@ -173,6 +178,9 @@ async fn graphql_handler(
 
 /// GraphQL Playground UI (GraphiQL)
 async fn graphql_playground() -> impl IntoResponse {
-    Html(GraphiQLSource::build().endpoint("/graphql").finish())
+    Html(GraphiQLSource::build()
+        .endpoint("/graphql")
+        .subscription_endpoint("/graphql/ws")
+        .finish())
 }
 

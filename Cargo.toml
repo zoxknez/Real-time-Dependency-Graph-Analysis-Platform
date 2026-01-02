@@ -51,7 +51,7 @@ tower = "0.5"
 tower-http = { version = "0.6", features = ["cors", "trace"] }
 
 # GraphQL
-async-graphql = "7.0"
+async-graphql = { version = "7.0", features = ["log"] }
 async-graphql-axum = "7.0"
 
 # Database Clients
