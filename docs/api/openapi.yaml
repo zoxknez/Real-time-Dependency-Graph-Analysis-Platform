@@ -1,0 +1,422 @@
+openapi: 3.0.3
+info:
+  title: Dependency Graph Analysis Platform API
+  description: |
+    REST API for the Real-time Dependency Graph Analysis Platform.
+    
+    This API provides health checks, metrics, and operational endpoints
+    alongside the main GraphQL API for dependency analysis.
+  version: 1.0.0
+  contact:
+    name: Platform Team
+    email: team@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+  - url: https://api.depgraph.example.com
+    description: Production
+
+tags:
+  - name: Health
+    description: Service health and readiness endpoints
+  - name: Metrics
+    description: Prometheus metrics endpoints
+  - name: GraphQL
+    description: GraphQL API endpoint
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Basic health check
+      description: |
+        Returns a simple health status. Used for basic liveness probes.
+        This endpoint returns quickly and does not check dependencies.
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: healthy
+                version: "1.0.0"
+                timestamp: "2024-01-15T10:30:00Z"
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: unhealthy
+                version: "1.0.0"
+                timestamp: "2024-01-15T10:30:00Z"
+
+  /health/live:
+    get:
+      tags:
+        - Health
+      summary: Kubernetes liveness probe
+      description: |
+        Liveness probe for Kubernetes. Returns 200 if the service is running.
+        Does not check external dependencies. If this fails, Kubernetes will restart the pod.
+      operationId: getLiveness
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LivenessResponse'
+              example:
+                alive: true
+        '503':
+          description: Service should be restarted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LivenessResponse'
+              example:
+                alive: false
+
+  /health/ready:
+    get:
+      tags:
+        - Health
+      summary: Kubernetes readiness probe
+      description: |
+        Readiness probe for Kubernetes. Returns 200 if the service can accept traffic.
+        Checks all external dependencies (databases, caches, message queues).
+        If this fails, Kubernetes will stop routing traffic to this pod.
+      operationId: getReadiness
+      responses:
+        '200':
+          description: Service is ready to accept traffic
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+              example:
+                ready: true
+                checks:
+                  memgraph: healthy
+                  qdrant: healthy
+                  redis: healthy
+                  kafka: healthy
+                  risingwave: healthy
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+              example:
+                ready: false
+                checks:
+                  memgraph: healthy
+                  qdrant: unhealthy
+                  redis: healthy
+                  kafka: healthy
+                  risingwave: unhealthy
+
+  /health/startup:
+    get:
+      tags:
+        - Health
+      summary: Kubernetes startup probe
+      description: |
+        Startup probe for Kubernetes. Returns 200 once initial startup is complete.
+        Allows for longer startup times without triggering liveness probe restarts.
+      operationId: getStartup
+      responses:
+        '200':
+          description: Startup complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupResponse'
+              example:
+                started: true
+                startupTime: "2024-01-15T10:28:00Z"
+                duration: "2.5s"
+        '503':
+          description: Still starting up
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartupResponse'
+              example:
+                started: false
+                startupTime: null
+                duration: null
+
+  /metrics:
+    get:
+      tags:
+        - Metrics
+      summary: Prometheus metrics
+      description: |
+        Returns metrics in Prometheus text format for scraping.
+        Includes request counts, latencies, database connection pools,
+        cache hit rates, and business metrics.
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP http_requests_total Total HTTP requests
+                # TYPE http_requests_total counter
+                http_requests_total{method="GET",path="/health",status="200"} 1234
+                
+                # HELP http_request_duration_seconds HTTP request latency
+                # TYPE http_request_duration_seconds histogram
+                http_request_duration_seconds_bucket{le="0.005"} 1000
+                http_request_duration_seconds_bucket{le="0.01"} 1100
+                http_request_duration_seconds_bucket{le="+Inf"} 1234
+
+  /graphql:
+    post:
+      tags:
+        - GraphQL
+      summary: GraphQL API endpoint
+      description: |
+        Main GraphQL API for dependency analysis. Supports queries, mutations,
+        and subscriptions (via WebSocket upgrade).
+        
+        See the GraphQL schema documentation for available operations.
+      operationId: graphql
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQLRequest'
+            examples:
+              packageQuery:
+                summary: Query a package
+                value:
+                  query: |
+                    query GetPackage($name: String!) {
+                      package(name: $name) {
+                        name
+                        ecosystem
+                        latestVersion
+                        dependentCount
+                      }
+                    }
+                  variables:
+                    name: "react"
+              searchQuery:
+                summary: Search packages
+                value:
+                  query: |
+                    query Search($term: String!) {
+                      search(term: $term, limit: 10) {
+                        name
+                        description
+                        score
+                      }
+                    }
+                  variables:
+                    term: "json parser"
+      responses:
+        '200':
+          description: GraphQL response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphQLResponse'
+              example:
+                data:
+                  package:
+                    name: "react"
+                    ecosystem: "npm"
+                    latestVersion: "18.2.0"
+                    dependentCount: 12345678
+        '400':
+          description: Invalid GraphQL query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphQLResponse'
+              example:
+                errors:
+                  - message: "Syntax error in query"
+                    locations:
+                      - line: 1
+                        column: 1
+
+  /graphql/ws:
+    get:
+      tags:
+        - GraphQL
+      summary: GraphQL WebSocket endpoint
+      description: |
+        WebSocket endpoint for GraphQL subscriptions.
+        Upgrade connection to WebSocket and use graphql-ws protocol.
+      operationId: graphqlWebSocket
+      responses:
+        '101':
+          description: Switching Protocols
+          headers:
+            Upgrade:
+              schema:
+                type: string
+                example: websocket
+            Connection:
+              schema:
+                type: string
+                example: Upgrade
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - timestamp
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy, degraded]
+          description: Overall health status
+        version:
+          type: string
+          description: Service version
+        timestamp:
+          type: string
+          format: date-time
+          description: Current server time
+
+    LivenessResponse:
+      type: object
+      required:
+        - alive
+      properties:
+        alive:
+          type: boolean
+          description: Whether the service is alive
+
+    ReadinessResponse:
+      type: object
+      required:
+        - ready
+        - checks
+      properties:
+        ready:
+          type: boolean
+          description: Whether the service is ready to accept traffic
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [healthy, unhealthy, degraded]
+          description: Status of individual dependency checks
+
+    StartupResponse:
+      type: object
+      required:
+        - started
+      properties:
+        started:
+          type: boolean
+          description: Whether startup is complete
+        startupTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: Time when startup completed
+        duration:
+          type: string
+          nullable: true
+          description: How long startup took
+
+    GraphQLRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+          description: GraphQL query or mutation
+        operationName:
+          type: string
+          nullable: true
+          description: Name of the operation to execute
+        variables:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Variables for the query
+
+    GraphQLResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Query result data
+        errors:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/GraphQLError'
+          description: Errors that occurred during execution
+
+    GraphQLError:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Error message
+        locations:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              line:
+                type: integer
+              column:
+                type: integer
+          description: Location in the query where the error occurred
+        path:
+          type: array
+          nullable: true
+          items:
+            oneOf:
+              - type: string
+              - type: integer
+          description: Path to the field that caused the error
+        extensions:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Additional error information
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for authenticated requests
+
+security:
+  - {}
+  - bearerAuth: []

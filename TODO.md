@@ -56,6 +56,14 @@
   - Memgraph, Qdrant, Redpanda, RisingWave containers
   - API GraphQL endpoint tests
   - Security header tests
+- [x] **Load Testing** - k6 performance testing suite
+  - GraphQL query load tests with thresholds
+  - WebSocket subscription stress tests
+  - Rate limiting verification tests
+- [x] **E2E Browser Tests** - Playwright end-to-end tests
+  - Homepage, search, package detail specs
+  - Graph visualization tests
+  - WCAG accessibility compliance tests
 
 ### Frontend
 - [x] **Theme System** - Dark/light mode with toggle
@@ -102,12 +110,29 @@
   - Python script for seeding Memgraph and Qdrant
   - Sample packages from npm, crates.io, pypi
   - Dependency relationships and maintainers
+- [x] **Pre-commit Hooks** - Automated code quality checks
+  - cargo-fmt, cargo-clippy, cargo-check
+  - Frontend ESLint and TypeScript checking
+  - Security scanning with detect-secrets
+  - Dockerfile and shell script linting
+- [x] **Database Initialization Scripts** - Production-ready migrations
+  - Memgraph schema constraints and indices
+  - MAGE graph algorithm triggers
+  - Qdrant collection configuration
+  - RisingWave streaming SQL setup
 
 ### Documentation
 - [x] **API Documentation** - Complete GraphQL API reference
 - [x] **Architecture Documentation** - System diagrams & flows
 - [x] **Development Guide** - Setup & workflow instructions
 - [x] **GraphQL Schema** - Complete schema definition
+- [x] **Architecture Decision Records** - Technical decisions documented
+  - ADR-002: Storage Architecture
+  - ADR-003: Writer Separation Pattern
+  - ADR-004: Rust Backend Technology
+  - ADR-005: GraphQL API Design
+  - ADR-006: Tree-sitter Parsing Strategy
+- [x] **OpenAPI Specification** - REST endpoint documentation
 
 ---
 
