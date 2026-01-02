@@ -205,7 +205,7 @@ async fn run_live_mode(cli: &Cli, config: AppConfig, pool: sqlx::PgPool) -> Resu
     
     info!("Spawning Outbox Publisher...");
     tokio::spawn(async move {
-        use emit::{OutboxPublisher, OutboxPublisherConfig};
+        use emit::OutboxPublisher;
         
         loop {
             let publisher = OutboxPublisher::new(

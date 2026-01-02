@@ -93,6 +93,7 @@ impl MemgraphSink {
     }
     
     /// Get all dependents of a package (inverse dependencies)
+    #[allow(dead_code)]
     pub async fn get_dependents(&self, package_id: &str, depth: u32) -> Result<Vec<String>> {
         let query = Query::new(format!(
             "MATCH (p:Package {{id: $id}})<-[:DEPENDS_ON*1..{}]-(d:Package)

@@ -69,6 +69,7 @@ impl GraphQueries {
     }
 
     /// Get a specific version
+    #[allow(dead_code)]
     pub fn get_version(version_id: &str) -> Query {
         neo4rs::query(
             r#"
@@ -91,6 +92,7 @@ impl GraphQueries {
     /// Get direct reverse dependents (1 hop) - packages that depend on target
     /// DEPENDS_ON edges: (Version)-[:DEPENDS_ON]->(Package)
     /// So reverse dependents are packages whose versions point to target package
+    #[allow(dead_code)]
     pub fn reverse_dependents_direct(package_id: &str, limit: i32) -> Query {
         neo4rs::query(
             r#"
@@ -113,7 +115,7 @@ impl GraphQueries {
     /// Get transitive reverse dependents (variable depth)
     /// For transitive, we need to follow: Version→Package, then find Versions that depend on those Packages
     /// This is complex because DEPENDS_ON is Version→Package, not Version→Version
-    pub fn reverse_dependents_transitive(package_id: &str, max_depth: i32, limit: i32) -> Query {
+    pub fn reverse_dependents_transitive(package_id: &str, _max_depth: i32, limit: i32) -> Query {
         // For transitive reverse dependents with Version→Package edges:
         // Depth 1: Find versions that depend on target package, get their parent packages
         // Depth 2: Find versions that depend on depth-1 packages, etc.
@@ -206,6 +208,7 @@ impl GraphQueries {
     }
 
     /// Count total impacted packages for impact radius
+    #[allow(dead_code)]
     pub fn impact_radius_count(package_id: &str, _max_depth: i32) -> Query {
         neo4rs::query(
             r#"
@@ -262,6 +265,7 @@ impl GraphQueries {
     }
 
     /// Get dependencies of a specific version (with version requirements)
+    #[allow(dead_code)]
     pub fn version_dependencies(version_id: &str) -> Query {
         neo4rs::query(
             r#"

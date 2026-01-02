@@ -1,0 +1,24 @@
+apiVersion: v2
+name: idp
+description: Inverse Dependency Platform - Enterprise Helm Chart
+type: application
+version: 1.0.0
+appVersion: "0.1.0"
+
+home: https://github.com/example/idp
+sources:
+  - https://github.com/example/idp
+
+maintainers:
+  - name: IDP Team
+    email: team@example.com
+
+dependencies:
+  - name: redis
+    version: "18.x.x"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: redis.enabled
+  - name: memgraph
+    version: "0.1.x"
+    repository: "file://../memgraph"
+    condition: memgraph.enabled

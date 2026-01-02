@@ -12,6 +12,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(false)
         // We don't need client code either (just data structures)
         .build_client(false)
+        // Allow dead_code in generated proto types (not all types are used yet)
+        .type_attribute(".", "#[allow(dead_code)]")
         // Compile all proto files needed for consuming events
         .compile_protos(
             &[

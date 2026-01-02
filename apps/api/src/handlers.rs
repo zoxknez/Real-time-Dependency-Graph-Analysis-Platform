@@ -28,6 +28,7 @@ pub struct ReadinessResponse {
 }
 
 /// Health check endpoint (liveness probe)
+#[allow(dead_code)]
 pub async fn health_check() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "healthy",
@@ -36,6 +37,7 @@ pub async fn health_check() -> Json<HealthResponse> {
 }
 
 /// Readiness check endpoint (dependency checks)
+#[allow(dead_code)]
 pub async fn readiness_check(
     State(state): State<AppState>,
 ) -> Json<ReadinessResponse> {

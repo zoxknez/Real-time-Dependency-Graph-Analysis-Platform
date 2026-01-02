@@ -1,0 +1,339 @@
+# ═══════════════════════════════════════════════════════════════
+# INVERSE DEPENDENCY PLATFORM - HELM VALUES
+# ═══════════════════════════════════════════════════════════════
+
+global:
+  environment: production
+  image:
+    registry: ghcr.io/example/idp
+    pullPolicy: IfNotPresent
+    tag: latest
+  imagePullSecrets:
+    - name: ghcr-pull-secret
+
+# ═══════════════════════════════════════════════════════════════
+# API SERVICE
+# ═══════════════════════════════════════════════════════════════
+api:
+  enabled: true
+  replicaCount: 3
+  
+  image:
+    repository: api
+    tag: ""  # Uses global.image.tag if empty
+  
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+  
+  env:
+    RUST_LOG: "info,api=debug"
+    RUST_BACKTRACE: "1"
+  
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  
+  # Pod disruption budget
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+  
+  # Node affinity and tolerations
+  nodeSelector: {}
+  tolerations: []
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/name: api
+            topologyKey: kubernetes.io/hostname
+
+# ═══════════════════════════════════════════════════════════════
+# FRONTEND SERVICE
+# ═══════════════════════════════════════════════════════════════
+frontend:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: frontend
+    tag: ""
+  
+  service:
+    type: ClusterIP
+    port: 3000
+  
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  
+  env:
+    NEXT_PUBLIC_GRAPHQL_ENDPOINT: ""  # Set via ingress
+    NEXT_PUBLIC_WS_ENDPOINT: ""
+
+# ═══════════════════════════════════════════════════════════════
+# INGESTION SERVICE
+# ═══════════════════════════════════════════════════════════════
+ingestion:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: ingestion
+    tag: ""
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  
+  env:
+    RUST_LOG: "info,ingestion=debug"
+    CRAWL_INTERVAL_SECONDS: "300"
+
+# ═══════════════════════════════════════════════════════════════
+# GRAPH WRITER SERVICE
+# ═══════════════════════════════════════════════════════════════
+graphWriter:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: graph-writer
+    tag: ""
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+  
+  env:
+    RUST_LOG: "info,graph_writer=debug"
+    BATCH_SIZE: "1000"
+
+# ═══════════════════════════════════════════════════════════════
+# VECTOR WRITER SERVICE
+# ═══════════════════════════════════════════════════════════════
+vectorWriter:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: vector-writer
+    tag: ""
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+# ═══════════════════════════════════════════════════════════════
+# ANALYSIS SERVICE
+# ═══════════════════════════════════════════════════════════════
+analysis:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: analysis
+    tag: ""
+  
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+
+# ═══════════════════════════════════════════════════════════════
+# SYNCER SERVICE
+# ═══════════════════════════════════════════════════════════════
+syncer:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: syncer
+    tag: ""
+  
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+# ═══════════════════════════════════════════════════════════════
+# INGRESS
+# ═══════════════════════════════════════════════════════════════
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/websocket-services: "api"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  
+  hosts:
+    - host: idp.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+        - path: /graphql
+          pathType: Prefix
+          service: api
+        - path: /health
+          pathType: Exact
+          service: api
+  
+  tls:
+    - secretName: idp-tls
+      hosts:
+        - idp.example.com
+
+# ═══════════════════════════════════════════════════════════════
+# EXTERNAL DEPENDENCIES
+# ═══════════════════════════════════════════════════════════════
+
+# Redis (Bitnami chart)
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: true
+    existingSecret: redis-secret
+    existingSecretPasswordKey: password
+  master:
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+# Memgraph (external or in-cluster)
+memgraph:
+  enabled: false  # Usually external for production
+  external:
+    host: memgraph.example.com
+    port: 7687
+    username: memgraph
+    existingSecret: memgraph-secret
+
+# Qdrant (external or in-cluster)
+qdrant:
+  enabled: false
+  external:
+    host: qdrant.example.com
+    port: 6334
+    apiKey: ""
+    existingSecret: qdrant-secret
+
+# Kafka/Redpanda (external or in-cluster)
+kafka:
+  enabled: false
+  external:
+    brokers: "kafka.example.com:9092"
+    existingSecret: kafka-secret
+
+# RisingWave (external)
+risingwave:
+  enabled: false
+  external:
+    host: risingwave.example.com
+    port: 4566
+    existingSecret: risingwave-secret
+
+# ═══════════════════════════════════════════════════════════════
+# MONITORING
+# ═══════════════════════════════════════════════════════════════
+monitoring:
+  enabled: true
+  
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+    interval: 30s
+    scrapeTimeout: 10s
+  
+  prometheusRule:
+    enabled: true
+    namespace: monitoring
+
+# ═══════════════════════════════════════════════════════════════
+# SECRETS (use external-secrets or sealed-secrets in production)
+# ═══════════════════════════════════════════════════════════════
+secrets:
+  # Create secrets from values (NOT recommended for production)
+  create: false
+  
+  # External secrets operator config
+  externalSecrets:
+    enabled: true
+    refreshInterval: 1h
+    secretStoreRef:
+      name: vault-backend
+      kind: ClusterSecretStore

@@ -2,23 +2,22 @@
 
 use anyhow::Result;
 use async_graphql::{EmptyMutation, Schema};
-use tokio::sync::broadcast;
+use std::sync::Arc;
 use tracing::{info, warn};
 use std::time::Duration;
 
 use crate::cache::CacheClient;
 use crate::config::Config;
 use crate::graph::GraphClient;
-use crate::gql::context::GqlContext;
+use crate::gql::context::{GqlContext, EventChannels};
 use crate::gql::query::QueryRoot;
 use crate::gql::subscription::SubscriptionRoot;
-use crate::gql::types::VersionEvent;
 
 /// The complete GraphQL schema type
 pub type ApiSchema = Schema<QueryRoot, EmptyMutation, SubscriptionRoot>;
 
 /// Build the GraphQL schema with all dependencies
-pub async fn build_schema(config: &Config) -> Result<(ApiSchema, broadcast::Sender<VersionEvent>, GraphClient, Option<CacheClient>)> {
+pub async fn build_schema(config: &Config) -> Result<(ApiSchema, Arc<EventChannels>, GraphClient, Option<CacheClient>)> {
     info!("Building GraphQL schema...");
 
     // Connect to Memgraph
@@ -43,15 +42,15 @@ pub async fn build_schema(config: &Config) -> Result<(ApiSchema, broadcast::Send
         }
     };
 
-    // Create broadcast channel for subscriptions (buffer 1000 events)
-    let (event_tx, _) = broadcast::channel::<VersionEvent>(1000);
+    // Create event channels for subscriptions (buffer 1024 events per channel)
+    let channels = Arc::new(EventChannels::new(1024));
 
-    // Create GraphQL context
-    let ctx = GqlContext::new(
+    // Create GraphQL context with all event channels
+    let ctx = GqlContext::with_channels(
         graph.clone(),
         cache.clone(),
         config.guardrails.clone(),
-        event_tx.clone(),
+        channels.clone(),
     );
 
     // Build schema with complexity limits
@@ -64,8 +63,9 @@ pub async fn build_schema(config: &Config) -> Result<(ApiSchema, broadcast::Send
     info!(
         max_complexity = config.guardrails.max_complexity,
         max_depth = 12,
+        subscription_channels = 4,
         "GraphQL schema built successfully"
     );
 
-    Ok((schema, event_tx, graph, cache))
+    Ok((schema, channels, graph, cache))
 }

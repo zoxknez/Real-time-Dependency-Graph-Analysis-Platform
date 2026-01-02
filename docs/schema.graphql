@@ -1,0 +1,326 @@
+# Inverse Dependency Platform - GraphQL Schema
+# 
+# This schema defines the complete API surface for dependency graph intelligence.
+# Generated from the Rust async-graphql implementation.
+
+# ═══════════════════════════════════════════════════════════════
+# ENUMS
+# ═══════════════════════════════════════════════════════════════
+
+"""Package ecosystem/registry"""
+enum Ecosystem {
+  NPM
+  PYPI
+  CARGO
+  MAVEN
+  NUGET
+  GO
+}
+
+"""Severity of breaking changes"""
+enum BreakingSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+"""Type of package activity"""
+enum PackageActivityType {
+  PUBLISHED
+  YANKED
+  DEPRECATED
+  UNYANKED
+  OWNERSHIP_CHANGED
+}
+
+# ═══════════════════════════════════════════════════════════════
+# CORE TYPES
+# ═══════════════════════════════════════════════════════════════
+
+"""Package node from the dependency graph"""
+type Package {
+  id: ID!
+  ecosystem: Ecosystem!
+  name: String!
+}
+
+"""Version node with metadata"""
+type Version {
+  id: ID!
+  packageId: ID!
+  version: String!
+  publishedAt: String
+  yanked: Boolean!
+}
+
+# ═══════════════════════════════════════════════════════════════
+# QUERY TYPES
+# ═══════════════════════════════════════════════════════════════
+
+"""Relay-style connection for paginated results"""
+type PackageConnection {
+  edges: [PackageEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+"""Edge in package connection"""
+type PackageEdge {
+  node: Package!
+  cursor: String!
+  depth: Int
+}
+
+"""Relay pagination info"""
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+"""Result for dependencyPath query"""
+type DependencyPathResult {
+  """Whether a path was found"""
+  found: Boolean!
+  """Number of hops in the path"""
+  hops: Int!
+  """Ordered list of packages in the path (from -> to)"""
+  packages: [Package!]!
+}
+
+"""Result for impactRadius query (CVE simulation)"""
+type ImpactRadiusResult {
+  """The vulnerable package"""
+  packageId: ID!
+  """The semver range that is vulnerable"""
+  vulnerableVersionRange: String
+  """Max traversal depth used"""
+  maxDepth: Int!
+  """Total number of impacted packages"""
+  impactedPackages: Int!
+  """Total number of impacted versions (approximate)"""
+  impactedVersions: Int!
+  """Top impacted packages by proximity"""
+  topImpacted: [ImpactNode!]!
+}
+
+"""A package impacted by a vulnerability"""
+type ImpactNode {
+  package: Package!
+  """Number of hops from the vulnerable package"""
+  depth: Int!
+  """Estimated affected versions in this package"""
+  estimatedAffectedVersions: Int
+}
+
+"""Platform statistics"""
+type GraphStats {
+  totalPackages: Int!
+  totalVersions: Int!
+  totalDependencies: Int!
+  totalPackageDependencies: Int!
+  ecosystemBreakdown: [EcosystemCount!]!
+}
+
+"""Count per ecosystem"""
+type EcosystemCount {
+  ecosystem: Ecosystem!
+  count: Int!
+}
+
+"""Search results connection"""
+type SearchConnection {
+  edges: [SearchEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+"""Edge in search results"""
+type SearchEdge {
+  node: Package!
+  cursor: String!
+}
+
+# ═══════════════════════════════════════════════════════════════
+# SUBSCRIPTION TYPES
+# ═══════════════════════════════════════════════════════════════
+
+"""Event metadata"""
+type EventMeta {
+  eventId: ID!
+  occurredAt: String!
+  source: String!
+  traceparent: String
+}
+
+"""Real-time event for new versions"""
+type VersionEvent {
+  meta: EventMeta!
+  package: Package!
+  version: Version!
+}
+
+"""Breaking change detection event"""
+type BreakingChangeEvent {
+  meta: EventMeta!
+  package: Package!
+  oldVersion: String!
+  newVersion: String!
+  severity: BreakingSeverity!
+  changes: [BreakingChange!]!
+  affectedDependents: Int!
+}
+
+"""Individual breaking change detail"""
+type BreakingChange {
+  """Type of breaking change (removed_export, changed_signature, etc.)"""
+  changeType: String!
+  """Description of the breaking change"""
+  description: String!
+  """Affected symbol (function, class, type name)"""
+  symbol: String
+  """Suggested migration path"""
+  migrationHint: String
+}
+
+"""Live statistics event"""
+type LiveStatsEvent {
+  timestamp: String!
+  totalPackages: Int!
+  totalVersions: Int!
+  packagesLastHour: Int!
+  versionsLastHour: Int!
+  activeSubscriptions: Int!
+  processingQueueSize: Int!
+  ecosystemActivity: [EcosystemActivity!]!
+}
+
+"""Per-ecosystem activity stats"""
+type EcosystemActivity {
+  ecosystem: Ecosystem!
+  packagesAdded: Int!
+  versionsAdded: Int!
+  changeRatePercent: Float!
+}
+
+"""Dependency impact event"""
+type DependencyImpactEvent {
+  meta: EventMeta!
+  package: Package!
+  version: String!
+  impactScore: Float!
+  directDependents: Int!
+  transitiveDependents: Int!
+  notableDependents: [Package!]!
+}
+
+# ═══════════════════════════════════════════════════════════════
+# QUERIES
+# ═══════════════════════════════════════════════════════════════
+
+type Query {
+  """Get a package by ID"""
+  package(id: ID!): Package
+
+  """Find all packages that depend on a given package (inverse dependencies)"""
+  reverseDependents(
+    """Package ID (e.g., 'npm:lodash')"""
+    packageId: ID!
+    """Number of results to return"""
+    first: Int = 20
+    """Cursor for pagination"""
+    after: String
+    """Maximum depth of transitive dependents"""
+    depth: Int = 3
+  ): PackageConnection!
+
+  """Find the shortest path between two packages"""
+  dependencyPath(
+    """Source package ID"""
+    from: ID!
+    """Target package ID"""
+    to: ID!
+    """Maximum path length"""
+    maxDepth: Int = 10
+  ): DependencyPathResult!
+
+  """Simulate CVE impact - find all affected packages"""
+  impactRadius(
+    """Vulnerable package ID"""
+    packageId: ID!
+    """Semver range of vulnerable versions (e.g., '<2.0.0')"""
+    versionRange: String
+    """Maximum traversal depth"""
+    maxDepth: Int = 5
+  ): ImpactRadiusResult!
+
+  """Search packages by name"""
+  search(
+    """Search query"""
+    query: String!
+    """Filter by ecosystem"""
+    ecosystem: Ecosystem
+    """Number of results"""
+    first: Int = 20
+    """Pagination cursor"""
+    after: String
+  ): SearchConnection!
+
+  """Get platform statistics"""
+  stats: GraphStats!
+}
+
+# ═══════════════════════════════════════════════════════════════
+# SUBSCRIPTIONS
+# ═══════════════════════════════════════════════════════════════
+
+type Subscription {
+  """Subscribe to new version events"""
+  newVersion(
+    """Filter by ecosystem"""
+    ecosystem: Ecosystem
+    """Filter by specific package"""
+    packageId: ID
+  ): VersionEvent!
+
+  """Subscribe to breaking change detection events"""
+  breakingChangeDetected(
+    """Filter by ecosystem"""
+    ecosystem: Ecosystem
+    """Filter by specific package"""
+    packageId: ID
+    """Minimum severity to receive"""
+    minSeverity: BreakingSeverity = LOW
+  ): BreakingChangeEvent!
+
+  """Subscribe to live platform statistics"""
+  liveStats(
+    """Minimum interval between updates in milliseconds (min: 1000)"""
+    intervalMs: Int = 5000
+  ): LiveStatsEvent!
+
+  """Subscribe to high-impact dependency events"""
+  dependencyImpact(
+    """Filter by ecosystem"""
+    ecosystem: Ecosystem
+    """Minimum impact score (0.0 to 1.0)"""
+    minImpactScore: Float = 0.5
+  ): DependencyImpactEvent!
+
+  """Subscribe to all events for a specific package"""
+  packageEvents(
+    """Package ID to monitor"""
+    packageId: ID!
+  ): VersionEvent!
+}
+
+# ═══════════════════════════════════════════════════════════════
+# SCHEMA
+# ═══════════════════════════════════════════════════════════════
+
+schema {
+  query: Query
+  subscription: Subscription
+}

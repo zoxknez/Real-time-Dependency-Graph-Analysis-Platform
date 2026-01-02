@@ -1,0 +1,28 @@
+{{/*
+═══════════════════════════════════════════════════════════════
+API SERVICE
+═══════════════════════════════════════════════════════════════
+*/}}
+{{- if .Values.api.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "idp.fullname" . }}-api
+  labels:
+    {{- include "idp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  {{- with .Values.api.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.api.service.type }}
+  ports:
+    - port: {{ .Values.api.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "idp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+{{- end }}

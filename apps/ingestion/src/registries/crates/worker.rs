@@ -33,6 +33,7 @@ const DOMAIN_VERSION_UPSERT_TOPIC: &str = "domain.version.upsert.v1";
 const DOMAIN_VERSION_YANKED_TOPIC: &str = "domain.version.yanked.v1";
 
 /// Consumer group for cargo worker
+#[allow(dead_code)]
 const CONSUMER_GROUP: &str = "cargo-worker";
 
 /// Cargo Worker - processes raw index events
@@ -40,6 +41,7 @@ pub struct CargoWorker {
     consumer: StreamConsumer,
     pool: PgPool,
     state_store: CargoStateStore,
+    #[allow(dead_code)]
     fetcher: CargoFetcher,
 }
 

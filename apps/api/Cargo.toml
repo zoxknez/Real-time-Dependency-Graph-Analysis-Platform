@@ -45,7 +45,7 @@ tower_governor = "0.5"
 redis.workspace = true
 
 # Streams and futures
-tokio-stream = { workspace = true, features = ["sync"] }
+tokio-stream = { workspace = true, features = ["sync", "time"] }
 futures.workspace = true
 base64.workspace = true
 

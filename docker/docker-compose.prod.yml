@@ -1,0 +1,245 @@
+# ═══════════════════════════════════════════════════════════════
+# Docker Compose - Production Services
+# ═══════════════════════════════════════════════════════════════
+# Usage: docker compose -f docker/docker-compose.prod.yml up -d
+
+version: "3.8"
+
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # API Service
+  # ═══════════════════════════════════════════════════════════════
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    image: realtime3u1/api:latest
+    container_name: rt3u1-api
+    ports:
+      - "8080:8080"
+    environment:
+      - RUST_LOG=info
+      - MEMGRAPH_HOST=memgraph
+      - MEMGRAPH_PORT=7687
+      - REDIS_URL=redis://redis:6379
+      - QDRANT_URL=http://qdrant:6334
+    depends_on:
+      memgraph:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - rt3u1-network
+
+  # ═══════════════════════════════════════════════════════════════
+  # Analysis Service
+  # ═══════════════════════════════════════════════════════════════
+  analysis:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.analysis
+    image: realtime3u1/analysis:latest
+    container_name: rt3u1-analysis
+    environment:
+      - RUST_LOG=info
+      - ANALYSIS__KAFKA__BROKERS=redpanda:9092
+      - ANALYSIS__EMBEDDING__PROVIDER=mock
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - rt3u1-network
+
+  # ═══════════════════════════════════════════════════════════════
+  # Vector Writer Service
+  # ═══════════════════════════════════════════════════════════════
+  vector-writer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.vector-writer
+    image: realtime3u1/vector-writer:latest
+    container_name: rt3u1-vector-writer
+    environment:
+      - RUST_LOG=info
+      - KAFKA__BROKERS=redpanda:9092
+      - QDRANT__URL=http://qdrant:6334
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - rt3u1-network
+
+  # ═══════════════════════════════════════════════════════════════
+  # Syncer Service
+  # ═══════════════════════════════════════════════════════════════
+  syncer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.syncer
+    image: realtime3u1/syncer:latest
+    container_name: rt3u1-syncer
+    environment:
+      - RUST_LOG=info
+      - RISINGWAVE_URL=postgres://root@risingwave:4566/dev
+      - MEMGRAPH_URL=bolt://memgraph:7687
+      - QDRANT_URL=http://qdrant:6334
+    depends_on:
+      memgraph:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      risingwave:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - rt3u1-network
+
+  # ═══════════════════════════════════════════════════════════════
+  # Frontend
+  # ═══════════════════════════════════════════════════════════════
+  frontend:
+    build:
+      context: ../apps/frontend
+      dockerfile: Dockerfile
+    image: realtime3u1/frontend:latest
+    container_name: rt3u1-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_GRAPHQL_URL=http://api:8080/graphql
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - rt3u1-network
+
+  # ═══════════════════════════════════════════════════════════════
+  # Infrastructure Services
+  # ═══════════════════════════════════════════════════════════════
+  memgraph:
+    image: memgraph/memgraph:latest
+    container_name: rt3u1-memgraph
+    ports:
+      - "7687:7687"
+      - "7444:7444"
+    volumes:
+      - memgraph-data:/var/lib/memgraph
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - rt3u1-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: rt3u1-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - rt3u1-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: rt3u1-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - rt3u1-network
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:latest
+    container_name: rt3u1-redpanda
+    command:
+      - redpanda
+      - start
+      - --smp 1
+      - --memory 512M
+      - --overprovisioned
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+    ports:
+      - "19092:19092"
+      - "18082:18082"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - rt3u1-network
+
+  risingwave:
+    image: risingwavelabs/risingwave:v2.1.4-single
+    container_name: rt3u1-risingwave
+    command: standalone --meta-opts=" --listen-addr 0.0.0.0:5690 --advertise-addr risingwave:5690 --dashboard-host 0.0.0.0:5691 --connector-rpc-endpoint 0.0.0.0:50051" --compute-opts=" --listen-addr 0.0.0.0:5688 --advertise-addr risingwave:5688 --async-stack-trace verbose" --frontend-opts=" --listen-addr 0.0.0.0:4566 --advertise-addr risingwave:4566" --compactor-opts=" --listen-addr 0.0.0.0:6660 --advertise-addr risingwave:6660"
+    ports:
+      - "4566:4566"
+      - "5691:5691"
+    volumes:
+      - risingwave-data:/risingwave/state_store
+    healthcheck:
+      test: ["CMD", "psql", "-h", "localhost", "-p", "4566", "-U", "root", "-d", "dev", "-c", "SELECT 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - rt3u1-network
+
+# ═══════════════════════════════════════════════════════════════
+# Volumes
+# ═══════════════════════════════════════════════════════════════
+volumes:
+  memgraph-data:
+  redis-data:
+  qdrant-data:
+  redpanda-data:
+  risingwave-data:
+
+# ═══════════════════════════════════════════════════════════════
+# Networks
+# ═══════════════════════════════════════════════════════════════
+networks:
+  rt3u1-network:
+    driver: bridge

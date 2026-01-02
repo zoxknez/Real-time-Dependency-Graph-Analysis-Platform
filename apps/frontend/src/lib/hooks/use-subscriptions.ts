@@ -1,0 +1,375 @@
+"use client";
+
+import { useSubscription, useApolloClient } from "@apollo/client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  LIVE_PACKAGE_ACTIVITY,
+  NEW_VERSION_SUBSCRIPTION,
+  BREAKING_CHANGE_DETECTED,
+  LIVE_STATS,
+  WATCH_PACKAGES,
+  DEPENDENCY_GRAPH_UPDATES,
+  DEPENDENCY_IMPACT,
+} from "@/lib/graphql/queries";
+import type {
+  LivePackageEvent,
+  BreakingChangeEvent,
+  LiveStats,
+  WatchedPackageEvent,
+  DependencyGraphUpdate,
+  DependencyImpactEvent,
+  Ecosystem,
+  EventType,
+  Severity,
+  BreakingSeverity,
+  LivePackageActivityVariables,
+  BreakingChangeVariables,
+  WatchPackagesVariables,
+  DependencyGraphUpdateVariables,
+  DependencyImpactVariables,
+} from "@/lib/graphql/types";
+
+// ═══════════════════════════════════════════════════════════════
+// LIVE PACKAGE ACTIVITY HOOK
+// ═══════════════════════════════════════════════════════════════
+
+interface UseLivePackageActivityOptions {
+  ecosystems?: Ecosystem[];
+  eventTypes?: EventType[];
+  maxEvents?: number;
+  paused?: boolean;
+  onEvent?: (event: LivePackageEvent) => void;
+}
+
+export function useLivePackageActivity(options: UseLivePackageActivityOptions = {}) {
+  const { 
+    ecosystems, 
+    eventTypes, 
+    maxEvents = 100, 
+    paused = false,
+    onEvent,
+  } = options;
+  
+  const [events, setEvents] = useState<LivePackageEvent[]>([]);
+  const [stats, setStats] = useState({
+    total: 0,
+    byEcosystem: {} as Record<string, number>,
+    byType: {} as Record<string, number>,
+    eventsPerMinute: 0,
+  });
+  const startTimeRef = useRef(Date.now());
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
+
+  const { data, loading, error } = useSubscription<
+    { livePackageActivity: LivePackageEvent },
+    LivePackageActivityVariables
+  >(LIVE_PACKAGE_ACTIVITY, {
+    variables: { ecosystems, eventTypes },
+    skip: paused,
+    shouldResubscribe: true,
+    onData: ({ data }) => {
+      const event = data.data?.livePackageActivity;
+      if (event) {
+        setEvents((prev) => {
+          const updated = [event, ...prev].slice(0, maxEvents);
+          return updated;
+        });
+        
+        // Update stats
+        setStats((prev) => {
+          const elapsed = Math.max(1, (Date.now() - startTimeRef.current) / 60000);
+          return {
+            total: prev.total + 1,
+            byEcosystem: {
+              ...prev.byEcosystem,
+              [event.package.ecosystem]: (prev.byEcosystem[event.package.ecosystem] || 0) + 1,
+            },
+            byType: {
+              ...prev.byType,
+              [event.type]: (prev.byType[event.type] || 0) + 1,
+            },
+            eventsPerMinute: Math.round(((prev.total + 1) / elapsed) * 10) / 10,
+          };
+        });
+
+        // Callback
+        onEventRef.current?.(event);
+      }
+    },
+  });
+
+  const clearEvents = useCallback(() => {
+    setEvents([]);
+    setStats({
+      total: 0,
+      byEcosystem: {},
+      byType: {},
+      eventsPerMinute: 0,
+    });
+    startTimeRef.current = Date.now();
+  }, []);
+
+  return {
+    events,
+    stats,
+    loading,
+    error,
+    clearEvents,
+    latestEvent: events[0] ?? null,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BREAKING CHANGE DETECTION HOOK
+// ═══════════════════════════════════════════════════════════════
+
+interface UseBreakingChangesOptions {
+  ecosystem?: Ecosystem;
+  packageId?: string;
+  minSeverity?: BreakingSeverity;
+  paused?: boolean;
+  onBreakingChange?: (event: BreakingChangeEvent) => void;
+}
+
+export function useBreakingChanges(options: UseBreakingChangesOptions = {}) {
+  const { 
+    ecosystem, 
+    packageId,
+    minSeverity, 
+    paused = false,
+    onBreakingChange,
+  } = options;
+  
+  const [breakingChanges, setBreakingChanges] = useState<BreakingChangeEvent[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const onBreakingChangeRef = useRef(onBreakingChange);
+  onBreakingChangeRef.current = onBreakingChange;
+
+  const { data, loading, error } = useSubscription<
+    { breakingChangeDetected: BreakingChangeEvent },
+    BreakingChangeVariables
+  >(BREAKING_CHANGE_DETECTED, {
+    variables: { ecosystem, packageId, minSeverity },
+    skip: paused,
+    shouldResubscribe: true,
+    onData: ({ data }) => {
+      const event = data.data?.breakingChangeDetected;
+      if (event) {
+        setBreakingChanges((prev) => [event, ...prev].slice(0, 50));
+        setUnreadCount((prev) => prev + 1);
+        onBreakingChangeRef.current?.(event);
+      }
+    },
+  });
+
+  const markAllRead = useCallback(() => {
+    setUnreadCount(0);
+  }, []);
+
+  const dismissChange = useCallback((packageName: string, version: string) => {
+    setBreakingChanges((prev) => prev.filter((bc) => 
+      !(bc.package.name === packageName && bc.toVersion === version)
+    ));
+  }, []);
+
+  return {
+    breakingChanges,
+    unreadCount,
+    loading,
+    error,
+    markAllRead,
+    dismissChange,
+    latestBreakingChange: breakingChanges[0] ?? null,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LIVE STATS HOOK
+// ═══════════════════════════════════════════════════════════════
+
+interface UseLiveStatsOptions {
+  paused?: boolean;
+}
+
+export function useLiveStats(options: UseLiveStatsOptions = {}) {
+  const { paused = false } = options;
+  const [stats, setStats] = useState<LiveStats | null>(null);
+  const [history, setHistory] = useState<LiveStats[]>([]);
+
+  const { data, loading, error } = useSubscription<{ liveStats: LiveStats }>(
+    LIVE_STATS,
+    {
+      skip: paused,
+      shouldResubscribe: true,
+      onData: ({ data }) => {
+        const newStats = data.data?.liveStats;
+        if (newStats) {
+          setStats(newStats);
+          // Keep last 60 stats for charting (1 per minute = 1 hour)
+          setHistory((prev) => [...prev, newStats].slice(-60));
+        }
+      },
+    }
+  );
+
+  return {
+    stats,
+    history,
+    loading,
+    error,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DEPENDENCY IMPACT HOOK
+// ═══════════════════════════════════════════════════════════════
+
+interface UseDependencyImpactOptions {
+  ecosystem?: Ecosystem;
+  minImpactScore?: number;
+  paused?: boolean;
+  onImpact?: (event: DependencyImpactEvent) => void;
+}
+
+export function useDependencyImpact(options: UseDependencyImpactOptions = {}) {
+  const { ecosystem, minImpactScore, paused = false, onImpact } = options;
+  const [impacts, setImpacts] = useState<DependencyImpactEvent[]>([]);
+  const onImpactRef = useRef(onImpact);
+  onImpactRef.current = onImpact;
+
+  const { data, loading, error } = useSubscription<
+    { dependencyImpact: DependencyImpactEvent }
+  >(DEPENDENCY_IMPACT, {
+    variables: { ecosystem, minImpactScore },
+    skip: paused,
+    shouldResubscribe: true,
+    onData: ({ data }) => {
+      const event = data.data?.dependencyImpact;
+      if (event) {
+        setImpacts((prev) => [event, ...prev].slice(0, 50));
+        onImpactRef.current?.(event);
+      }
+    },
+  });
+
+  const clearImpacts = useCallback(() => {
+    setImpacts([]);
+  }, []);
+
+  return {
+    impacts,
+    loading,
+    error,
+    clearImpacts,
+    latestImpact: impacts[0] ?? null,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WATCH PACKAGES HOOK
+// ═══════════════════════════════════════════════════════════════
+
+interface UseWatchPackagesOptions {
+  packageIds: string[];
+  paused?: boolean;
+  onUpdate?: (event: WatchedPackageEvent) => void;
+}
+
+export function useWatchPackages(options: UseWatchPackagesOptions) {
+  const { packageIds, paused = false, onUpdate } = options;
+  const [updates, setUpdates] = useState<WatchedPackageEvent[]>([]);
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+
+  const { data, loading, error } = useSubscription<
+    { watchPackages: WatchedPackageEvent },
+    WatchPackagesVariables
+  >(WATCH_PACKAGES, {
+    variables: { packageIds },
+    skip: paused || packageIds.length === 0,
+    shouldResubscribe: true,
+    onData: ({ data }) => {
+      const event = data.data?.watchPackages;
+      if (event) {
+        setUpdates((prev) => [event, ...prev].slice(0, 100));
+        onUpdateRef.current?.(event);
+      }
+    },
+  });
+
+  const clearUpdates = useCallback(() => {
+    setUpdates([]);
+  }, []);
+
+  return {
+    updates,
+    loading,
+    error,
+    clearUpdates,
+    latestUpdate: updates[0] ?? null,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DEPENDENCY GRAPH UPDATES HOOK
+// ═══════════════════════════════════════════════════════════════
+
+interface UseDependencyGraphUpdatesOptions {
+  rootPackageId: string;
+  maxDepth?: number;
+  paused?: boolean;
+  onUpdate?: (update: DependencyGraphUpdate) => void;
+}
+
+export function useDependencyGraphUpdates(options: UseDependencyGraphUpdatesOptions) {
+  const { rootPackageId, maxDepth, paused = false, onUpdate } = options;
+  const [updates, setUpdates] = useState<DependencyGraphUpdate[]>([]);
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+
+  const { data, loading, error } = useSubscription<
+    { dependencyGraphUpdate: DependencyGraphUpdate },
+    DependencyGraphUpdateVariables
+  >(DEPENDENCY_GRAPH_UPDATES, {
+    variables: { rootPackageId, maxDepth },
+    skip: paused || !rootPackageId,
+    shouldResubscribe: true,
+    onData: ({ data }) => {
+      const update = data.data?.dependencyGraphUpdate;
+      if (update) {
+        setUpdates((prev) => [update, ...prev].slice(0, 50));
+        onUpdateRef.current?.(update);
+      }
+    },
+  });
+
+  return {
+    updates,
+    loading,
+    error,
+    latestUpdate: updates[0] ?? null,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONNECTION STATUS HOOK
+// ═══════════════════════════════════════════════════════════════
+
+export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
+
+export function useConnectionStatus(): ConnectionStatus {
+  const [status, setStatus] = useState<ConnectionStatus>("connecting");
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const customEvent = event as CustomEvent<ConnectionStatus>;
+      setStatus(customEvent.detail);
+    };
+    
+    window.addEventListener("ws-status", handler);
+    return () => window.removeEventListener("ws-status", handler);
+  }, []);
+
+  return status;
+}

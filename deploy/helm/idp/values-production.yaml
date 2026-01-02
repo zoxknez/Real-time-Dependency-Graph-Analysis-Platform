@@ -1,0 +1,233 @@
+# ═══════════════════════════════════════════════════════════════
+# PRODUCTION ENVIRONMENT OVERRIDES
+# ═══════════════════════════════════════════════════════════════
+
+global:
+  environment: production
+  image:
+    pullPolicy: IfNotPresent
+    # tag: Set during deployment via --set global.image.tag=<version>
+
+# ═══════════════════════════════════════════════════════════════
+# HIGH AVAILABILITY CONFIGURATION
+# ═══════════════════════════════════════════════════════════════
+
+api:
+  replicaCount: 5
+  autoscaling:
+    enabled: true
+    minReplicas: 5
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 70
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 3
+  env:
+    RUST_LOG: "info,api=info"
+    RUST_BACKTRACE: "0"
+  # Spread across availability zones
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/component: api
+          topologyKey: topology.kubernetes.io/zone
+
+frontend:
+  replicaCount: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+ingestion:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+
+graphWriter:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+vectorWriter:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+
+analysis:
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 4Gi
+    limits:
+      cpu: 8000m
+      memory: 16Gi
+
+syncer:
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+
+# ═══════════════════════════════════════════════════════════════
+# INGRESS - PRODUCTION DOMAIN
+# ═══════════════════════════════════════════════════════════════
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/websocket-services: "api"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Enable WAF if using ModSecurity
+    nginx.ingress.kubernetes.io/enable-modsecurity: "true"
+    nginx.ingress.kubernetes.io/enable-owasp-core-rules: "true"
+  hosts:
+    - host: idp.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+        - path: /graphql
+          pathType: Prefix
+          service: api
+        - path: /health
+          pathType: Exact
+          service: api
+  tls:
+    - secretName: idp-production-tls
+      hosts:
+        - idp.example.com
+
+# ═══════════════════════════════════════════════════════════════
+# PRODUCTION DEPENDENCIES
+# ═══════════════════════════════════════════════════════════════
+
+redis:
+  enabled: true
+  architecture: replication
+  auth:
+    enabled: true
+  master:
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClass: ssd
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+  replica:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClass: ssd
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+memgraph:
+  enabled: false
+  external:
+    host: memgraph-production.example.com
+    port: 7687
+    existingSecret: memgraph-production-secret
+
+qdrant:
+  enabled: false
+  external:
+    host: qdrant-production.example.com
+    port: 6334
+    existingSecret: qdrant-production-secret
+
+kafka:
+  enabled: false
+  external:
+    brokers: "kafka-production-1.example.com:9092,kafka-production-2.example.com:9092,kafka-production-3.example.com:9092"
+    existingSecret: kafka-production-secret
+
+risingwave:
+  enabled: false
+  external:
+    host: risingwave-production.example.com
+    port: 4566
+    existingSecret: risingwave-production-secret
+
+# ═══════════════════════════════════════════════════════════════
+# FULL MONITORING FOR PRODUCTION
+# ═══════════════════════════════════════════════════════════════
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring
+    interval: 15s
+    scrapeTimeout: 10s
+  prometheusRule:
+    enabled: true
+    namespace: monitoring
+
+# ═══════════════════════════════════════════════════════════════
+# EXTERNAL SECRETS (RECOMMENDED FOR PRODUCTION)
+# ═══════════════════════════════════════════════════════════════
+
+secrets:
+  create: false
+  externalSecrets:
+    enabled: true
+    refreshInterval: 30m
+    secretStoreRef:
+      name: vault-backend
+      kind: ClusterSecretStore

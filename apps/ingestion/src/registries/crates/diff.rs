@@ -37,6 +37,7 @@ impl CargoDiff {
     }
 
     /// Total number of changes
+    #[allow(dead_code)]
     pub fn change_count(&self) -> usize {
         self.added.len()
             + self.removed.len()

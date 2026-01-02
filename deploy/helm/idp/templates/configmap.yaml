@@ -1,0 +1,154 @@
+{{/*
+═══════════════════════════════════════════════════════════════
+CONFIGMAP - SHARED CONFIGURATION
+═══════════════════════════════════════════════════════════════
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "idp.fullname" . }}-config
+  labels:
+    {{- include "idp.labels" . | nindent 4 }}
+data:
+  # Environment
+  ENVIRONMENT: {{ .Values.global.environment | quote }}
+  
+  # Logging
+  LOG_FORMAT: "json"
+  LOG_LEVEL: "info"
+  
+  # API Configuration
+  API_HOST: {{ include "idp.fullname" . }}-api
+  API_PORT: "8080"
+  
+  # Feature flags
+  ENABLE_METRICS: "true"
+  ENABLE_TRACING: "true"
+  
+  # Timeout configurations
+  HTTP_TIMEOUT_SECONDS: "30"
+  GRAPHQL_TIMEOUT_SECONDS: "60"
+  
+  # Batch processing
+  DEFAULT_BATCH_SIZE: "1000"
+  MAX_BATCH_SIZE: "10000"
+---
+{{/*
+═══════════════════════════════════════════════════════════════
+PROMETHEUS SERVICE MONITORS
+═══════════════════════════════════════════════════════════════
+*/}}
+{{- if .Values.monitoring.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "idp.fullname" . }}
+  {{- if .Values.monitoring.serviceMonitor.namespace }}
+  namespace: {{ .Values.monitoring.serviceMonitor.namespace }}
+  {{- end }}
+  labels:
+    {{- include "idp.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "idp.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout }}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+{{- end }}
+---
+{{/*
+═══════════════════════════════════════════════════════════════
+PROMETHEUS ALERTING RULES
+═══════════════════════════════════════════════════════════════
+*/}}
+{{- if .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "idp.fullname" . }}
+  {{- if .Values.monitoring.prometheusRule.namespace }}
+  namespace: {{ .Values.monitoring.prometheusRule.namespace }}
+  {{- end }}
+  labels:
+    {{- include "idp.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: idp.rules
+      rules:
+        # High error rate
+        - alert: IDPHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{job="{{ include "idp.fullname" . }}-api", status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{job="{{ include "idp.fullname" . }}-api"}[5m]))
+            > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High error rate on IDP API"
+            description: "Error rate is above 5% for the last 5 minutes"
+        
+        # High latency
+        - alert: IDPHighLatency
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket{job="{{ include "idp.fullname" . }}-api"}[5m])) by (le)
+            ) > 2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High latency on IDP API"
+            description: "P99 latency is above 2 seconds"
+        
+        # Pod restarts
+        - alert: IDPPodRestarts
+          expr: |
+            increase(kube_pod_container_status_restarts_total{
+              namespace="{{ .Release.Namespace }}",
+              pod=~"{{ include "idp.fullname" . }}.*"
+            }[1h]) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "IDP pods are restarting frequently"
+            description: "Pod {{ `{{ $labels.pod }}` }} has restarted {{ `{{ $value }}` }} times in the last hour"
+        
+        # Memory usage
+        - alert: IDPHighMemoryUsage
+          expr: |
+            container_memory_working_set_bytes{
+              namespace="{{ .Release.Namespace }}",
+              pod=~"{{ include "idp.fullname" . }}.*"
+            }
+            /
+            container_spec_memory_limit_bytes{
+              namespace="{{ .Release.Namespace }}",
+              pod=~"{{ include "idp.fullname" . }}.*"
+            } > 0.9
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High memory usage on IDP pod"
+            description: "Pod {{ `{{ $labels.pod }}` }} is using more than 90% of its memory limit"
+        
+        # GraphQL subscription count
+        - alert: IDPHighSubscriptionCount
+          expr: |
+            idp_active_subscriptions > 1000
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High number of active GraphQL subscriptions"
+            description: "There are {{ `{{ $value }}` }} active subscriptions which may impact performance"
+{{- end }}

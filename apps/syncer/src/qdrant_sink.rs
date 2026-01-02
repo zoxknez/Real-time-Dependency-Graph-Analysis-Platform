@@ -1,10 +1,10 @@
 //! Qdrant vector database sink
 
 use anyhow::Result;
-use qdrant_client::prelude::*;
+use qdrant_client::Qdrant;
 use qdrant_client::qdrant::{
-    CreateCollection, Distance, VectorParams, VectorsConfig,
-    PointStruct, UpsertPointsBuilder,
+    CreateCollectionBuilder, Distance, VectorParamsBuilder,
+    PointStruct, UpsertPointsBuilder, SearchPointsBuilder,
 };
 use std::collections::HashMap;
 use tracing::{debug, info};
@@ -14,7 +14,7 @@ const VECTOR_SIZE: u64 = 384; // all-MiniLM-L6-v2 dimension
 
 /// Qdrant vector database client
 pub struct QdrantSink {
-    client: QdrantClient,
+    client: Qdrant,
 }
 
 impl QdrantSink {
@@ -22,7 +22,7 @@ impl QdrantSink {
     pub async fn new(url: &str) -> Result<Self> {
         info!(url = %url, "Connecting to Qdrant");
         
-        let client = QdrantClient::from_url(url).build()?;
+        let client = Qdrant::from_url(url).build()?;
         
         Ok(Self { client })
     }
@@ -40,19 +40,8 @@ impl QdrantSink {
             
             self.client
                 .create_collection(
-                    CreateCollection {
-                        collection_name: COLLECTION_NAME.into(),
-                        vectors_config: Some(VectorsConfig {
-                            config: Some(qdrant_client::qdrant::vectors_config::Config::Params(
-                                VectorParams {
-                                    size: VECTOR_SIZE,
-                                    distance: Distance::Cosine.into(),
-                                    ..Default::default()
-                                }
-                            )),
-                        }),
-                        ..Default::default()
-                    }
+                    CreateCollectionBuilder::new(COLLECTION_NAME)
+                        .vectors_config(VectorParamsBuilder::new(VECTOR_SIZE, Distance::Cosine))
                 )
                 .await?;
         }
@@ -67,13 +56,13 @@ impl QdrantSink {
         vector: Vec<f32>,
         metadata: HashMap<String, String>,
     ) -> Result<()> {
-        let point = PointStruct::new(
-            id.to_string(),
-            vector,
-            metadata.into_iter()
-                .map(|(k, v)| (k, v.into()))
-                .collect::<HashMap<_, _>>(),
-        );
+        use qdrant_client::qdrant::Value;
+        
+        let payload: HashMap<String, Value> = metadata.into_iter()
+            .map(|(k, v)| (k, Value::from(v)))
+            .collect();
+        
+        let point = PointStruct::new(id.to_string(), vector, payload);
         
         self.client
             .upsert_points(UpsertPointsBuilder::new(COLLECTION_NAME, vec![point]))
@@ -84,6 +73,7 @@ impl QdrantSink {
     }
     
     /// Search for similar vectors
+    #[allow(dead_code)]
     pub async fn search(
         &self,
         query_vector: Vec<f32>,

@@ -20,13 +20,22 @@ import {
   Filter,
   Clock,
   BarChart3,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import { cn, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass } from "@/lib/utils";
 import { EcosystemFilter } from "@/components/explore/ecosystem-filter";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
+import { ConnectionIndicator } from "@/components/ui/connection-indicator";
+import { 
+  useLivePackageActivity, 
+  useBreakingChanges, 
+  useConnectionStatus 
+} from "@/lib/hooks";
+import type { Ecosystem, EventType, LivePackageEvent } from "@/lib/graphql/types";
 
-// TypeScript types
-interface LiveEvent {
+// TypeScript types for legacy simulation fallback
+interface SimulatedEvent {
   id: string;
   package: string;
   ecosystem: "CARGO" | "NPM" | "PY_PI";
@@ -63,13 +72,35 @@ const EVENT_TYPE_OPTIONS = [
   { value: "yank", label: "Yanked", icon: Trash2, color: "text-warning" },
 ];
 
-// Generate random realistic version
+// Map live event type to display type
+function mapEventType(type: EventType | string): "publish" | "update" | "yank" {
+  switch (type) {
+    case "PUBLISH": return "publish";
+    case "UPDATE": return "update";
+    case "YANK": 
+    case "DEPRECATE": return "yank";
+    default: return "publish";
+  }
+}
+
+// Convert live event to display format
+function toDisplayEvent(event: LivePackageEvent): SimulatedEvent {
+  return {
+    id: event.id,
+    package: event.package.name,
+    ecosystem: event.package.ecosystem as "CARGO" | "NPM" | "PY_PI",
+    version: event.version,
+    time: new Date(event.timestamp),
+    type: mapEventType(event.type),
+  };
+}
+
+// Generate random realistic version for fallback
 const generateVersion = (ecosystem: string): string => {
   const major = Math.floor(Math.random() * 5);
   const minor = Math.floor(Math.random() * 30);
   const patch = Math.floor(Math.random() * 20);
   
-  // Some ecosystems use pre-release versions more often
   if (ecosystem === "NPM" && Math.random() > 0.9) {
     return `${major}.${minor}.${patch}-beta.${Math.floor(Math.random() * 5)}`;
   }
@@ -80,48 +111,65 @@ const generateVersion = (ecosystem: string): string => {
   return `${major}.${minor}.${patch}`;
 };
 
-// Initial mock events
-const generateInitialEvents = (): LiveEvent[] => {
-  return [
-    { id: "1", package: "tokio", ecosystem: "CARGO", version: "1.40.0", time: new Date(Date.now() - 5000), type: "publish" },
-    { id: "2", package: "express", ecosystem: "NPM", version: "4.21.0", time: new Date(Date.now() - 10000), type: "update" },
-    { id: "3", package: "requests", ecosystem: "PY_PI", version: "2.32.3", time: new Date(Date.now() - 15000), type: "publish" },
-    { id: "4", package: "serde", ecosystem: "CARGO", version: "1.0.210", time: new Date(Date.now() - 20000), type: "publish" },
-    { id: "5", package: "flask", ecosystem: "PY_PI", version: "3.0.3", time: new Date(Date.now() - 25000), type: "update" },
-  ];
-};
-
 export default function LivePage() {
   const router = useRouter();
-  const [events, setEvents] = useState<LiveEvent[]>([]);
+  const connectionStatus = useConnectionStatus();
   const [isPaused, setIsPaused] = useState(false);
   const [selectedEcosystem, setSelectedEcosystem] = useState("ALL");
   const [selectedEventType, setSelectedEventType] = useState("ALL");
   const [soundEnabled, setSoundEnabled] = useState(false);
+  const [useFallback, setUseFallback] = useState(false);
+  
+  // Simulated events state (fallback mode)
+  const [simulatedEvents, setSimulatedEvents] = useState<SimulatedEvent[]>([]);
   const eventIdRef = useRef(10);
   const startTimeRef = useRef(Date.now());
 
-  // Statistics
-  const stats = useMemo(() => {
-    const byEcosystem = events.reduce((acc, e) => {
-      acc[e.ecosystem] = (acc[e.ecosystem] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    const byType = events.reduce((acc, e) => {
-      acc[e.type] = (acc[e.type] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    
-    // Calculate events per minute
-    const elapsedMinutes = Math.max(1, (Date.now() - startTimeRef.current) / 60000);
-    const eventsPerMinute = Math.round((events.length / elapsedMinutes) * 10) / 10;
-    
-    return { byEcosystem, byType, total: events.length, eventsPerMinute };
-  }, [events]);
+  // Convert filter values to subscription variables
+  const ecosystemFilter = selectedEcosystem === "ALL" 
+    ? undefined 
+    : [selectedEcosystem as Ecosystem];
+  const eventTypeFilter = selectedEventType === "ALL"
+    ? undefined
+    : [selectedEventType.toUpperCase() as EventType];
 
-  // Generate a new random event
-  const generateEvent = useCallback((): LiveEvent => {
+  // Real-time subscription hook
+  const { 
+    events: liveEvents, 
+    stats: liveStats, 
+    loading: liveLoading,
+    error: liveError,
+    clearEvents: clearLiveEvents,
+  } = useLivePackageActivity({
+    ecosystems: ecosystemFilter,
+    eventTypes: eventTypeFilter,
+    paused: isPaused || useFallback,
+    onEvent: (event) => {
+      // Play sound notification if enabled
+      if (soundEnabled && typeof window !== 'undefined') {
+        // Could add subtle notification sound here
+      }
+    },
+  });
+
+  // Breaking changes subscription
+  const { 
+    breakingChanges,
+    unreadCount: breakingChangesCount,
+  } = useBreakingChanges({
+    paused: isPaused || useFallback,
+  });
+
+  // Auto-fallback if subscription fails
+  useEffect(() => {
+    if (liveError && !useFallback) {
+      console.warn("[Live] Subscription error, falling back to simulation:", liveError);
+      setUseFallback(true);
+    }
+  }, [liveError, useFallback]);
+
+  // Generate a simulated event (fallback mode)
+  const generateEvent = useCallback((): SimulatedEvent => {
     const ecosystemIndex = Math.floor(Math.random() * ALL_ECOSYSTEMS.length);
     const ecosystem = ALL_ECOSYSTEMS[ecosystemIndex]!;
     const packages = PACKAGE_NAMES[ecosystem]!;
@@ -139,27 +187,47 @@ export default function LivePage() {
     };
   }, []);
 
-  // Simulate incoming events
+  // Simulate incoming events (fallback mode only)
   useEffect(() => {
-    if (isPaused) return;
+    if (!useFallback || isPaused) return;
 
     const interval = setInterval(() => {
       const newEvent = generateEvent();
-      setEvents((prev) => [newEvent, ...prev].slice(0, 100));
-      
-      // Play sound if enabled (optional UX feature)
-      if (soundEnabled && typeof window !== 'undefined') {
-        // Could add subtle notification sound here
-      }
+      setSimulatedEvents((prev) => [newEvent, ...prev].slice(0, 100));
     }, 1500 + Math.random() * 2500);
 
     return () => clearInterval(interval);
-  }, [isPaused, generateEvent, soundEnabled]);
+  }, [useFallback, isPaused, generateEvent]);
 
-  // Initialize with some events
-  useEffect(() => {
-    setEvents(generateInitialEvents());
-  }, []);
+  // Combine events from live or fallback source
+  const displayEvents = useMemo(() => {
+    if (useFallback) {
+      return simulatedEvents;
+    }
+    // Convert live events to display format
+    return liveEvents.map(toDisplayEvent);
+  }, [useFallback, simulatedEvents, liveEvents]);
+
+  // Statistics
+  const stats = useMemo(() => {
+    const events = displayEvents;
+    const byEcosystem = events.reduce((acc, e) => {
+      acc[e.ecosystem] = (acc[e.ecosystem] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const byType = events.reduce((acc, e) => {
+      acc[e.type] = (acc[e.type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    
+    const elapsedMinutes = Math.max(1, (Date.now() - startTimeRef.current) / 60000);
+    const eventsPerMinute = useFallback 
+      ? Math.round((events.length / elapsedMinutes) * 10) / 10
+      : liveStats.eventsPerMinute;
+    
+    return { byEcosystem, byType, total: events.length, eventsPerMinute };
+  }, [displayEvents, useFallback, liveStats]);
 
   // Navigation handlers
   const navigateToGraph = useCallback((ecosystem: string, pkg: string) => {
@@ -171,12 +239,33 @@ export default function LivePage() {
   }, [router]);
 
   const filteredEvents = useMemo(() => {
-    return events.filter((e) => {
+    return displayEvents.filter((e) => {
       const ecosystemMatch = selectedEcosystem === "ALL" || e.ecosystem === selectedEcosystem;
       const typeMatch = selectedEventType === "ALL" || e.type === selectedEventType;
       return ecosystemMatch && typeMatch;
     });
-  }, [events, selectedEcosystem, selectedEventType]);
+  }, [displayEvents, selectedEcosystem, selectedEventType]);
+
+  const clearEvents = useCallback(() => {
+    if (useFallback) {
+      setSimulatedEvents([]);
+    } else {
+      clearLiveEvents();
+    }
+    startTimeRef.current = Date.now();
+  }, [useFallback, clearLiveEvents]);
+
+  const toggleFallback = useCallback(() => {
+    setUseFallback(prev => !prev);
+    if (!useFallback) {
+      // Switching to fallback, clear live events
+      clearLiveEvents();
+    } else {
+      // Switching to live, clear simulated
+      setSimulatedEvents([]);
+    }
+    startTimeRef.current = Date.now();
+  }, [useFallback, clearLiveEvents]);
 
   const formatTime = (date: Date) => {
     const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -198,14 +287,37 @@ export default function LivePage() {
           <h1 className="text-3xl font-bold theme-text-primary flex items-center gap-3">
             <Activity className="w-8 h-8 text-accent-400" />
             Live Feed
+            <ConnectionIndicator 
+              status={useFallback ? "disconnected" : connectionStatus} 
+              size="sm"
+            />
           </h1>
           <p className="theme-text-muted mt-1">
-            Real-time package version updates across ecosystems
+            {useFallback 
+              ? "Demo mode - simulated events" 
+              : "Real-time package version updates across ecosystems"
+            }
           </p>
         </div>
 
         {/* Controls */}
         <div className="flex items-center gap-3">
+          {/* Breaking Changes Badge */}
+          {breakingChangesCount > 0 && (
+            <motion.button
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="relative btn-secondary flex items-center gap-2 border-danger/50 text-danger"
+              onClick={() => router.push("/breaking-changes")}
+            >
+              <AlertTriangle className="w-4 h-4" />
+              <span className="hidden sm:inline">Breaking Changes</span>
+              <span className="absolute -top-2 -right-2 bg-danger text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+                {breakingChangesCount}
+              </span>
+            </motion.button>
+          )}
+          
           <button
             onClick={() => setIsPaused(!isPaused)}
             className={cn(
@@ -226,7 +338,7 @@ export default function LivePage() {
             )}
           </button>
           <button
-            onClick={() => setEvents([])}
+            onClick={clearEvents}
             className="btn-secondary flex items-center gap-2"
           >
             <Trash2 className="w-4 h-4" />
@@ -241,6 +353,18 @@ export default function LivePage() {
             title={soundEnabled ? "Disable notifications" : "Enable notifications"}
           >
             {soundEnabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+          </button>
+          {/* Toggle between live and demo mode */}
+          <button
+            onClick={toggleFallback}
+            className={cn(
+              "btn-secondary flex items-center gap-2",
+              !useFallback && "border-success/50 text-success"
+            )}
+            title={useFallback ? "Switch to live mode" : "Switch to demo mode"}
+          >
+            <RefreshCw className={cn("w-4 h-4", !useFallback && "animate-spin-slow")} />
+            <span className="hidden sm:inline">{useFallback ? "Go Live" : "Demo"}</span>
           </button>
         </div>
       </motion.div>
@@ -337,7 +461,7 @@ export default function LivePage() {
             </div>
             <div className="w-px h-6 theme-border" />
             <span className="text-sm theme-text-muted">
-              {filteredEvents.length} of {events.length} events
+              {filteredEvents.length} of {displayEvents.length} events
             </span>
           </div>
 

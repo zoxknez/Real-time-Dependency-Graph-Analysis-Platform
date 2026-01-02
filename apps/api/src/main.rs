@@ -6,6 +6,7 @@
 //! - REST endpoints for health checks & metrics
 //! - JWT-based authentication (optional)
 //! - Rate limiting and query complexity limits
+//! - Security headers and audit logging
 
 mod cache;
 mod config;
@@ -34,6 +35,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 use crate::config::Config;
 use crate::gql::ApiSchema;
 use crate::handlers::AppState;
+use crate::middleware::security_headers::SecurityHeadersLayer;
+#[allow(unused_imports)]
 use crate::middleware::create_rate_limiter;
 
 /// Combined app state
@@ -64,8 +67,8 @@ async fn main() -> Result<()> {
         "Configuration loaded"
     );
 
-    // Build GraphQL schema (returns graph and cache clients too)
-    let (schema, event_tx, graph, cache) = gql::build_schema(&config).await?;
+    // Build GraphQL schema (returns channels and clients)
+    let (schema, channels, graph, cache) = gql::build_schema(&config).await?;
 
     // Create app state for health checks
     let app_state = AppState {
@@ -75,9 +78,9 @@ async fn main() -> Result<()> {
 
     // Start Kafka consumer for subscriptions in background
     let kafka_config = config.kafka.clone();
-    let kafka_event_tx = event_tx.clone();
+    let kafka_channels = channels.clone();
     tokio::spawn(async move {
-        if let Err(e) = kafka::start_event_consumer(&kafka_config, kafka_event_tx).await {
+        if let Err(e) = kafka::start_event_consumer(&kafka_config, kafka_channels).await {
             tracing::error!("Kafka consumer error: {}", e);
         }
     });
@@ -88,6 +91,9 @@ async fn main() -> Result<()> {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    // Security headers middleware
+    let security_headers = SecurityHeadersLayer::default_headers();
+
     // Create combined state
     let combined_state = CombinedState {
         schema,
@@ -95,11 +101,12 @@ async fn main() -> Result<()> {
         rate_limit_rpm: config.guardrails.rate_limit_rpm,
     };
 
-    // Build router - simple flat structure
+    // Build router with security layers
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))
         .route("/graphql", get(graphql_playground).post(graphql_handler))
+        .layer(security_headers)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(combined_state);

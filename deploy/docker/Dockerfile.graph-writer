@@ -1,0 +1,33 @@
+# Build stage
+FROM rust:1.75-bookworm AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY Cargo.toml Cargo.lock ./
+COPY packages packages
+COPY apps apps
+
+RUN cargo build --release -p graph-writer
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/graph-writer /app/graph-writer
+
+RUN groupadd -r idp && useradd -r -g idp idp
+USER idp
+
+CMD ["/app/graph-writer"]

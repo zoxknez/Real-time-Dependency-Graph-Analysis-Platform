@@ -1,36 +1,98 @@
 //! Vector Writer Service - Qdrant vector database writer
 //!
 //! Responsibilities:
-//! - Consume curated events from Redpanda
+//! - Consume embedding events from Redpanda
 //! - Upsert vectors with metadata to Qdrant
 //! - Handle failures with exponential backoff
-//! - Idempotent upserts using event_id
+//! - Idempotent upserts using stable point IDs
 
-mod writer;
-mod consumer;
 mod config;
+mod consumer;
+mod writer;
 
-use anyhow::Result;
-use tracing::info;
+use anyhow::{Context, Result};
+use std::sync::Arc;
+use tokio::sync::watch;
+use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+use crate::config::Config;
+use crate::consumer::EventConsumer;
+use crate::writer::{VectorWriter, VectorWriterConfig};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Initialize tracing
     tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,vector_writer=debug".into()))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     info!("🔢 Starting Vector Writer Service");
-    
-    // TODO: Connect to Qdrant
-    // TODO: Initialize Kafka consumer for curated topic
-    // TODO: Start writer workers with backoff
-    
+
+    // Load configuration
+    let config = Config::from_env().context("Failed to load configuration")?;
+
+    info!(
+        qdrant_url = %config.qdrant.url,
+        kafka_brokers = %config.kafka.brokers,
+        "Configuration loaded"
+    );
+
+    // Create shutdown channel
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    // Initialize Vector Writer
+    let writer_config = VectorWriterConfig {
+        url: config.qdrant.url.clone(),
+        collection: config.qdrant.collection.clone(),
+        dimension: config.qdrant.dimension,
+        batch_size: config.qdrant.batch_size,
+        max_retries: config.qdrant.max_retries,
+        retry_delay_ms: config.qdrant.retry_delay_ms,
+        max_concurrent: config.qdrant.max_concurrent,
+    };
+
+    let writer = Arc::new(
+        VectorWriter::new(writer_config)
+            .await
+            .context("Failed to initialize Vector Writer")?,
+    );
+
+    // Initialize Kafka consumer
+    let consumer = EventConsumer::new(&config.kafka, writer.clone())
+        .await
+        .context("Failed to create Kafka consumer")?;
+
+    // Spawn consumer task
+    let consumer_handle = {
+        let shutdown_rx = shutdown_rx.clone();
+        tokio::spawn(async move {
+            if let Err(e) = consumer.run(shutdown_rx).await {
+                error!(error = %e, "Consumer error");
+            }
+        })
+    };
+
     info!("✅ Vector Writer Service started successfully");
-    
+    info!("📡 Consuming from topic: {}", config.kafka.topic);
+    info!("🎯 Writing to Qdrant: {}", config.qdrant.url);
+
+    // Wait for shutdown signal
     tokio::signal::ctrl_c().await?;
-    info!("👋 Shutting down Vector Writer Service");
-    
+    info!("🛑 Shutdown signal received");
+
+    // Signal shutdown
+    let _ = shutdown_tx.send(true);
+
+    // Wait for consumer to finish (with timeout)
+    let shutdown_timeout = tokio::time::Duration::from_secs(30);
+    match tokio::time::timeout(shutdown_timeout, consumer_handle).await {
+        Ok(Ok(())) => info!("Consumer stopped gracefully"),
+        Ok(Err(e)) => error!(error = %e, "Consumer task panicked"),
+        Err(_) => error!("Consumer shutdown timed out"),
+    }
+
+    info!("👋 Vector Writer Service shutdown complete");
     Ok(())
 }

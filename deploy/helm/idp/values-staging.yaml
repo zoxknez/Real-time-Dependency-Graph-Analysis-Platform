@@ -1,0 +1,152 @@
+# ═══════════════════════════════════════════════════════════════
+# STAGING ENVIRONMENT OVERRIDES
+# ═══════════════════════════════════════════════════════════════
+
+global:
+  environment: staging
+  image:
+    tag: develop
+
+# ═══════════════════════════════════════════════════════════════
+# REDUCED REPLICAS FOR STAGING
+# ═══════════════════════════════════════════════════════════════
+
+api:
+  replicaCount: 2
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+  env:
+    RUST_LOG: "debug,api=trace"
+
+frontend:
+  replicaCount: 1
+  autoscaling:
+    enabled: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+ingestion:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+graphWriter:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+vectorWriter:
+  replicaCount: 1
+
+analysis:
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+syncer:
+  replicaCount: 1
+
+# ═══════════════════════════════════════════════════════════════
+# INGRESS - STAGING DOMAIN
+# ═══════════════════════════════════════════════════════════════
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+  hosts:
+    - host: staging.idp.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: frontend
+        - path: /graphql
+          pathType: Prefix
+          service: api
+        - path: /health
+          pathType: Exact
+          service: api
+  tls:
+    - secretName: idp-staging-tls
+      hosts:
+        - staging.idp.example.com
+
+# ═══════════════════════════════════════════════════════════════
+# STAGING DEPENDENCIES
+# ═══════════════════════════════════════════════════════════════
+
+redis:
+  enabled: true
+  master:
+    persistence:
+      size: 2Gi
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 512Mi
+
+memgraph:
+  enabled: false
+  external:
+    host: memgraph-staging.example.com
+    port: 7687
+
+qdrant:
+  enabled: false
+  external:
+    host: qdrant-staging.example.com
+    port: 6334
+
+kafka:
+  enabled: false
+  external:
+    brokers: "kafka-staging.example.com:9092"
+
+# ═══════════════════════════════════════════════════════════════
+# MONITORING - LIGHTER FOR STAGING
+# ═══════════════════════════════════════════════════════════════
+
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 60s
+  prometheusRule:
+    enabled: false  # No alerting in staging

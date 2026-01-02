@@ -1,0 +1,270 @@
+# Docker Compose for IDP Application Services
+# Use alongside main docker-compose.yml: docker-compose -f docker-compose.yml -f docker-compose.apps.yml up
+version: '3.8'
+
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # API SERVICE - GraphQL Gateway
+  # ═══════════════════════════════════════════════════════════════
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.api
+    container_name: idp-api
+    ports:
+      - "8000:8080"
+    environment:
+      # Server
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8080
+      - RUST_LOG=info,api=debug
+      
+      # Memgraph
+      - MEMGRAPH_URI=bolt://memgraph:7687
+      - MEMGRAPH_USER=
+      - MEMGRAPH_PASSWORD=
+      
+      # Redis
+      - REDIS_URL=redis://redis:6379
+      - REDIS_CACHE_TTL_SECS=300
+      
+      # Kafka
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_TOPIC=domain.package.events.v1
+      
+      # Guardrails
+      - RATE_LIMIT_RPM=100
+      - MAX_QUERY_DEPTH=15
+      - MAX_QUERY_COMPLEXITY=1000
+      
+      # JWT (optional)
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      
+      # Tracing
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+    depends_on:
+      memgraph:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - default
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # FRONTEND - Next.js Dashboard
+  # ═══════════════════════════════════════════════════════════════
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.frontend
+    container_name: idp-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8000/graphql
+      - NEXT_PUBLIC_WS_ENDPOINT=ws://localhost:8000/graphql/ws
+      - NODE_ENV=production
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - default
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # INGESTION SERVICE - Registry Crawlers
+  # ═══════════════════════════════════════════════════════════════
+  ingestion:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.ingestion
+    container_name: idp-ingestion
+    environment:
+      - RUST_LOG=info,ingestion=debug
+      
+      # Kafka
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_TOPIC=domain.package.events.v1
+      
+      # PostgreSQL (outbox)
+      - DATABASE_URL=postgres://idp:idp_secret@postgres:5432/inverse_deps
+      
+      # Registry crawl intervals (seconds)
+      - NPM_CRAWL_INTERVAL=300
+      - PYPI_CRAWL_INTERVAL=300
+      - CARGO_CRAWL_INTERVAL=300
+      
+      # Tracing
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    networks:
+      - default
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # ANALYSIS SERVICE - AST Parsing & Breaking Change Detection
+  # ═══════════════════════════════════════════════════════════════
+  analysis:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.analysis
+    container_name: idp-analysis
+    environment:
+      - RUST_LOG=info,analysis=debug
+      
+      # Kafka
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_INPUT_TOPIC=domain.package.events.v1
+      - KAFKA_OUTPUT_TOPIC=domain.analysis.events.v1
+      - KAFKA_CONSUMER_GROUP=analysis-service-cg
+      
+      # Workers
+      - ANALYSIS_WORKERS=4
+      - PARSE_TIMEOUT_SECS=30
+      
+      # Embeddings
+      - EMBEDDING_PROVIDER=local
+      - EMBEDDING_MODEL_PATH=/models/minilm
+      
+      # Tracing
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+    volumes:
+      - ./models:/models:ro
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    networks:
+      - default
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  # ═══════════════════════════════════════════════════════════════
+  # GRAPH WRITER - Memgraph Writer
+  # ═══════════════════════════════════════════════════════════════
+  graph-writer:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.graph-writer
+    container_name: idp-graph-writer
+    environment:
+      - RUST_LOG=info,graph_writer=debug
+      
+      # Kafka
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_TOPIC=domain.package.events.v1
+      - KAFKA_CONSUMER_GROUP=graph-writer-cg
+      
+      # Memgraph
+      - MEMGRAPH_URI=bolt://memgraph:7687
+      - MEMGRAPH_USER=
+      - MEMGRAPH_PASSWORD=
+      
+      # Batch settings
+      - BATCH_SIZE=100
+      - FLUSH_INTERVAL_SECS=5
+      
+      # Tracing
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+    depends_on:
+      memgraph:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    networks:
+      - default
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # VECTOR WRITER - Qdrant Writer
+  # ═══════════════════════════════════════════════════════════════
+  vector-writer:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.vector-writer
+    container_name: idp-vector-writer
+    environment:
+      - RUST_LOG=info,vector_writer=debug
+      
+      # Kafka
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_TOPIC=domain.analysis.events.v1
+      - KAFKA_CONSUMER_GROUP=vector-writer-cg
+      
+      # Qdrant
+      - QDRANT_URL=http://qdrant:6334
+      - QDRANT_COLLECTION=package_embeddings
+      
+      # Batch settings
+      - BATCH_SIZE=100
+      
+      # Tracing
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    networks:
+      - default
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # SYNCER - Multi-store Sync
+  # ═══════════════════════════════════════════════════════════════
+  syncer:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.syncer
+    container_name: idp-syncer
+    environment:
+      - RUST_LOG=info,syncer=debug
+      
+      # RisingWave
+      - RISINGWAVE_URI=postgres://root@risingwave:4566/dev
+      
+      # Memgraph
+      - MEMGRAPH_URI=bolt://memgraph:7687
+      
+      # Qdrant
+      - QDRANT_URL=http://qdrant:6334
+      
+      # Sync interval
+      - SYNC_INTERVAL_SECS=60
+      
+      # Tracing
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+    depends_on:
+      risingwave:
+        condition: service_healthy
+      memgraph:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - default
+    restart: unless-stopped
+
+networks:
+  default:
+    external: true
+    name: idp-network

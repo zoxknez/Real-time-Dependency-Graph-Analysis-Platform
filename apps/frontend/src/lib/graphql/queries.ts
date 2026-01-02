@@ -197,3 +197,132 @@ export const VERSION_EVENTS_SUBSCRIPTION = gql`
   }
   ${PACKAGE_FRAGMENT}
 `;
+
+// Real-time package activity subscription (matches backend newVersion)
+export const NEW_VERSION_SUBSCRIPTION = gql`
+  subscription OnNewVersion(
+    $ecosystem: Ecosystem
+    $packageId: ID
+  ) {
+    newVersion(ecosystem: $ecosystem, packageId: $packageId) {
+      meta {
+        eventId
+        occurredAt
+        source
+      }
+      package {
+        ...PackageFields
+      }
+      version {
+        id
+        packageId
+        version
+        publishedAt
+        yanked
+      }
+    }
+  }
+  ${PACKAGE_FRAGMENT}
+`;
+
+// Alias for backwards compatibility
+export const LIVE_PACKAGE_ACTIVITY = NEW_VERSION_SUBSCRIPTION;
+
+// Breaking change detection subscription
+export const BREAKING_CHANGE_DETECTED = gql`
+  subscription OnBreakingChangeDetected(
+    $ecosystem: Ecosystem
+    $packageId: ID
+    $minSeverity: BreakingSeverity
+  ) {
+    breakingChangeDetected(
+      ecosystem: $ecosystem
+      packageId: $packageId
+      minSeverity: $minSeverity
+    ) {
+      timestamp
+      package {
+        ...PackageFields
+      }
+      fromVersion
+      toVersion
+      severity
+      changes {
+        changeType
+        description
+        path
+        oldSignature
+        newSignature
+      }
+      affectedDependents
+    }
+  }
+  ${PACKAGE_FRAGMENT}
+`;
+
+// Live platform statistics subscription
+export const LIVE_STATS = gql`
+  subscription OnLiveStats {
+    liveStats {
+      timestamp
+      packagesIndexed
+      versionsIndexed
+      dependenciesTracked
+      eventsPerMinute
+      activeConnections
+      topEcosystems {
+        ecosystem
+        count
+        change24h
+      }
+    }
+  }
+`;
+
+// Dependency impact subscription
+export const DEPENDENCY_IMPACT = gql`
+  subscription OnDependencyImpact(
+    $ecosystem: Ecosystem
+    $minImpactScore: Float
+  ) {
+    dependencyImpact(ecosystem: $ecosystem, minImpactScore: $minImpactScore) {
+      timestamp
+      package {
+        ...PackageFields
+      }
+      version
+      impactScore
+      affectedPackages
+      affectedVersions
+      criticalPath
+    }
+  }
+  ${PACKAGE_FRAGMENT}
+`;
+
+// Watch specific packages for updates (alias for newVersion with packageId)
+export const WATCH_PACKAGES = gql`
+  subscription OnWatchPackages($packageId: ID!) {
+    newVersion(packageId: $packageId) {
+      meta {
+        eventId
+        occurredAt
+        source
+      }
+      package {
+        ...PackageFields
+      }
+      version {
+        id
+        packageId
+        version
+        publishedAt
+        yanked
+      }
+    }
+  }
+  ${PACKAGE_FRAGMENT}
+`;
+
+// Dependency graph update subscription (for live graph updates)
+export const DEPENDENCY_GRAPH_UPDATES = DEPENDENCY_IMPACT;

@@ -8,4 +8,6 @@ pub mod schema;
 pub mod context;
 
 pub use schema::{build_schema, ApiSchema};
-pub use context::GqlContext;
+// GqlContext and EventChannels re-exported for external use
+#[allow(unused_imports)]
+pub use context::{GqlContext, EventChannels};

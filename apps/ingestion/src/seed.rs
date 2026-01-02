@@ -4,15 +4,14 @@
 //! - PyPI JSON API: https://pypi.org/pypi/{package}/json
 //! - Cargo Sparse Index: https://index.crates.io/{prefix}/{name}
 
-use anyhow::{Context, Result};
-use chrono::Utc;
+use anyhow::Result;
 use prost::Message as ProstMessage;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::{info, warn, error};
+use tracing::{info, error};
 use uuid::Uuid;
 
 use crate::proto_gen::domain::package::v1::{VersionUpserted, Dependency};
@@ -395,6 +394,7 @@ struct PypiPackageJson {
 
 #[derive(Debug, Deserialize)]
 struct PypiInfoJson {
+    #[allow(dead_code)]
     name: String,
     version: String,
     summary: Option<String>,
@@ -418,6 +418,7 @@ struct PypiVersionInfo {
 
 #[derive(Debug, Deserialize)]
 struct CargoIndexEntry {
+    #[allow(dead_code)]
     name: String,
     #[serde(rename = "vers")]
     vers: String,
@@ -485,6 +486,7 @@ fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
         .cmp(&semver::Version::parse(b).ok())
 }
 
+#[allow(dead_code)]
 fn parse_pypi_dep(spec: &str) -> Option<serde_json::Value> {
     // Simple PEP 508 parsing
     let spec = spec.trim();

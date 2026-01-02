@@ -1,0 +1,25 @@
+# Patterns to ignore when building packages.
+.git
+.gitignore
+.helmignore
+.DS_Store
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+# IDE
+.idea/
+.vscode/
+*.iml
+# CI/CD
+.github/
+.gitlab-ci.yml
+Jenkinsfile
+# Docker
+Dockerfile
+docker-compose*.yml
+# Development
+*.md
+!README.md
+tests/

@@ -22,6 +22,7 @@ import { EcosystemChart } from "@/components/dashboard/ecosystem-chart";
 import { QuickActions } from "@/components/dashboard/quick-actions";
 import { RecentActivity } from "@/components/dashboard/recent-activity";
 import { TopPackages } from "@/components/dashboard/top-packages";
+import { LiveStatsCard } from "@/components/dashboard/live-stats";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -152,19 +153,27 @@ export default function DashboardPage() {
           <EcosystemChart />
         </motion.div>
 
+        {/* Live Stats - Real-time Activity */}
+        <motion.div variants={itemVariants}>
+          <LiveStatsCard />
+        </motion.div>
+      </div>
+
+      {/* Middle Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Quick Actions */}
         <motion.div variants={itemVariants}>
           <QuickActions />
         </motion.div>
+        
+        {/* Top Packages */}
+        <motion.div variants={itemVariants} className="lg:col-span-2">
+          <TopPackages />
+        </motion.div>
       </div>
 
       {/* Bottom Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top Packages */}
-        <motion.div variants={itemVariants}>
-          <TopPackages />
-        </motion.div>
-
+      <div className="grid grid-cols-1 gap-6">
         {/* Recent Activity */}
         <motion.div variants={itemVariants}>
           <RecentActivity />

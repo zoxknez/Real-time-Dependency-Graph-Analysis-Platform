@@ -1,5 +1,7 @@
 //! Rate limiting middleware for GraphQL API
 
+#![allow(dead_code)]
+
 use axum::{
     body::Body,
     extract::State,

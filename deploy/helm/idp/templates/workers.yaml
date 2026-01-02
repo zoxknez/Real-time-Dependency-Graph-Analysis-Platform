@@ -1,0 +1,302 @@
+{{/*
+═══════════════════════════════════════════════════════════════
+GRAPH WRITER DEPLOYMENT
+═══════════════════════════════════════════════════════════════
+*/}}
+{{- if .Values.graphWriter.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "idp.fullname" . }}-graph-writer
+  labels:
+    {{- include "idp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: graph-writer
+spec:
+  replicas: {{ .Values.graphWriter.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "idp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: graph-writer
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+      labels:
+        {{- include "idp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: graph-writer
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "idp.fullname" . }}
+      securityContext:
+        {{- include "idp.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: graph-writer
+          image: {{ include "idp.image" (dict "global" .Values.global "service" .Values.graphWriter) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "idp.containerSecurityContext" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: ENVIRONMENT
+              value: {{ .Values.global.environment }}
+            {{- range $key, $value := .Values.graphWriter.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+            {{- include "idp.memgraphEnv" . | nindent 12 }}
+            {{- include "idp.kafkaEnv" . | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.graphWriter.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}
+---
+{{/*
+═══════════════════════════════════════════════════════════════
+VECTOR WRITER DEPLOYMENT
+═══════════════════════════════════════════════════════════════
+*/}}
+{{- if .Values.vectorWriter.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "idp.fullname" . }}-vector-writer
+  labels:
+    {{- include "idp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vector-writer
+spec:
+  replicas: {{ .Values.vectorWriter.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "idp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vector-writer
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+      labels:
+        {{- include "idp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: vector-writer
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "idp.fullname" . }}
+      securityContext:
+        {{- include "idp.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: vector-writer
+          image: {{ include "idp.image" (dict "global" .Values.global "service" .Values.vectorWriter) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "idp.containerSecurityContext" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: ENVIRONMENT
+              value: {{ .Values.global.environment }}
+            {{- include "idp.qdrantEnv" . | nindent 12 }}
+            {{- include "idp.kafkaEnv" . | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.vectorWriter.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}
+---
+{{/*
+═══════════════════════════════════════════════════════════════
+ANALYSIS SERVICE DEPLOYMENT
+═══════════════════════════════════════════════════════════════
+*/}}
+{{- if .Values.analysis.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "idp.fullname" . }}-analysis
+  labels:
+    {{- include "idp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: analysis
+spec:
+  replicas: {{ .Values.analysis.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "idp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: analysis
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+      labels:
+        {{- include "idp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: analysis
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "idp.fullname" . }}
+      securityContext:
+        {{- include "idp.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: analysis
+          image: {{ include "idp.image" (dict "global" .Values.global "service" .Values.analysis) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "idp.containerSecurityContext" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: ENVIRONMENT
+              value: {{ .Values.global.environment }}
+            {{- include "idp.memgraphEnv" . | nindent 12 }}
+            {{- include "idp.qdrantEnv" . | nindent 12 }}
+            {{- include "idp.kafkaEnv" . | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.analysis.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: models
+              mountPath: /app/models
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: models
+          emptyDir:
+            sizeLimit: 10Gi
+{{- end }}
+---
+{{/*
+═══════════════════════════════════════════════════════════════
+SYNCER SERVICE DEPLOYMENT
+═══════════════════════════════════════════════════════════════
+*/}}
+{{- if .Values.syncer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "idp.fullname" . }}-syncer
+  labels:
+    {{- include "idp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: syncer
+spec:
+  replicas: {{ .Values.syncer.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "idp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: syncer
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+      labels:
+        {{- include "idp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: syncer
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "idp.fullname" . }}
+      securityContext:
+        {{- include "idp.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: syncer
+          image: {{ include "idp.image" (dict "global" .Values.global "service" .Values.syncer) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "idp.containerSecurityContext" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: ENVIRONMENT
+              value: {{ .Values.global.environment }}
+            {{- include "idp.memgraphEnv" . | nindent 12 }}
+            {{- include "idp.risingwaveEnv" . | nindent 12 }}
+            {{- include "idp.kafkaEnv" . | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.syncer.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

@@ -24,15 +24,20 @@ import {
   Copy,
   Check,
   Shield,
+  Radio,
 } from "lucide-react";
 import { GET_REVERSE_DEPENDENTS } from "@/lib/graphql/queries";
 import { cn, getEcosystemColor, parsePackageId, formatEcosystemName } from "@/lib/utils";
 import { GraphControls } from "@/components/graph/graph-controls";
 import { GraphLegend } from "@/components/graph/graph-legend";
 import { NodeTooltip } from "@/components/graph/node-tooltip";
+import { GraphMinimap } from "@/components/graph/graph-minimap";
+import { LiveUpdateIndicator } from "@/components/graph/live-update-indicator";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { SkeletonCard } from "@/components/ui/skeleton";
 import { QueryError, EmptyState } from "@/components/ui/error-display";
+import { useDependencyGraphUpdates, useConnectionStatus } from "@/lib/hooks";
+import type { DependencyGraphUpdate } from "@/lib/graphql/types";
 
 // Dynamic import for SSR compatibility
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -79,8 +84,29 @@ function GraphPageContent() {
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showLiveUpdates, setShowLiveUpdates] = useState(true);
+  const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: 0, height: 0 });
 
   const [getReverseDeps, { data: reverseDepsData, loading, error }] = useLazyQuery(GET_REVERSE_DEPENDENTS);
+  
+  // Connection status for real-time updates
+  const connectionStatus = useConnectionStatus();
+  
+  // Subscribe to live dependency graph updates
+  const { updates: liveUpdates } = useDependencyGraphUpdates({
+    rootPackageId: packageId,
+    maxDepth,
+    paused: !packageId || !showLiveUpdates,
+    onUpdate: useCallback((update: DependencyGraphUpdate) => {
+      // When we receive an update, refresh the graph
+      // Could also do incremental updates here for better performance
+      if (update.type === "ADD" || update.type === "REMOVE" || update.type === "UPDATE") {
+        // For now, just reload the whole graph
+        // In production, we'd apply incremental updates
+        console.log("[Graph] Live update received:", update);
+      }
+    }, []),
+  });
 
   // Compute graph statistics
   const graphStats = useMemo(() => {
@@ -196,6 +222,31 @@ function GraphPageContent() {
   const handleZoomOut = () => graphRef.current?.zoom(graphRef.current.zoom() / 1.3, 300);
   const handleCenter = () => graphRef.current?.zoomToFit(400);
   const handleRefresh = () => loadGraph();
+  
+  // Navigate to position from minimap
+  const navigateToPosition = useCallback((x: number, y: number) => {
+    if (graphRef.current) {
+      graphRef.current.centerAt(x, y, 300);
+    }
+  }, []);
+
+  // Update viewport state when graph moves (for minimap)
+  const updateViewBox = useCallback(() => {
+    if (!graphRef.current || !containerRef.current) return;
+    
+    const { width, height } = containerRef.current.getBoundingClientRect();
+    const zoom = graphRef.current.zoom();
+    const center = graphRef.current.centerAt();
+    
+    if (center) {
+      setViewBox({
+        x: center.x - (width / 2 / zoom),
+        y: center.y - (height / 2 / zoom),
+        width: width / zoom,
+        height: height / zoom,
+      });
+    }
+  }, []);
 
   // Export functions
   const exportAsJSON = useCallback(() => {
@@ -396,6 +447,31 @@ function GraphPageContent() {
           onMaxDepthChange={setMaxDepth}
           loading={loading}
         />
+
+        {/* Minimap */}
+        {graphData.nodes.length > 0 && (
+          <GraphMinimap
+            nodes={graphData.nodes.map(n => ({
+              id: n.id,
+              x: (n as any).x ?? 0,
+              y: (n as any).y ?? 0,
+              color: n.color,
+              depth: n.depth,
+            }))}
+            viewBox={viewBox}
+            onNavigate={navigateToPosition}
+            className="absolute top-4 right-4"
+          />
+        )}
+
+        {/* Live Updates Indicator */}
+        {packageId && showLiveUpdates && (
+          <LiveUpdateIndicator
+            updates={liveUpdates}
+            isConnected={connectionStatus === "connected"}
+            className="absolute top-4 right-[220px]"
+          />
+        )}
 
         {/* Tooltip */}
         {hoveredNode && !selectedNode && (

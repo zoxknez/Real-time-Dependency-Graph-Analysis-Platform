@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{de::DeserializeOwned, Serialize};
-use std::sync::Arc;
 use tracing::{debug, instrument, warn};
 
 use crate::config::RedisConfig;
@@ -123,8 +122,10 @@ impl CacheClient {
 }
 
 /// Cache key builders for consistent key naming
+#[allow(dead_code)]
 pub struct CacheKeys;
 
+#[allow(dead_code)]
 impl CacheKeys {
     /// Cache key for package by ID
     pub fn package(id: &str) -> String {

@@ -27,10 +27,17 @@ tree-sitter-javascript.workspace = true
 tree-sitter-python.workspace = true
 tree-sitter-rust.workspace = true
 
-# ML Embeddings (optional feature)
-# rust-bert.workspace = true
+# Async utilities
+tokio-util = { version = "0.7", features = ["rt"] }
+futures = "0.3"
+
+# Serialization
+walkdir = "2"
 
 models = { path = "../../packages/models" }
 storage = { path = "../../packages/storage" }
+
+[dev-dependencies]
+tokio-test = "0.4"
 
 

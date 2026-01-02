@@ -5,9 +5,11 @@ members = [
     "apps/analysis",
     "apps/graph-writer",
     "apps/vector-writer",
+    "apps/syncer",
     "apps/api",
     "packages/models",
-    "packages/storage"
+    "packages/storage",
+    "tests"
 ]
 
 [workspace.package]

@@ -20,6 +20,7 @@ use super::index::CrateIndexEntry;
 const RAW_CARGO_INDEX_TOPIC: &str = "raw.cargo.index.v1";
 
 /// Checkpoint key in database
+#[allow(dead_code)]
 const CHECKPOINT_KEY: &str = "cargo_watcher";
 
 /// State for a watched crate
