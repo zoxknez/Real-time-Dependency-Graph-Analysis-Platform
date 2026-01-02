@@ -2,7 +2,7 @@
 //!
 //! Security and performance middleware for the GraphQL API:
 //! - JWT Authentication
-//! - Rate Limiting
+//! - Rate Limiting (local and distributed Redis-based)
 //! - Query Complexity Analysis
 //! - Security Headers (HSTS, CSP, X-Frame-Options, etc.)
 //! - Audit Logging
@@ -11,6 +11,7 @@
 pub mod audit;
 pub mod auth;
 pub mod complexity;
+pub mod distributed_rate_limit;
 pub mod rate_limit;
 pub mod security_headers;
 pub mod validation;
@@ -23,6 +24,13 @@ pub use complexity::{ComplexityCalculator, ComplexityConfig, ComplexityError};
 pub use rate_limit::create_rate_limiter;
 #[allow(unused_imports)]
 pub use rate_limit::{rate_limit_middleware, ApiRateLimiter};
+
+// Distributed rate limiting exports
+#[allow(unused_imports)]
+pub use distributed_rate_limit::{
+    distributed_rate_limit_middleware, DistributedRateLimiter, DistributedRateLimiterConfig,
+    RateLimitResult, RateTier,
+};
 
 // Security middleware exports
 #[allow(unused_imports)]

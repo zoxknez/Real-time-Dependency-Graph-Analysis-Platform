@@ -16,6 +16,9 @@
   - HPA autoscaling, PDB, NetworkPolicies
   - ServiceMonitor, PrometheusRules for monitoring
   - Staging and production value files
+- [x] **Docker Compose** - Complete application orchestration
+  - `docker-compose.apps.yml` - All services with healthchecks
+  - Dockerfiles for all 7 services
 
 ### Backend Services
 - [x] **WebSocket Subscriptions** - 5 real-time subscription types
@@ -25,13 +28,46 @@
   - `dependencyImpact` - Impact analysis events
   - `packageEvents` - Package activity stream
 - [x] **JWT Authentication** - Complete auth middleware
-- [x] **Rate Limiting** - Tier-based rate limits
+- [x] **Rate Limiting** - Tier-based rate limits (Free/Pro/Enterprise)
+  - Local rate limiting with governor
+  - Distributed Redis-based rate limiting
+- [x] **Prometheus Metrics** - Custom metrics for all operations
+  - HTTP request metrics (latency, count, in-flight)
+  - GraphQL query metrics (duration, complexity, errors)
+  - Database operation metrics
+  - Cache hit/miss metrics
+  - Kafka consumer metrics
+  - Subscription metrics
+
+### Ingestion Service
+- [x] **NPM Crawler** - Fetcher, diff, state, watcher, worker
+- [x] **PyPI Crawler** - JSON API, Simple API, yank detection
+- [x] **Cargo Crawler** - Sparse index with ETag/Last-Modified
+- [x] **Rate Limiting** - Per-registry rate limiting with backoff
 
 ### Security Hardening
 - [x] **Security Headers** - HSTS, CSP, X-Frame-Options, etc.
 - [x] **Input Validation** - Query depth, complexity, size limits
 - [x] **Audit Logging** - Comprehensive request/event logging
 - [x] **Security Documentation** - SECURITY.md guide
+
+### Testing
+- [x] **E2E Integration Tests** - Testcontainers infrastructure
+  - Memgraph, Qdrant, Redpanda, RisingWave containers
+  - API GraphQL endpoint tests
+  - Security header tests
+
+### Frontend
+- [x] **Theme System** - Dark/light mode with toggle
+- [x] **Error Boundaries** - Graceful error handling
+- [x] **Loading States** - Skeleton, spinner, overlay variants
+- [x] **Accessibility** - Screen reader support, keyboard navigation
+  - VisuallyHidden, SkipLink, LiveRegion components
+  - Focus trap hook, accessible progress bars
+
+### Tracing & Observability
+- [x] **Tracing Library** - Configurable tracing infrastructure
+- [x] **Metrics Library** - Shared metrics for all services
 
 ### Documentation
 - [x] **API Documentation** - Complete GraphQL API reference

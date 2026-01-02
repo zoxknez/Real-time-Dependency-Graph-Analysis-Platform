@@ -14,6 +14,7 @@ mod gql;
 mod graph;
 mod handlers;
 mod kafka;
+mod metrics;
 mod middleware;
 
 use anyhow::Result;
@@ -56,6 +57,10 @@ async fn main() -> Result<()> {
         .init();
 
     info!("🌐 Starting API Gateway");
+
+    // Initialize Prometheus metrics
+    let metrics_handle = metrics::init_metrics();
+    info!("📊 Prometheus metrics initialized");
 
     // Load configuration
     let config = Config::from_env();
@@ -105,7 +110,9 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/ready", get(ready_handler))
+        .route("/metrics", get(metrics::metrics_handler))
         .route("/graphql", get(graphql_playground).post(graphql_handler))
+        .layer(axum::Extension(metrics_handle))
         .layer(security_headers)
         .layer(cors)
         .layer(TraceLayer::new_for_http())

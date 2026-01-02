@@ -55,3 +55,7 @@ storage = { path = "../../packages/storage" }
 # JWT Auth
 jsonwebtoken = "9.2"
 
+# Metrics
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+

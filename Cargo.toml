@@ -9,6 +9,8 @@ members = [
     "apps/api",
     "packages/models",
     "packages/storage",
+    "packages/metrics",
+    "packages/tracing",
     "tests"
 ]
 
