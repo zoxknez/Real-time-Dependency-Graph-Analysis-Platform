@@ -1,0 +1,114 @@
+# Pre-commit hooks for code quality
+# Install: pip install pre-commit && pre-commit install
+
+repos:
+  # Rust formatting
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all --
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-check
+        name: cargo check
+        entry: cargo check --workspace --all-targets
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-test
+        name: cargo test
+        entry: cargo test --workspace --lib
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [push]
+
+  # Frontend checks
+  - repo: local
+    hooks:
+      - id: frontend-lint
+        name: frontend lint
+        entry: bash -c 'cd apps/frontend && npm run lint'
+        language: system
+        files: ^apps/frontend/.*\.(ts|tsx|js|jsx)$
+        pass_filenames: false
+
+      - id: frontend-typecheck
+        name: frontend typecheck
+        entry: bash -c 'cd apps/frontend && npx tsc --noEmit'
+        language: system
+        files: ^apps/frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+
+  # General checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^(\.git|target|node_modules|\.next)/
+      - id: end-of-file-fixer
+        exclude: ^(\.git|target|node_modules|\.next)/
+      - id: check-yaml
+        exclude: ^(\.git|target|node_modules|\.next)/
+      - id: check-json
+        exclude: ^(\.git|target|node_modules|\.next)/
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Markdown linting
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.38.0
+    hooks:
+      - id: markdownlint
+        args: ['--fix', '--disable', 'MD013', 'MD033', 'MD041']
+        exclude: ^(CHANGELOG|node_modules)/
+
+  # YAML linting
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.33.0
+    hooks:
+      - id: yamllint
+        args: ['-d', '{extends: relaxed, rules: {line-length: {max: 150}}}']
+        exclude: ^(\.git|target|node_modules|\.next)/
+
+  # Security scanning
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: ^(\.git|target|node_modules|\.next|package-lock\.json)/
+
+  # Dockerfile linting
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        args: ['--ignore', 'DL3008', '--ignore', 'DL3018']
+
+  # Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.9.0.6
+    hooks:
+      - id: shellcheck
+
+# CI-specific configuration
+ci:
+  autofix_prs: true
+  autoupdate_schedule: weekly
+  skip:
+    - cargo-test  # Tests run in CI separately
