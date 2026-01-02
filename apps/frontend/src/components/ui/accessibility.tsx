@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import React, { forwardRef } from "react";
+import React, { forwardRef, ElementType } from "react";
 
 /**
  * Screen reader only text - visible to screen readers but hidden visually
@@ -11,7 +11,7 @@ export function VisuallyHidden({
   as: Component = "span",
 }: {
   children: React.ReactNode;
-  as?: keyof JSX.IntrinsicElements;
+  as?: ElementType;
 }) {
   return (
     <Component className="sr-only">

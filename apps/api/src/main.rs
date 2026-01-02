@@ -19,16 +19,15 @@ mod middleware;
 
 use anyhow::Result;
 use async_graphql::http::GraphiQLSource;
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLProtocol, GraphQLSubscription, GraphQLWebSocket};
 use axum::{
-    extract::State,
+    extract::{State, WebSocketUpgrade},
     response::{Html, IntoResponse, Json},
     routing::get,
     Router,
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tower::ServiceExt;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::info;
@@ -116,8 +115,9 @@ async fn main() -> Result<()> {
         .route("/ready", get(ready_handler))
         .route("/metrics", get(metrics::metrics_handler))
         .route("/graphql", get(graphql_playground).post(graphql_handler))
-        .route_service("/graphql/ws", GraphQLSubscription::new(ws_schema))
+        .route("/graphql/ws", get(graphql_ws_handler))
         .layer(axum::Extension(metrics_handle))
+        .layer(axum::Extension(ws_schema))
         .layer(security_headers)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -182,5 +182,18 @@ async fn graphql_playground() -> impl IntoResponse {
         .endpoint("/graphql")
         .subscription_endpoint("/graphql/ws")
         .finish())
+}
+
+/// GraphQL WebSocket handler for subscriptions
+async fn graphql_ws_handler(
+    ws: WebSocketUpgrade,
+    protocol: GraphQLProtocol,
+    schema: axum::Extension<gql::ApiSchema>,
+) -> impl IntoResponse {
+    ws.protocols(["graphql-transport-ws", "graphql-ws"])
+        .on_upgrade(move |socket| {
+            GraphQLWebSocket::new(socket, schema.0.clone(), protocol)
+                .serve()
+        })
 }
 

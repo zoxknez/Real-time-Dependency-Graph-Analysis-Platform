@@ -12,8 +12,13 @@ COPY apps/frontend/package.json apps/frontend/pnpm-lock.yaml* ./
 # Install dependencies
 RUN pnpm install --frozen-lockfile || pnpm install
 
-# Copy source
-COPY apps/frontend/ ./
+# Copy source (excluding node_modules via .dockerignore)
+COPY apps/frontend/src ./src
+COPY apps/frontend/public ./public
+COPY apps/frontend/next.config.js ./
+COPY apps/frontend/tailwind.config.ts ./
+COPY apps/frontend/postcss.config.js ./
+COPY apps/frontend/tsconfig.json ./
 
 # Build
 ENV NEXT_TELEMETRY_DISABLED=1
