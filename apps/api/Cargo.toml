@@ -31,8 +31,27 @@ async-graphql-axum.workspace = true
 neo4rs.workspace = true
 qdrant-client.workspace = true
 
+# Kafka consumer for subscriptions
+rdkafka.workspace = true
+
+# Semver for CVE range matching
+semver = "1.0"
+
+# Rate limiting
+governor.workspace = true
+tower_governor = "0.5"
+
+# Redis caching
+redis.workspace = true
+
+# Streams and futures
+tokio-stream = { workspace = true, features = ["sync"] }
+futures.workspace = true
+base64.workspace = true
+
 models = { path = "../../packages/models" }
 storage = { path = "../../packages/storage" }
 
 # JWT Auth
 jsonwebtoken = "9.2"
+

@@ -1,0 +1,513 @@
+/* Import fonts - must be first */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 239 84% 67%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 239 84% 67%;
+  }
+}
+
+@layer base {
+  /* Dark theme base (default) */
+  .dark * {
+    @apply border-surface-700;
+  }
+  
+  .dark body {
+    @apply bg-surface-950 text-surface-100 font-sans antialiased;
+  }
+
+  /* Light theme base */
+  .light * {
+    @apply border-surface-200;
+  }
+  
+  .light body {
+    @apply bg-surface-50 text-surface-900 font-sans antialiased;
+  }
+
+  /* Dark scrollbar */
+  .dark ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .dark ::-webkit-scrollbar-track {
+    @apply bg-surface-900;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    @apply bg-surface-700 rounded-full;
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    @apply bg-surface-600;
+  }
+
+  /* Light scrollbar */
+  .light ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .light ::-webkit-scrollbar-track {
+    @apply bg-surface-100;
+  }
+
+  .light ::-webkit-scrollbar-thumb {
+    @apply bg-surface-300 rounded-full;
+  }
+
+  .light ::-webkit-scrollbar-thumb:hover {
+    @apply bg-surface-400;
+  }
+
+  /* Selection */
+  .dark ::selection {
+    @apply bg-primary-500/30 text-white;
+  }
+
+  .light ::selection {
+    @apply bg-primary-500/30 text-surface-900;
+  }
+}
+
+@layer components {
+  /* ============================================
+     DARK THEME COMPONENTS (DEFAULT)
+     ============================================ */
+  
+  /* Glass morphism card - Dark */
+  .dark .glass-card {
+    @apply bg-surface-900/60 backdrop-blur-md border border-surface-700/50 rounded-2xl;
+  }
+
+  /* Gradient backgrounds - Dark */
+  .dark .gradient-primary {
+    @apply bg-gradient-to-br from-primary-500 via-primary-600 to-primary-700;
+  }
+
+  .dark .gradient-accent {
+    @apply bg-gradient-to-br from-accent-400 via-accent-500 to-accent-600;
+  }
+
+  .dark .gradient-mesh {
+    background-image: 
+      radial-gradient(at 40% 20%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
+      radial-gradient(at 80% 0%, rgba(6, 182, 212, 0.1) 0px, transparent 50%),
+      radial-gradient(at 0% 50%, rgba(99, 102, 241, 0.1) 0px, transparent 50%),
+      radial-gradient(at 80% 50%, rgba(6, 182, 212, 0.08) 0px, transparent 50%),
+      radial-gradient(at 0% 100%, rgba(99, 102, 241, 0.1) 0px, transparent 50%);
+  }
+
+  /* Buttons - Dark */
+  .dark .btn-primary {
+    @apply px-6 py-3 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 
+           text-white font-semibold shadow-lg shadow-primary-500/25 
+           hover:shadow-primary-500/40 hover:scale-105 
+           transition-all duration-200 ease-out;
+  }
+
+  .dark .btn-secondary {
+    @apply px-6 py-3 rounded-xl bg-surface-800/80 border border-surface-600/50
+           text-surface-100 font-medium hover:bg-surface-700/80 hover:border-surface-500/50
+           transition-all duration-200 ease-out;
+  }
+
+  .dark .btn-ghost {
+    @apply px-4 py-2 rounded-lg text-surface-300 hover:text-white 
+           hover:bg-surface-800/50 transition-all duration-200;
+  }
+
+  /* Input fields - Dark */
+  .dark .input-search {
+    @apply w-full px-5 py-4 rounded-2xl bg-surface-800/60 border border-surface-600/50
+           text-white placeholder-surface-400 focus:outline-none focus:ring-2 
+           focus:ring-primary-500/50 focus:border-primary-500/50 transition-all duration-200;
+  }
+
+  /* Stat cards - Dark */
+  .dark .stat-card {
+    @apply bg-surface-900/60 backdrop-blur-md border border-surface-700/50 rounded-2xl
+           p-6 hover:border-primary-500/30 
+           hover:shadow-glow transition-all duration-300;
+  }
+
+  /* Glow effects - Dark */
+  .dark .glow-primary {
+    box-shadow: 0 0 30px rgba(99, 102, 241, 0.2);
+  }
+
+  .dark .glow-accent {
+    box-shadow: 0 0 30px rgba(6, 182, 212, 0.2);
+  }
+
+  /* Graph container - Dark */
+  .dark .graph-container {
+    @apply relative overflow-hidden rounded-2xl bg-surface-900/80 border border-surface-700/50;
+  }
+
+  /* ============================================
+     LIGHT THEME COMPONENTS
+     ============================================ */
+  
+  /* Glass morphism card - Light */
+  .light .glass-card {
+    @apply bg-white/80 backdrop-blur-md border border-surface-200/80 rounded-2xl shadow-lg shadow-surface-900/5;
+  }
+
+  /* Gradient backgrounds - Light */
+  .light .gradient-primary {
+    @apply bg-gradient-to-br from-primary-400 via-primary-500 to-primary-600;
+  }
+
+  .light .gradient-accent {
+    @apply bg-gradient-to-br from-accent-300 via-accent-400 to-accent-500;
+  }
+
+  .light .gradient-mesh {
+    background-image: 
+      radial-gradient(at 40% 20%, rgba(99, 102, 241, 0.08) 0px, transparent 50%),
+      radial-gradient(at 80% 0%, rgba(6, 182, 212, 0.06) 0px, transparent 50%),
+      radial-gradient(at 0% 50%, rgba(99, 102, 241, 0.06) 0px, transparent 50%),
+      radial-gradient(at 80% 50%, rgba(6, 182, 212, 0.04) 0px, transparent 50%),
+      radial-gradient(at 0% 100%, rgba(99, 102, 241, 0.06) 0px, transparent 50%);
+  }
+
+  /* Buttons - Light */
+  .light .btn-primary {
+    @apply px-6 py-3 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 
+           text-white font-semibold shadow-lg shadow-primary-500/20 
+           hover:shadow-primary-500/35 hover:scale-105 
+           transition-all duration-200 ease-out;
+  }
+
+  .light .btn-secondary {
+    @apply px-6 py-3 rounded-xl bg-surface-100 border border-surface-300
+           text-surface-800 font-medium hover:bg-surface-200 hover:border-surface-400
+           transition-all duration-200 ease-out;
+  }
+
+  .light .btn-ghost {
+    @apply px-4 py-2 rounded-lg text-surface-600 hover:text-surface-900 
+           hover:bg-surface-200/80 transition-all duration-200;
+  }
+
+  /* Input fields - Light */
+  .light .input-search {
+    @apply w-full px-5 py-4 rounded-2xl bg-white border border-surface-300
+           text-surface-900 placeholder-surface-500 focus:outline-none focus:ring-2 
+           focus:ring-primary-500/40 focus:border-primary-400 transition-all duration-200;
+  }
+
+  /* Stat cards - Light */
+  .light .stat-card {
+    @apply bg-white/80 backdrop-blur-md border border-surface-200/80 rounded-2xl shadow-lg shadow-surface-900/5
+           p-6 hover:border-primary-400/50 
+           hover:shadow-xl hover:shadow-primary-500/10 transition-all duration-300;
+  }
+
+  /* Glow effects - Light */
+  .light .glow-primary {
+    box-shadow: 0 0 30px rgba(99, 102, 241, 0.12);
+  }
+
+  .light .glow-accent {
+    box-shadow: 0 0 30px rgba(6, 182, 212, 0.12);
+  }
+
+  /* Graph container - Light */
+  .light .graph-container {
+    @apply relative overflow-hidden rounded-2xl bg-white/90 border border-surface-200;
+  }
+
+  /* ============================================
+     SHARED COMPONENTS (Both themes)
+     ============================================ */
+
+  /* Ecosystem badges */
+  .badge-npm {
+    @apply bg-ecosystem-npm/20 text-ecosystem-npm border border-ecosystem-npm/30;
+  }
+
+  .badge-pypi {
+    @apply bg-ecosystem-pypi/20 text-ecosystem-pypi border border-ecosystem-pypi/30;
+  }
+
+  .badge-cargo {
+    @apply bg-ecosystem-cargo/20 text-ecosystem-cargo border border-ecosystem-cargo/30;
+  }
+
+  .badge-maven {
+    @apply bg-ecosystem-maven/20 text-ecosystem-maven border border-ecosystem-maven/30;
+  }
+
+  .badge-nuget {
+    @apply bg-ecosystem-nuget/20 text-ecosystem-nuget border border-ecosystem-nuget/30;
+  }
+
+  .badge-go {
+    @apply bg-ecosystem-go/20 text-ecosystem-go border border-ecosystem-go/30;
+  }
+
+  /* Animated border gradient */
+  .border-gradient {
+    position: relative;
+  }
+
+  .border-gradient::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    z-index: -1;
+    background: linear-gradient(45deg, #6366f1, #06b6d4, #6366f1);
+    background-size: 200% 200%;
+    animation: gradient-rotate 3s ease infinite;
+    border-radius: inherit;
+  }
+
+  @keyframes gradient-rotate {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+}
+
+@layer utilities {
+  /* Text gradients */
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-primary-400 via-accent-400 to-primary-400;
+  }
+
+  .text-gradient-accent {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-accent-400 to-primary-400;
+  }
+
+  /* Animate delay utilities */
+  .animation-delay-100 { animation-delay: 100ms; }
+  .animation-delay-200 { animation-delay: 200ms; }
+  .animation-delay-300 { animation-delay: 300ms; }
+  .animation-delay-400 { animation-delay: 400ms; }
+  .animation-delay-500 { animation-delay: 500ms; }
+
+  /* Hide scrollbar */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Backdrop blur variants */
+  .backdrop-blur-xs {
+    backdrop-filter: blur(2px);
+  }
+}
+
+/* ============================================
+   THEME-AWARE UTILITY CLASSES
+   These automatically adapt to light/dark theme
+   ============================================ */
+
+/* Background utilities */
+.dark .theme-bg-primary {
+  @apply bg-surface-950;
+}
+.light .theme-bg-primary {
+  @apply bg-surface-50;
+}
+
+.dark .theme-bg-secondary {
+  @apply bg-surface-900;
+}
+.light .theme-bg-secondary {
+  @apply bg-white;
+}
+
+.dark .theme-bg-tertiary {
+  @apply bg-surface-800;
+}
+.light .theme-bg-tertiary {
+  @apply bg-surface-100;
+}
+
+.dark .theme-bg-hover {
+  @apply hover:bg-surface-800/60;
+}
+.light .theme-bg-hover {
+  @apply hover:bg-surface-200/80;
+}
+
+.dark .theme-bg-active {
+  @apply bg-surface-800/80;
+}
+.light .theme-bg-active {
+  @apply bg-surface-200;
+}
+
+/* Text utilities */
+.dark .theme-text-primary {
+  @apply text-white;
+}
+.light .theme-text-primary {
+  @apply text-surface-900;
+}
+
+.dark .theme-text-secondary {
+  @apply text-surface-100;
+}
+.light .theme-text-secondary {
+  @apply text-surface-800;
+}
+
+.dark .theme-text-tertiary {
+  @apply text-surface-300;
+}
+.light .theme-text-tertiary {
+  @apply text-surface-600;
+}
+
+.dark .theme-text-muted {
+  @apply text-surface-400;
+}
+.light .theme-text-muted {
+  @apply text-surface-500;
+}
+
+.dark .theme-text-faint {
+  @apply text-surface-500;
+}
+.light .theme-text-faint {
+  @apply text-surface-400;
+}
+
+/* Border utilities */
+.dark .theme-border {
+  @apply border-surface-700/50;
+}
+.light .theme-border {
+  @apply border-surface-200;
+}
+
+.dark .theme-border-strong {
+  @apply border-surface-600;
+}
+.light .theme-border-strong {
+  @apply border-surface-300;
+}
+
+/* Shadow utilities */
+.dark .theme-shadow {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+.light .theme-shadow {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+/* Hover text color transitions */
+.dark .theme-hover-text {
+  @apply hover:text-white;
+}
+.light .theme-hover-text {
+  @apply hover:text-surface-900;
+}
+
+/* Combined hover states */
+.dark .theme-interactive {
+  @apply text-surface-400 hover:text-white hover:bg-surface-800/60;
+}
+.light .theme-interactive {
+  @apply text-surface-500 hover:text-surface-900 hover:bg-surface-200/80;
+}
+
+/* Card backgrounds for elements within glass-card */
+.dark .theme-inner-card {
+  @apply bg-surface-800/40;
+}
+.light .theme-inner-card {
+  @apply bg-surface-100/80;
+}
+
+.dark .theme-inner-card-hover {
+  @apply hover:bg-surface-700/40;
+}
+.light .theme-inner-card-hover {
+  @apply hover:bg-surface-200;
+}
+
+/* Pill/badge backgrounds */
+.dark .theme-pill {
+  @apply bg-surface-800/60 text-surface-300;
+}
+.light .theme-pill {
+  @apply bg-surface-200 text-surface-700;
+}
+
+/* Panel/dropdown backgrounds */
+.dark .theme-panel {
+  @apply bg-surface-800 border-surface-600/50;
+}
+.light .theme-panel {
+  @apply bg-white border-surface-200 shadow-lg;
+}
+
+/* Loading skeleton */
+.dark .theme-skeleton {
+  @apply bg-surface-800/60;
+}
+.light .theme-skeleton {
+  @apply bg-surface-200;
+}
+
+/* Graph specific */
+.dark .theme-graph-bg {
+  @apply bg-surface-950;
+}
+.light .theme-graph-bg {
+  @apply bg-surface-50;
+}

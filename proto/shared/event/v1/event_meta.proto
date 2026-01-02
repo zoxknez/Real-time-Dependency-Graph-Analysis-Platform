@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package shared.event.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// EventMeta contains metadata common to all events in the system.
+// This ensures consistent tracing, idempotency, and audit capabilities.
+message EventMeta {
+  // Globally unique event identifier (deterministic SHA256 hash).
+  // Format: sha256(event_type + ecosystem + entity_id + payload_hash)
+  // This enables idempotent event processing across restarts and retries.
+  string event_id = 1;
+
+  // Source system that generated this event.
+  // Examples: "npm", "pypi", "cargo"
+  string source = 2;
+
+  // W3C Trace Context traceparent header for distributed tracing.
+  // Format: "00-{trace-id}-{parent-id}-{trace-flags}"
+  // Optional but recommended for production observability.
+  string traceparent = 3;
+
+  // Timestamp when the event occurred (not when it was ingested).
+  // This is the authoritative time for event ordering.
+  google.protobuf.Timestamp occurred_at = 4;
+
+  // Schema version for this event type.
+  // Enables safe schema evolution and backward compatibility.
+  // Format: "v1", "v2", etc.
+  string schema_version = 5;
+}

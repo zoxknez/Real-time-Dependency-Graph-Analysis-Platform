@@ -20,8 +20,13 @@ pub struct RateLimiter {
 
 impl RateLimiter {
     pub fn new(registry_name: String, requests_per_second: u32, burst: u32) -> Self {
-        let quota = Quota::per_second(NonZeroU32::new(requests_per_second).unwrap())
-            .allow_burst(NonZeroU32::new(burst).unwrap());
+        let quota = Quota::per_second(
+            NonZeroU32::new(requests_per_second)
+                .expect("requests_per_second must be > 0")
+        ).allow_burst(
+            NonZeroU32::new(burst)
+                .expect("burst must be > 0")
+        );
             
         Self {
             inner: Arc::new(GovernorLimiter::direct(quota)),

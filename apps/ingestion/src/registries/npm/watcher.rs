@@ -1,7 +1,7 @@
 use crate::store::PostgresCheckpointStore;
 use crate::producer::EventProducer;
 use crate::traits::CheckpointStore;
-use anyhow::{Result, Context};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::{info, warn, error, instrument};
@@ -69,7 +69,8 @@ impl NpmWatcher {
             // 2. Poll _changes
             // Note: In enterprise, we might process the stream chunk-by-chunk using `reqwest::Response::bytes_stream`
             // For MVP/Simplicity, we use `feed=longpoll` which returns a JSON body after some time or events.
-            let url = format!("{}?feed=longpoll&include_docs=false&since={}&limit={}", 
+            // NPM changes feed: heartbeat must be in seconds (not milliseconds)
+            let url = format!("{}?feed=longpoll&since={}&limit={}", 
                 NPM_CHANGES_URL, since, BATCH_SIZE);
 
             match self.client.get(&url).send().await {
@@ -99,14 +100,24 @@ impl NpmWatcher {
                                 let payload = serde_json::to_vec(change)?;
                                 let key = format!("npm:{}", change.id);
                                 
-                                // Retry loop for Kafka produce
-                                // In enterprise: circuit breaker here too
-                                if let Err(e) = self.producer.publish_raw(&self.topic, &key, &payload).await {
-                                    error!("Failed to produce to Kafka: {}. Critical failure.", e);
-                                    // With `?`, we crash the watcher and let k8s restart it? 
-                                    // Or loop retry? Loop retry is safer for transient network issues.
-                                    tokio::time::sleep(Duration::from_secs(5)).await;
-                                    // TODO: Retry logic
+                                // Retry loop for Kafka produce with exponential backoff
+                                let mut kafka_retries = 0u32;
+                                const MAX_KAFKA_RETRIES: u32 = 5;
+                                
+                                loop {
+                                    match self.producer.publish_raw(&self.topic, &key, &payload).await {
+                                        Ok(_) => break,
+                                        Err(e) => {
+                                            kafka_retries += 1;
+                                            if kafka_retries >= MAX_KAFKA_RETRIES {
+                                                error!("Failed to produce to Kafka after {} retries: {}. Skipping message.", MAX_KAFKA_RETRIES, e);
+                                                break;
+                                            }
+                                            let backoff = Duration::from_secs(1 << kafka_retries.min(5));
+                                            warn!("Kafka publish failed (attempt {}): {}. Retrying in {:?}", kafka_retries, e, backoff);
+                                            tokio::time::sleep(backoff).await;
+                                        }
+                                    }
                                 }
                             }
 

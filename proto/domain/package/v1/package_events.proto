@@ -1,0 +1,194 @@
+syntax = "proto3";
+
+package domain.package.v1;
+
+import "google/protobuf/timestamp.proto";
+import "shared/event/v1/event_meta.proto";
+
+// PackageUpserted is emitted when a package is created or updated.
+// This represents the package-level metadata, not individual versions.
+//
+// Topic: domain.package.upsert.v1
+// Partition Key: ecosystem:package_name (e.g., "npm:react")
+message PackageUpserted {
+  // Event metadata
+  shared.event.v1.EventMeta meta = 1;
+
+  // Ecosystem identifier
+  // Values: "npm", "pypi", "cargo", "maven", "nuget", "go"
+  string ecosystem = 2;
+
+  // Package name (without ecosystem prefix)
+  // Examples: "react", "@babel/core", "numpy"
+  string package_name = 3;
+
+  // Latest version from dist-tags (usually "latest" tag)
+  // May be empty if package has no dist-tags
+  string latest_version = 4;
+
+  // Repository URL from package metadata
+  // Optional - may be missing or invalid
+  string repository_url = 5;
+
+  // SHA256 hash of the packument JSON (for change detection)
+  // Format: hex string (64 chars)
+  string packument_sha256 = 6;
+
+  // Package description (for search indexing)
+  string description = 7;
+
+  // Package homepage URL
+  string homepage = 8;
+
+  // License identifier (SPDX format preferred)
+  // Examples: "MIT", "Apache-2.0", "GPL-3.0"
+  string license = 9;
+
+  // Maintainers/authors (for graph relationships)
+  repeated string maintainers = 10;
+}
+
+// VersionUpserted is emitted when a new package version is published
+// or when we first discover an existing version.
+//
+// Topic: domain.version.upsert.v1
+// Partition Key: ecosystem:package_name:version
+message VersionUpserted {
+  // Event metadata
+  shared.event.v1.EventMeta meta = 1;
+
+  // Ecosystem identifier
+  string ecosystem = 2;
+
+  // Package name
+  string package_name = 3;
+
+  // Semantic version string
+  // Examples: "18.2.0", "1.0.0-beta.1"
+  string version = 4;
+
+  // Whether this version has been yanked/unpublished
+  // npm doesn't support yanking, but PyPI and Cargo do
+  bool yanked = 5;
+
+  // Tarball download URL
+  string tarball_url = 6;
+
+  // Integrity hash (SHA512 for npm, SHA256 for others)
+  // Format: "sha512-base64..." or "sha256-hex..."
+  string integrity = 7;
+
+  // Size of the tarball in bytes
+  int64 size_bytes = 8;
+
+  // When this version was published to the registry
+  google.protobuf.Timestamp published_at = 9;
+
+  // Dependencies for this version (for graph construction)
+  repeated Dependency dependencies = 10;
+
+  // Dev dependencies (marked separately for graph analysis)
+  repeated Dependency dev_dependencies = 11;
+
+  // Optional dependencies
+  repeated Dependency optional_dependencies = 12;
+}
+
+// Dependency represents a single dependency relationship
+message Dependency {
+  // Dependency package name
+  string name = 1;
+
+  // Version range/constraint
+  // Examples: "^18.0.0", ">=1.0.0 <2.0.0", "*"
+  string version_range = 2;
+
+  // Whether this is a peer dependency
+  bool is_peer = 3;
+}
+
+// VersionYanked is emitted when a version is removed/unpublished.
+// For npm, this happens when a package version disappears from packument.
+//
+// Topic: domain.version.yanked.v1
+// Partition Key: ecosystem:package_name:version
+message VersionYanked {
+  // Event metadata
+  shared.event.v1.EventMeta meta = 1;
+
+  // Ecosystem identifier
+  string ecosystem = 2;
+
+  // Package name
+  string package_name = 3;
+
+  // Version that was yanked
+  string version = 4;
+
+  // Reason for yanking
+  // Examples: "unpublished", "missing_from_packument", "registry_deletion"
+  string reason = 5;
+
+  // When the yank was detected
+  google.protobuf.Timestamp yanked_at = 6;
+}
+
+// PackageDeleted is emitted when an entire package is removed from the registry.
+//
+// Topic: domain.package.deleted.v1
+// Partition Key: ecosystem:package_name
+message PackageDeleted {
+  // Event metadata
+  shared.event.v1.EventMeta meta = 1;
+
+  // Ecosystem identifier
+  string ecosystem = 2;
+
+  // Package name
+  string package_name = 3;
+
+  // Reason for deletion
+  // Examples: "feed_deleted_flag", "404_not_found", "registry_purge"
+  string reason = 4;
+
+  // When the deletion was detected
+  google.protobuf.Timestamp deleted_at = 5;
+
+  // Last known version before deletion (for audit)
+  string last_version = 6;
+}
+
+// IngestionError is emitted when ingestion fails for a package.
+// This goes to the Dead Letter Queue for manual investigation.
+//
+// Topic: domain.ingestion.deadletter.v1
+// Partition Key: ecosystem:package_name
+message IngestionError {
+  // Event metadata
+  shared.event.v1.EventMeta meta = 1;
+
+  // Ecosystem identifier
+  string ecosystem = 2;
+
+  // Package name
+  string package_name = 3;
+
+  // Error type/category
+  // Examples: "fetch_timeout", "parse_error", "invalid_packument"
+  string error_type = 4;
+
+  // Human-readable error message
+  string error_message = 5;
+
+  // Number of retry attempts before giving up
+  int32 attempts = 6;
+
+  // Original raw event that caused the error (for debugging)
+  bytes original_payload = 7;
+
+  // When this error was first encountered
+  google.protobuf.Timestamp first_failed_at = 8;
+
+  // When this error was finally sent to DLQ
+  google.protobuf.Timestamp deadlettered_at = 9;
+}

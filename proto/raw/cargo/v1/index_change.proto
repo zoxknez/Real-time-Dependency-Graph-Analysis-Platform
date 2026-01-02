@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package raw.cargo.v1;
+
+option java_package = "com.inversedeps.raw.cargo.v1";
+option java_multiple_files = true;
+
+// Cargo registry index change event
+message IndexChange {
+  // Crate name (e.g., "tokio", "serde")
+  string crate_name = 1;
+  
+  // Cursor for checkpointing
+  // - For git index: commit hash
+  // - For sparse index: ETag or revision marker
+  string cursor = 2;
+  
+  // Timestamp of detection (RFC3339)
+  string detected_at = 3;
+  
+  // Source of the change detection
+  IndexSource source = 4;
+  
+  // Number of versions changed (if known)
+  optional int32 changed_versions_count = 5;
+}
+
+enum IndexSource {
+  INDEX_SOURCE_UNSPECIFIED = 0;
+  INDEX_SOURCE_GIT = 1;
+  INDEX_SOURCE_SPARSE = 2;
+}
+
+// Batch of index changes
+message IndexChangeBatch {
+  repeated IndexChange changes = 1;
+  
+  // Cursor for this batch (commit hash or ETag)
+  string batch_cursor = 2;
+}
+
+// Crate version info from index file (JSON lines format)
+message CrateVersionRecord {
+  // Crate name
+  string name = 1;
+  
+  // Version string
+  string vers = 2;
+  
+  // Dependencies
+  repeated CrateDependency deps = 3;
+  
+  // SHA256 checksum of .crate file
+  string cksum = 4;
+  
+  // Features
+  map<string, FeatureList> features = 5;
+  
+  // Whether this version is yanked
+  bool yanked = 6;
+  
+  // Links to system library (optional)
+  optional string links = 7;
+}
+
+message CrateDependency {
+  // Dependency crate name
+  string name = 1;
+  
+  // Version requirement (SemVer)
+  string req = 2;
+  
+  // Features to enable
+  repeated string features = 3;
+  
+  // Is this an optional dependency?
+  bool optional = 4;
+  
+  // Is this a default feature?
+  bool default_features = 5;
+  
+  // Target platform (e.g., "cfg(unix)")
+  optional string target = 6;
+  
+  // Dependency kind
+  DependencyKind kind = 7;
+  
+  // Alternative registry (if not crates.io)
+  optional string registry = 8;
+  
+  // Package name if different from crate name
+  optional string package = 9;
+}
+
+enum DependencyKind {
+  DEPENDENCY_KIND_NORMAL = 0;
+  DEPENDENCY_KIND_DEV = 1;
+  DEPENDENCY_KIND_BUILD = 2;
+}
+
+message FeatureList {
+  repeated string features = 1;
+}

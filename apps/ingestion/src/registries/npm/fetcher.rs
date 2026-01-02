@@ -1,9 +1,13 @@
-use anyhow::{Result, Context};
+use anyhow::Result;
 use crate::http::ProxyRotator;
-use reqwest::{StatusCode, Url};
+use reqwest::StatusCode;
 use serde_json::Value;
 use std::sync::Arc;
-use tracing::{warn, info};
+use std::time::Duration;
+use tracing::{warn, debug};
+
+const MAX_RETRIES: u32 = 3;
+const INITIAL_BACKOFF_MS: u64 = 500;
 
 pub struct NpmFetcher {
     rotator: Arc<ProxyRotator>,
@@ -14,47 +18,65 @@ impl NpmFetcher {
         Self { rotator }
     }
 
-    /// Fetch packument JSON for a package
+    /// Fetch packument JSON for a package with retry logic
     pub async fn fetch_packument(&self, package_name: &str) -> Result<Option<Value>> {
         // Handle scoped packages: @foo/bar -> @foo%2fbar
         let encoded_name = package_name.replace("/", "%2f");
         let url = format!("https://registry.npmjs.org/{}", encoded_name);
         
-        // Use proxy rotator
-        // TODO: Implement retry logic here using the RateLimiter/Retry policy
-        // For MVP, we use simple retry in the rotator or just fail.
-        // But Rotator returns a fresh client per request.
+        let mut last_error: Option<anyhow::Error> = None;
         
-        let lease = self.rotator.get_client()?;
-        let client = lease.client;
-
-        let resp = client.get(&url)
-            .header("Accept", "application/vnd.npm.install-v1+json") // Enterprise: faster
-            .send()
-            .await;
-
-        match resp {
-            Ok(response) => {
-                let status = response.status();
-                if status.is_success() {
-                    let text = response.text().await?;
-                    // lease.report_success(latency); // TODO: Measure latency
-                    let json: Value = serde_json::from_str(&text)?;
-                    Ok(Some(json))
-                } else if status == StatusCode::NOT_FOUND {
-                    // Package might be private or deleted
-                    Ok(None) 
-                } else {
-                    // lease.report_failure();
-                    warn!(package=%package_name, status=%status, "Failed to fetch packument");
-                    Err(anyhow::anyhow!("Registry returned {}", status))
+        for attempt in 0..MAX_RETRIES {
+            if attempt > 0 {
+                let backoff = Duration::from_millis(INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1));
+                debug!(package=%package_name, attempt=%attempt, backoff_ms=%backoff.as_millis(), "Retrying fetch");
+                tokio::time::sleep(backoff).await;
+            }
+            
+            let lease = match self.rotator.get_client() {
+                Ok(l) => l,
+                Err(e) => {
+                    last_error = Some(e.into());
+                    continue;
                 }
-            },
-            Err(e) => {
-                // lease.report_failure();
-                warn!(package=%package_name, error=%e, "Network error fetching packument");
-                Err(e.into())
+            };
+
+            let resp = lease.client.get(&url)
+                .header("Accept", "application/vnd.npm.install-v1+json")
+                .send()
+                .await;
+
+            match resp {
+                Ok(response) => {
+                    let status = response.status();
+                    if status.is_success() {
+                        let text = response.text().await?;
+                        let json: Value = serde_json::from_str(&text)?;
+                        return Ok(Some(json));
+                    } else if status == StatusCode::NOT_FOUND {
+                        return Ok(None);
+                    } else if status == StatusCode::TOO_MANY_REQUESTS {
+                        warn!(package=%package_name, attempt=%attempt, "Rate limited, backing off");
+                        last_error = Some(anyhow::anyhow!("Rate limited (429)"));
+                        continue;
+                    } else {
+                        warn!(package=%package_name, status=%status, "Failed to fetch packument");
+                        last_error = Some(anyhow::anyhow!("Registry returned {}", status));
+                        // Don't retry client errors (4xx except 429)
+                        if status.is_client_error() {
+                            break;
+                        }
+                        continue;
+                    }
+                },
+                Err(e) => {
+                    warn!(package=%package_name, attempt=%attempt, error=%e, "Network error");
+                    last_error = Some(e.into());
+                    continue;
+                }
             }
         }
+        
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Failed after {} retries", MAX_RETRIES)))
     }
 }

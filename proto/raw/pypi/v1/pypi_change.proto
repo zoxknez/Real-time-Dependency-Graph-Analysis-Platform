@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package raw.pypi.v1;
+
+option java_package = "com.inversedeps.raw.pypi.v1";
+option java_multiple_files = true;
+
+// PyPI Journal/Changelog event from XML-RPC or Simple API polling
+message PypiChange {
+  // Project name (e.g., "requests", "django")
+  string project_name = 1;
+  
+  // Serial number from PyPI changelog (monotonically increasing)
+  int64 serial = 2;
+  
+  // Timestamp of the change (RFC3339)
+  string changed_at = 3;
+  
+  // Type of change detected
+  ChangeType change_type = 4;
+  
+  // Version affected (if applicable)
+  optional string version = 5;
+  
+  // Action from changelog (e.g., "new release", "remove", "yank", "unyank")
+  optional string action = 6;
+}
+
+enum ChangeType {
+  CHANGE_TYPE_UNSPECIFIED = 0;
+  CHANGE_TYPE_NEW_RELEASE = 1;
+  CHANGE_TYPE_REMOVE = 2;
+  CHANGE_TYPE_YANK = 3;
+  CHANGE_TYPE_UNYANK = 4;
+  CHANGE_TYPE_UPDATE = 5;
+}
+
+// Batch of changes for efficient processing
+message PypiChangeBatch {
+  repeated PypiChange changes = 1;
+  
+  // Last serial in this batch (for checkpointing)
+  int64 last_serial = 2;
+}

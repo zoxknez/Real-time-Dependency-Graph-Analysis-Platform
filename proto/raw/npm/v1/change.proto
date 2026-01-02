@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package raw.npm.v1;
+
+import "google/protobuf/timestamp.proto";
+import "shared/event/v1/event_meta.proto";
+
+// NpmChange represents a raw change event from the npm registry changes feed.
+// This is the lowest-level event - minimal parsing, just structured transportation
+// from the npm _changes endpoint to our processing pipeline.
+//
+// Topic: raw.npm.changes.v1
+// Partition Key: package name (for ordering guarantees per package)
+message NpmChange {
+  // Event metadata (ID, tracing, timestamp)
+  shared.event.v1.EventMeta meta = 1;
+
+  // Opaque sequence number from npm registry.
+  // NEVER parse this as integer - treat as string for forward compatibility.
+  // Used for checkpoint/cursor management in watcher.
+  string seq = 2;
+
+  // Package name (may include @scope, e.g., "@babel/core").
+  // This is the npm package identifier.
+  string id = 3;
+
+  // True if the package was deleted from the registry.
+  // When true, downstream should mark package as deleted.
+  bool deleted = 4;
+
+  // Timestamp when this change was observed by our watcher.
+  // NOT the npm publish time (that's in packument metadata).
+  google.protobuf.Timestamp seen_at = 5;
+
+  // Optional: raw JSON from changes feed for debugging.
+  // Only populated if debug mode is enabled.
+  string raw_json = 6;
+}

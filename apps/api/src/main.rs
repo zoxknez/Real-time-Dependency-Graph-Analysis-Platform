@@ -1,60 +1,164 @@
-//! API Gateway - GraphQL/REST endpoint for the platform
+//! API Gateway - GraphQL endpoint for dependency graph queries
 //!
 //! Responsibilities:
-//! - GraphQL API for querying dependency graphs
+//! - GraphQL API with reverseDependents, dependencyPath, impactRadius
+//! - Real-time subscriptions for new versions
 //! - REST endpoints for health checks & metrics
-//! - JWT-based authentication
-//! - Rate limiting per API key
+//! - JWT-based authentication (optional)
+//! - Rate limiting and query complexity limits
 
-mod graphql;
-mod handlers;
-mod auth;
+mod cache;
 mod config;
+mod gql;
+mod graph;
+mod handlers;
+mod kafka;
+mod middleware;
 
 use anyhow::Result;
+use async_graphql::http::GraphiQLSource;
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
 use axum::{
+    extract::State,
+    response::{Html, IntoResponse, Json},
     routing::get,
     Router,
 };
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+use crate::config::Config;
+use crate::gql::ApiSchema;
+use crate::handlers::AppState;
+use crate::middleware::create_rate_limiter;
+
+/// Combined app state
+#[derive(Clone)]
+pub struct CombinedState {
+    pub schema: ApiSchema,
+    pub app_state: AppState,
+    pub rate_limit_rpm: u32,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,api=debug".into()))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     info!("🌐 Starting API Gateway");
-    
-    // Build GraphQL schema
-    let schema = graphql::build_schema().await?;
-    
+
+    // Load configuration
+    let config = Config::from_env();
+    info!(
+        host = %config.server.host,
+        port = config.server.port,
+        memgraph_uri = %config.memgraph.uri,
+        rate_limit_rpm = config.guardrails.rate_limit_rpm,
+        "Configuration loaded"
+    );
+
+    // Build GraphQL schema (returns graph and cache clients too)
+    let (schema, event_tx, graph, cache) = gql::build_schema(&config).await?;
+
+    // Create app state for health checks
+    let app_state = AppState {
+        graph: graph.clone(),
+        cache: cache.map(Arc::new),
+    };
+
+    // Start Kafka consumer for subscriptions in background
+    let kafka_config = config.kafka.clone();
+    let kafka_event_tx = event_tx.clone();
+    tokio::spawn(async move {
+        if let Err(e) = kafka::start_event_consumer(&kafka_config, kafka_event_tx).await {
+            tracing::error!("Kafka consumer error: {}", e);
+        }
+    });
+
     // CORS configuration
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
         .allow_headers(Any);
-    
-    // Build router
+
+    // Create combined state
+    let combined_state = CombinedState {
+        schema,
+        app_state,
+        rate_limit_rpm: config.guardrails.rate_limit_rpm,
+    };
+
+    // Build router - simple flat structure
     let app = Router::new()
-        .route("/health", get(handlers::health_check))
-        .route("/graphql", get(graphql::graphql_playground).post(graphql::graphql_handler))
+        .route("/health", get(health_handler))
+        .route("/ready", get(ready_handler))
+        .route("/graphql", get(graphql_playground).post(graphql_handler))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
-        .with_state(schema);
-    
+        .with_state(combined_state);
+
     // Start server
-    let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
-    info!(address = %addr, "Starting HTTP server");
+    let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port)
+        .parse()
+        .expect("Invalid server address");
     
+    info!(address = %addr, "Starting HTTP server");
+
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
-    
+
     Ok(())
 }
+
+/// Health check endpoint
+async fn health_handler() -> Json<handlers::HealthResponse> {
+    Json(handlers::HealthResponse {
+        status: "healthy",
+        version: env!("CARGO_PKG_VERSION"),
+    })
+}
+
+/// Readiness check endpoint
+async fn ready_handler(
+    State(state): State<CombinedState>,
+) -> Json<handlers::ReadinessResponse> {
+    let memgraph_ok = state.app_state.graph.health_check().await;
+    
+    let redis_ok = match &state.app_state.cache {
+        Some(cache) => cache.health_check().await,
+        None => true,
+    };
+
+    let status = if memgraph_ok && redis_ok {
+        "ready"
+    } else {
+        "degraded"
+    };
+
+    Json(handlers::ReadinessResponse {
+        status,
+        memgraph: memgraph_ok,
+        redis: redis_ok,
+    })
+}
+
+/// GraphQL handler for queries and mutations
+async fn graphql_handler(
+    State(state): State<CombinedState>,
+    req: GraphQLRequest,
+) -> GraphQLResponse {
+    state.schema.execute(req.into_inner()).await.into()
+}
+
+/// GraphQL Playground UI (GraphiQL)
+async fn graphql_playground() -> impl IntoResponse {
+    Html(GraphiQLSource::build().endpoint("/graphql").finish())
+}
+

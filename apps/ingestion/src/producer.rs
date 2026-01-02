@@ -20,7 +20,6 @@ impl EventProducer {
         let producer: FutureProducer = ClientConfig::new()
             .set("bootstrap.servers", brokers)
             .set("message.timeout.ms", "5000") // 5s timeout
-            .set("compression.type", "zstd")
             .set("batch.size", "65536")
             .set("linger.ms", "5")
             .set("acks", "all")
@@ -33,6 +32,11 @@ impl EventProducer {
             producer,
             topic: topic.to_string(),
         })
+    }
+    
+    /// Get the underlying FutureProducer (for OutboxPublisher)
+    pub fn inner_producer(&self) -> &FutureProducer {
+        &self.producer
     }
     
     /// Publish a protobuf message to the default topic

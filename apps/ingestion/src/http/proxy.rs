@@ -86,6 +86,8 @@ pub struct ProxyRotator {
     proxies: Vec<ProxyNode>,
     cursor: AtomicUsize,
     base_client: Client,
+    user_agent: String,
+    timeout: Duration,
 }
 
 impl ProxyRotator {
@@ -106,6 +108,8 @@ impl ProxyRotator {
             proxies: nodes,
             cursor: AtomicUsize::new(0),
             base_client,
+            user_agent: config.user_agent.clone(),
+            timeout: Duration::from_secs(config.timeout_secs),
         })
     }
 
@@ -125,8 +129,8 @@ impl ProxyRotator {
             
             if node.is_usable() {
                 let client = Client::builder()
-                    .user_agent("InverseDeps-Crawler/1.0") 
-                    .timeout(Duration::from_secs(30))
+                    .user_agent(&self.user_agent) 
+                    .timeout(self.timeout)
                     .proxy(reqwest::Proxy::all(node.url.clone())?)
                     .build()?;
                     

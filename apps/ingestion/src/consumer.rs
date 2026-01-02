@@ -1,8 +1,7 @@
 use anyhow::Result;
 use rdkafka::config::ClientConfig;
-use rdkafka::consumer::{Consumer, StreamConsumer, CommitMode};
-use rdkafka::message::Message as KafkaMessage;
-use tracing::{info, warn};
+use rdkafka::consumer::{Consumer, StreamConsumer};
+use tracing::info;
 use std::sync::Arc;
 
 pub struct EventConsumer {

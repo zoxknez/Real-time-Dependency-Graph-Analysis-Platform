@@ -6,19 +6,48 @@ authors.workspace = true
 license.workspace = true
 
 [dependencies]
+# Async Runtime
 tokio.workspace = true
+futures = "0.3"
+
+# Kafka
 rdkafka.workspace = true
+
+# Serialization
 serde.workspace = true
 serde_json.workspace = true
-anyhow.workspace = true
-thiserror.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-chrono.workspace = true
-uuid.workspace = true
-config.workspace = true
-dotenvy.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+
+# Graph Database
 neo4rs.workspace = true
 
+# gRPC/Protobuf
+tonic = "0.12"
+
+# Error Handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Web (metrics server)
+axum.workspace = true
+
+# Observability
+tracing.workspace = true
+tracing-subscriber.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+
+# Utilities
+uuid.workspace = true
+chrono.workspace = true
+config.workspace = true
+dotenvy.workspace = true
+async-trait.workspace = true
+
+# Shared packages
 models = { path = "../../packages/models" }
-storage = { path = "../../packages/storage" }
+
+[build-dependencies]
+tonic-build = "0.12"
+
