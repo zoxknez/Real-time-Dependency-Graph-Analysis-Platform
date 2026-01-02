@@ -17,13 +17,6 @@ interface EcosystemData {
   color: string;
 }
 
-// Distribution based on typical registry proportions
-const ECOSYSTEM_DISTRIBUTION = [
-  { ecosystem: "CARGO", ratio: 0.56 },   // ~56% Rust packages
-  { ecosystem: "NPM", ratio: 0.29 },     // ~29% NPM packages
-  { ecosystem: "PY_PI", ratio: 0.15 },   // ~15% PyPI packages
-];
-
 export function EcosystemChart() {
   const router = useRouter();
   const { data, loading, error, refetch } = useQuery(GET_GRAPH_STATS, {
@@ -31,15 +24,26 @@ export function EcosystemChart() {
   });
 
   const ecosystemData: EcosystemData[] = useMemo(() => {
-    const totalPackages = data?.graphStats?.totalPackages || 154;
-    const totalVersions = data?.graphStats?.totalVersions || 1063;
+    const breakdown = data?.graphStats?.ecosystemBreakdown;
+    const totalVersions = data?.graphStats?.totalVersions || 0;
+    const totalPackages = data?.graphStats?.totalPackages || 1;
     
-    return ECOSYSTEM_DISTRIBUTION.map(({ ecosystem, ratio }) => ({
-      ecosystem,
-      count: Math.round(totalPackages * ratio),
-      versions: Math.round(totalVersions * ratio),
-      color: getEcosystemColor(ecosystem),
-    }));
+    // Use real data from API if available
+    if (breakdown && breakdown.length > 0) {
+      return breakdown.map((item: { ecosystem: string; count: number }) => ({
+        ecosystem: item.ecosystem,
+        count: item.count,
+        versions: Math.round((item.count / totalPackages) * totalVersions),
+        color: getEcosystemColor(item.ecosystem),
+      }));
+    }
+    
+    // Fallback if no data
+    return [
+      { ecosystem: "CARGO", count: 0, versions: 0, color: getEcosystemColor("CARGO") },
+      { ecosystem: "NPM", count: 0, versions: 0, color: getEcosystemColor("NPM") },
+      { ecosystem: "PY_PI", count: 0, versions: 0, color: getEcosystemColor("PY_PI") },
+    ];
   }, [data]);
 
   const totalPackages = useMemo(

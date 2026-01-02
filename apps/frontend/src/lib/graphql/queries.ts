@@ -122,6 +122,10 @@ export const GET_GRAPH_STATS = gql`
       totalVersions
       totalDependencies
       totalPackageDependencies
+      ecosystemBreakdown {
+        ecosystem
+        count
+      }
     }
   }
 `;

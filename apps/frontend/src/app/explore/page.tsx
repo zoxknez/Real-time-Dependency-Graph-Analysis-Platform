@@ -12,7 +12,7 @@ import {
   AlertCircle,
   Sparkles,
 } from "lucide-react";
-import { GET_PACKAGE, GET_REVERSE_DEPENDENTS } from "@/lib/graphql/queries";
+import { GET_PACKAGE, GET_REVERSE_DEPENDENTS, SEARCH_PACKAGES } from "@/lib/graphql/queries";
 import { cn, formatEcosystemName, getEcosystemBadgeClass, parsePackageId } from "@/lib/utils";
 import { PackageCard } from "@/components/explore/package-card";
 import { PackageDetail } from "@/components/explore/package-detail";
@@ -33,8 +33,13 @@ function ExplorePageContent() {
   const [selectedEcosystem, setSelectedEcosystem] = useState(initialEcosystem);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
 
+  // Direct package lookup (for exact ID matches)
   const [getPackage, { data: packageData, loading: packageLoading, error: packageError }] = 
     useLazyQuery(GET_PACKAGE);
+
+  // Fuzzy search for packages
+  const [searchPackages, { data: searchData, loading: searchLoading, error: searchError }] = 
+    useLazyQuery(SEARCH_PACKAGES);
 
   const [getReverseDeps, { data: reverseDepsData, loading: reverseDepsLoading, fetchMore }] = 
     useLazyQuery(GET_REVERSE_DEPENDENTS);
@@ -58,30 +63,44 @@ function ExplorePageContent() {
     }
   }, [reverseDepsData, fetchMore]);
 
-  // Search handler
+  // Search handler - uses fuzzy search or direct lookup
   const handleSearch = useCallback((query: string) => {
     if (query.trim()) {
       // Update URL
       router.push(`/explore?q=${encodeURIComponent(query.trim())}`);
       
-      // Apply ecosystem filter to query if needed
-      let searchId = query.trim();
-      if (selectedEcosystem !== "ALL" && !query.includes(":")) {
-        searchId = `${selectedEcosystem.toLowerCase()}:${query.trim()}`;
-      }
+      // Check if it's an exact package ID format (ecosystem:name)
+      const isExactId = query.includes(":");
       
-      // Search for package
-      getPackage({ variables: { id: searchId } });
+      if (isExactId) {
+        // Direct package lookup
+        getPackage({ variables: { id: query.trim() } });
+      } else {
+        // Fuzzy search
+        const ecosystemFilter = selectedEcosystem !== "ALL" ? selectedEcosystem : undefined;
+        searchPackages({ 
+          variables: { 
+            query: query.trim(),
+            ecosystem: ecosystemFilter,
+            first: 20
+          } 
+        });
+      }
     }
-  }, [router, getPackage, selectedEcosystem]);
+  }, [router, getPackage, searchPackages, selectedEcosystem]);
 
   // Auto-search if query param exists
   useEffect(() => {
     if (initialQuery) {
       setSearchQuery(initialQuery);
-      getPackage({ variables: { id: initialQuery } });
+      // Check if it's an exact ID or fuzzy search
+      if (initialQuery.includes(":")) {
+        getPackage({ variables: { id: initialQuery } });
+      } else {
+        searchPackages({ variables: { query: initialQuery, first: 20 } });
+      }
     }
-  }, [initialQuery, getPackage]);
+  }, [initialQuery, getPackage, searchPackages]);
 
   // Load reverse deps when package is selected
   useEffect(() => {
@@ -97,6 +116,9 @@ function ExplorePageContent() {
   }, [selectedPackageId]);
 
   const foundPackage = packageData?.package;
+  const searchResults = searchData?.searchPackages?.edges || [];
+  const isLoading = packageLoading || searchLoading;
+  const error = packageError || searchError;
 
   return (
     <div className="space-y-6">
@@ -163,21 +185,21 @@ function ExplorePageContent() {
           </h2>
 
           {/* Loading State */}
-          {packageLoading && (
+          {isLoading && (
             <SkeletonCard />
           )}
 
           {/* Error State */}
-          {packageError && (
+          {error && (
             <QueryError
-              error={packageError}
+              error={error}
               onRetry={() => searchQuery && handleSearch(searchQuery)}
               minimal
             />
           )}
 
           {/* No Results */}
-          {!packageLoading && !foundPackage && searchQuery && !packageError && (
+          {!isLoading && !foundPackage && searchResults.length === 0 && searchQuery && !error && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
@@ -203,13 +225,30 @@ function ExplorePageContent() {
             </motion.div>
           )}
 
-          {/* Found Package */}
+          {/* Found Package (exact match) */}
           {foundPackage && (
             <PackageCard
               package={foundPackage}
               onClick={() => setSelectedPackageId(foundPackage.id)}
               isSelected={selectedPackageId === foundPackage.id}
             />
+          )}
+
+          {/* Search Results (fuzzy search) */}
+          {searchResults.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-sm theme-text-tertiary">
+                Found {searchData?.searchPackages?.totalCount || searchResults.length} packages
+              </p>
+              {searchResults.map(({ node }: { node: { id: string; name: string; ecosystem: string } }) => (
+                <PackageCard
+                  key={node.id}
+                  package={{ ...node, ecosystem: node.ecosystem as "NPM" | "PY_PI" | "CARGO" | "MAVEN" | "NU_GET" | "GO" }}
+                  onClick={() => setSelectedPackageId(node.id)}
+                  isSelected={selectedPackageId === node.id}
+                />
+              ))}
+            </div>
           )}
 
           {/* Example Searches */}

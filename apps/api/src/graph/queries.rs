@@ -297,6 +297,91 @@ impl GraphQueries {
             "#,
         )
     }
+
+    /// Get ecosystem breakdown for stats
+    pub fn ecosystem_breakdown() -> Query {
+        neo4rs::query(
+            r#"
+            MATCH (p:Package)
+            WHERE p.deleted_at IS NULL
+            RETURN p.ecosystem AS ecosystem, count(p) AS count
+            ORDER BY count DESC
+            "#,
+        )
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SEARCH QUERIES
+    // ═══════════════════════════════════════════════════════════════
+
+    /// Search packages by name (case-insensitive contains)
+    pub fn search_packages(query: &str, ecosystem: Option<&str>, limit: i32) -> Query {
+        let cypher = match ecosystem {
+            Some(_) => r#"
+                MATCH (p:Package)
+                WHERE p.deleted_at IS NULL 
+                  AND toLower(p.name) CONTAINS toLower($query)
+                  AND toLower(p.ecosystem) = toLower($ecosystem)
+                RETURN p.id AS id,
+                       p.ecosystem AS ecosystem,
+                       p.name AS name
+                ORDER BY 
+                  CASE WHEN toLower(p.name) = toLower($query) THEN 0 ELSE 1 END,
+                  size(p.name)
+                LIMIT $limit
+            "#,
+            None => r#"
+                MATCH (p:Package)
+                WHERE p.deleted_at IS NULL 
+                  AND toLower(p.name) CONTAINS toLower($query)
+                RETURN p.id AS id,
+                       p.ecosystem AS ecosystem,
+                       p.name AS name
+                ORDER BY 
+                  CASE WHEN toLower(p.name) = toLower($query) THEN 0 ELSE 1 END,
+                  size(p.name)
+                LIMIT $limit
+            "#,
+        };
+
+        let mut q = neo4rs::query(cypher)
+            .param("query", query.to_string())
+            .param("limit", limit as i64);
+        
+        if let Some(eco) = ecosystem {
+            q = q.param("ecosystem", eco.to_string());
+        }
+        
+        q
+    }
+
+    /// Count search results for pagination
+    pub fn search_packages_count(query: &str, ecosystem: Option<&str>) -> Query {
+        let cypher = match ecosystem {
+            Some(_) => r#"
+                MATCH (p:Package)
+                WHERE p.deleted_at IS NULL 
+                  AND toLower(p.name) CONTAINS toLower($query)
+                  AND toLower(p.ecosystem) = toLower($ecosystem)
+                RETURN count(p) AS total
+            "#,
+            None => r#"
+                MATCH (p:Package)
+                WHERE p.deleted_at IS NULL 
+                  AND toLower(p.name) CONTAINS toLower($query)
+                RETURN count(p) AS total
+            "#,
+        };
+
+        let mut q = neo4rs::query(cypher)
+            .param("query", query.to_string());
+        
+        if let Some(eco) = ecosystem {
+            q = q.param("ecosystem", eco.to_string());
+        }
+        
+        q
+    }
 }
 
 #[cfg(test)]

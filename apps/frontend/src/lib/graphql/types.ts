@@ -56,11 +56,17 @@ export interface ImpactRadiusResult {
   topImpacted: ImpactNode[];
 }
 
+export interface EcosystemCount {
+  ecosystem: Ecosystem;
+  count: number;
+}
+
 export interface GraphStats {
   totalPackages: number;
   totalVersions: number;
   totalDependencies: number;
   totalPackageDependencies: number;
+  ecosystemBreakdown?: EcosystemCount[];
 }
 
 export interface EventMeta {

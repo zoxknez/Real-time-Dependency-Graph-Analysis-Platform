@@ -340,20 +340,117 @@ impl QueryRoot {
         
         let query = GraphQueries::graph_stats();
         
-        match gql_ctx.graph.query_one(query).await? {
-            Some(row) => Ok(GraphStats {
-                total_packages: row.get("packages").unwrap_or(0),
-                total_versions: row.get("versions").unwrap_or(0),
-                total_dependencies: row.get("dependencies").unwrap_or(0),
-                total_package_dependencies: row.get("pkg_dependencies").unwrap_or(0),
-            }),
-            None => Ok(GraphStats {
-                total_packages: 0,
-                total_versions: 0,
-                total_dependencies: 0,
-                total_package_dependencies: 0,
-            }),
+        let (total_packages, total_versions, total_dependencies, total_package_dependencies) = 
+            match gql_ctx.graph.query_one(query).await? {
+                Some(row) => (
+                    row.get("packages").unwrap_or(0),
+                    row.get("versions").unwrap_or(0),
+                    row.get("dependencies").unwrap_or(0),
+                    row.get("pkg_dependencies").unwrap_or(0),
+                ),
+                None => (0, 0, 0, 0),
+            };
+
+        // Get ecosystem breakdown
+        let eco_query = GraphQueries::ecosystem_breakdown();
+        let eco_rows = gql_ctx.graph.query(eco_query).await?;
+        
+        let ecosystem_breakdown: Vec<EcosystemCount> = eco_rows
+            .iter()
+            .map(|row| {
+                let eco_str: String = row.get("ecosystem").unwrap_or_default();
+                EcosystemCount {
+                    ecosystem: Ecosystem::from(eco_str.as_str()),
+                    count: row.get("count").unwrap_or(0),
+                }
+            })
+            .collect();
+
+        Ok(GraphStats {
+            total_packages,
+            total_versions,
+            total_dependencies,
+            total_package_dependencies,
+            ecosystem_breakdown,
+        })
+    }
+
+    /// Search packages by name
+    #[instrument(skip(self, ctx))]
+    async fn search_packages(
+        &self,
+        ctx: &Context<'_>,
+        query: String,
+        ecosystem: Option<Ecosystem>,
+        #[graphql(default = 20)] first: i32,
+        after: Option<String>,
+    ) -> Result<SearchConnection> {
+        let gql_ctx = ctx.data::<GqlContext>()?;
+        let effective_limit = first.min(gql_ctx.guardrails.max_results);
+
+        // Parse cursor for offset
+        let offset: i32 = after
+            .and_then(|c| base64_decode_cursor(&c))
+            .unwrap_or(0);
+
+        // Convert ecosystem to string for query
+        let eco_str = ecosystem.map(|e| format!("{:?}", e).to_uppercase());
+
+        debug!(query = %query, ecosystem = ?eco_str, "Executing searchPackages");
+
+        // Execute search query
+        let search_query = GraphQueries::search_packages(
+            &query,
+            eco_str.as_deref(),
+            effective_limit + 1,
+        );
+        let rows = gql_ctx.graph.query(search_query).await?;
+
+        // Check for next page
+        let has_next_page = rows.len() as i32 > effective_limit;
+        let rows: Vec<_> = rows.into_iter().take(effective_limit as usize).collect();
+
+        // Build edges
+        let mut edges = Vec::with_capacity(rows.len());
+        for (idx, row) in rows.iter().enumerate() {
+            let pkg = Package {
+                id: ID(row.get::<String>("id").unwrap_or_default()),
+                ecosystem: Ecosystem::from(
+                    row.get::<String>("ecosystem")
+                        .unwrap_or_default()
+                        .as_str(),
+                ),
+                name: row.get("name").unwrap_or_default(),
+                created_at: None,
+                updated_at: None,
+            };
+
+            edges.push(SearchEdge {
+                node: pkg,
+                cursor: base64_encode_cursor(offset + idx as i32),
+            });
         }
+
+        // Get total count
+        let count_query = GraphQueries::search_packages_count(&query, eco_str.as_deref());
+        let total_count = match gql_ctx.graph.query_one(count_query).await? {
+            Some(row) => row.get::<i64>("total").unwrap_or(0) as i32,
+            None => 0,
+        };
+
+        let start_cursor = edges.first().map(|e| e.cursor.clone());
+        let end_cursor = edges.last().map(|e| e.cursor.clone());
+
+        Ok(SearchConnection {
+            edges,
+            page_info: PageInfo {
+                has_next_page,
+                has_previous_page: offset > 0,
+                start_cursor,
+                end_cursor,
+            },
+            total_count,
+        })
     }
 }
 

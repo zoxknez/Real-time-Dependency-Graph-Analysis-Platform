@@ -178,4 +178,28 @@ pub struct GraphStats {
     pub total_versions: i64,
     pub total_dependencies: i64,
     pub total_package_dependencies: i64,
+    pub ecosystem_breakdown: Vec<EcosystemCount>,
+}
+
+#[derive(SimpleObject, Clone, Debug)]
+pub struct EcosystemCount {
+    pub ecosystem: Ecosystem,
+    pub count: i64,
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SEARCH TYPES
+// ═══════════════════════════════════════════════════════════════
+
+#[derive(SimpleObject, Clone, Debug)]
+pub struct SearchConnection {
+    pub edges: Vec<SearchEdge>,
+    pub page_info: PageInfo,
+    pub total_count: i32,
+}
+
+#[derive(SimpleObject, Clone, Debug)]
+pub struct SearchEdge {
+    pub node: Package,
+    pub cursor: String,
 }

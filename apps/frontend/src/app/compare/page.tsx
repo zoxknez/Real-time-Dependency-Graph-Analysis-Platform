@@ -78,13 +78,13 @@ function PackageSelector({
       {!packageData ? (
         <form onSubmit={handleSubmit}>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 theme-text-muted" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 theme-text-muted pointer-events-none" />
             <input
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder="Enter package ID (e.g., cargo:tokio)"
-              className="input-search pl-10"
+              className="input-search !pl-12"
             />
           </div>
           <button
