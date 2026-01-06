@@ -269,7 +269,7 @@ export function KeyboardShortcut({
 export function useAnnounce() {
   const [message, setMessage] = React.useState("");
 
-  const announce = React.useCallback((msg: string, politeness: "polite" | "assertive" = "polite") => {
+  const announce = React.useCallback((msg: string) => {
     // Clear and reset to trigger announcement
     setMessage("");
     requestAnimationFrame(() => {

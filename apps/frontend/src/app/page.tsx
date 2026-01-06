@@ -6,17 +6,14 @@ import {
   Layers, 
   GitBranch, 
   Activity,
-  TrendingUp,
   ArrowRight,
   Zap,
-  Shield,
   Search,
 } from "lucide-react";
 import Link from "next/link";
 import { useQuery } from "@apollo/client";
 import { GET_GRAPH_STATS } from "@/lib/graphql/queries";
 import { GetGraphStatsResponse } from "@/lib/graphql/types";
-import { formatNumber } from "@/lib/utils";
 import { StatsCard } from "@/components/dashboard/stats-card";
 import { EcosystemChart } from "@/components/dashboard/ecosystem-chart";
 import { QuickActions } from "@/components/dashboard/quick-actions";
@@ -40,7 +37,7 @@ const itemVariants = {
 };
 
 export default function DashboardPage() {
-  const { data, loading, error } = useQuery<GetGraphStatsResponse>(GET_GRAPH_STATS);
+  const { data, loading } = useQuery<GetGraphStatsResponse>(GET_GRAPH_STATS);
 
   const stats = data?.graphStats || {
     totalPackages: 0,

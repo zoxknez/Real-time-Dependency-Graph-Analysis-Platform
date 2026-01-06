@@ -6,12 +6,44 @@
 //! - dependencyPath(fromPackageId, toPackageId, maxHops)
 //! - impactRadius(packageId, vulnerableVersionRange, maxDepth, limit)
 
-use async_graphql::{Context, Object, Result, ID};
+use async_graphql::{Context, ErrorExtensions, Object, Result, ID};
+use std::collections::{HashMap, HashSet};
 use tracing::{debug, instrument};
 
+use crate::embeddings::EmbeddingError;
 use crate::gql::context::GqlContext;
 use crate::gql::types::*;
 use crate::graph::GraphQueries;
+
+use qdrant_client::qdrant::{Condition, Filter, SearchPointsBuilder};
+use qdrant_client::qdrant::value::Kind;
+
+fn qdrant_error_code(message: &str) -> &'static str {
+    let m = message.to_ascii_lowercase();
+    if m.contains("deadline") || m.contains("timed out") || m.contains("timeout") {
+        return "QDRANT_TIMEOUT";
+    }
+    if m.contains("refused")
+        || m.contains("connect")
+        || m.contains("connection")
+        || m.contains("unavailable")
+        || m.contains("dns")
+    {
+        return "QDRANT_UNAVAILABLE";
+    }
+    "QDRANT_SEARCH_FAILED"
+}
+
+fn ecosystem_payload_value(e: Ecosystem) -> &'static str {
+    match e {
+        Ecosystem::Npm => "NPM",
+        Ecosystem::PyPi => "PY_PI",
+        Ecosystem::Cargo => "CARGO",
+        Ecosystem::Maven => "MAVEN",
+        Ecosystem::NuGet => "NU_GET",
+        Ecosystem::Go => "GO",
+    }
+}
 
 pub struct QueryRoot;
 
@@ -393,17 +425,13 @@ impl QueryRoot {
             .and_then(|c| base64_decode_cursor(&c))
             .unwrap_or(0);
 
-        // Convert ecosystem to string for query
-        let eco_str = ecosystem.map(|e| format!("{:?}", e).to_uppercase());
+        // Convert ecosystem to canonical stored string (aligns with ingest/payload conventions)
+        let eco_str = ecosystem.map(ecosystem_payload_value);
 
         debug!(query = %query, ecosystem = ?eco_str, "Executing searchPackages");
 
         // Execute search query
-        let search_query = GraphQueries::search_packages(
-            &query,
-            eco_str.as_deref(),
-            effective_limit + 1,
-        );
+        let search_query = GraphQueries::search_packages(&query, eco_str, effective_limit + 1);
         let rows = gql_ctx.graph.query(search_query).await?;
 
         // Check for next page
@@ -432,7 +460,7 @@ impl QueryRoot {
         }
 
         // Get total count
-        let count_query = GraphQueries::search_packages_count(&query, eco_str.as_deref());
+        let count_query = GraphQueries::search_packages_count(&query, eco_str);
         let total_count = match gql_ctx.graph.query_one(count_query).await? {
             Some(row) => row.get::<i64>("total").unwrap_or(0) as i32,
             None => 0,
@@ -450,6 +478,195 @@ impl QueryRoot {
                 end_cursor,
             },
             total_count,
+        })
+    }
+
+    /// Semantic search packages using vector similarity (Qdrant).
+    ///
+    /// Returns the best-matching packages based on symbol-level embeddings.
+    #[instrument(skip(self, ctx))]
+    async fn semantic_search_packages(
+        &self,
+        ctx: &Context<'_>,
+        query: String,
+        ecosystem: Option<Ecosystem>,
+        #[graphql(default = 20)] first: i32,
+        after: Option<String>,
+    ) -> Result<SemanticSearchConnection> {
+        let gql_ctx = ctx.data::<GqlContext>()?;
+        let effective_limit = first.min(gql_ctx.guardrails.max_results);
+
+        // Parse cursor for offset
+        let offset: i32 = after
+            .and_then(|c| base64_decode_cursor(&c))
+            .unwrap_or(0);
+
+        let Some(semantic) = gql_ctx.semantic_search.as_ref() else {
+            return Ok(SemanticSearchConnection {
+                edges: vec![],
+                page_info: PageInfo {
+                    has_next_page: false,
+                    has_previous_page: offset > 0,
+                    start_cursor: None,
+                    end_cursor: None,
+                },
+                total_count: 0,
+            });
+        };
+
+        // Convert ecosystem to the stored payload string (e.g. "PY_PI", "NU_GET")
+        let eco_str = ecosystem.map(ecosystem_payload_value);
+
+        debug!(query = %query, ecosystem = ?eco_str, "Executing semanticSearchPackages");
+
+        let embedding = semantic
+            .embedder
+            .generate(&query)
+            .await
+            .map_err(|e| {
+                let mut err = async_graphql::Error::new("Embedding generation failed");
+
+                if let Some(embed_err) = e.downcast_ref::<EmbeddingError>() {
+                    err = err.extend_with(|_, ext| {
+                        ext.set("code", embed_err.code());
+                        match embed_err {
+                            EmbeddingError::ProviderRejected { status, .. } => {
+                                ext.set("status", *status);
+                            }
+                            _ => {}
+                        }
+                    });
+                } else {
+                    err = err.extend_with(|_, ext| {
+                        ext.set("code", "EMBEDDING_UNKNOWN");
+                    });
+                }
+
+                err
+            })?;
+
+        // Qdrant search returns symbol-level hits; we de-duplicate into packages.
+        // Because de-dup can collapse many hits into one package, we may need to
+        // ask Qdrant for more points to get a full page of unique packages.
+        let needed_unique = (offset + effective_limit + 1).max(0) as u64;
+        let mut top_k: u64 = needed_unique.saturating_mul(5).max(20);
+        let max_top_k: u64 = needed_unique
+            .saturating_mul(50)
+            .max(200)
+            .min(10_000);
+
+        let mut best_scores: HashMap<String, f32> = HashMap::new();
+        let mut ordered: Vec<String> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        let mut has_more_points = false;
+
+        for _attempt in 0..3 {
+            let mut search_builder = SearchPointsBuilder::new(
+                &semantic.collection,
+                embedding.clone(),
+                top_k,
+            )
+            .with_payload(true);
+
+            if let Some(eco) = eco_str {
+                search_builder = search_builder.filter(Filter::must(vec![
+                    Condition::matches("ecosystem", eco.to_string()),
+                ]));
+            }
+
+            let response = semantic
+                .qdrant
+                .search_points(search_builder)
+                .await
+                .map_err(|e| {
+                    let details = e.to_string();
+                    let code = qdrant_error_code(&details);
+                    async_graphql::Error::new("Qdrant search failed").extend_with(|_, ext| {
+                        ext.set("code", code);
+                        ext.set("details", details);
+                    })
+                })?;
+
+            has_more_points = response.result.len() as u64 >= top_k;
+
+            best_scores.clear();
+            ordered.clear();
+            seen.clear();
+
+            for point in response.result {
+                let payload = point.payload;
+                let Some(v) = payload.get("package_id") else { continue };
+                let Some(Kind::StringValue(package_id)) = v.kind.as_ref() else { continue };
+
+                let score = point.score;
+                match best_scores.get(package_id) {
+                    Some(existing) if *existing >= score => {}
+                    _ => {
+                        best_scores.insert(package_id.clone(), score);
+                        if seen.insert(package_id.clone()) {
+                            ordered.push(package_id.clone());
+                        }
+                    }
+                }
+            }
+
+            if (ordered.len() as u64) > needed_unique {
+                break;
+            }
+
+            if !has_more_points || top_k >= max_top_k {
+                break;
+            }
+
+            top_k = (top_k.saturating_mul(2)).min(max_top_k);
+        }
+
+        // Sort packages by best score desc; tie-break deterministically by id.
+        ordered.sort_by(|a, b| {
+            let sa = best_scores.get(a).copied().unwrap_or(0.0);
+            let sb = best_scores.get(b).copied().unwrap_or(0.0);
+
+            match sb.partial_cmp(&sa) {
+                Some(std::cmp::Ordering::Equal) | None => a.cmp(b),
+                Some(ord) => ord,
+            }
+        });
+
+        let has_next_page = (ordered.len() as i32) > (offset + effective_limit)
+            || (has_more_points && top_k >= max_top_k);
+        let page_ids: Vec<String> = ordered
+            .iter()
+            .skip(offset.max(0) as usize)
+            .take(effective_limit.max(0) as usize)
+            .cloned()
+            .collect();
+
+        let packages_map = gql_ctx.package_loader.load_many(&page_ids).await;
+
+        let mut edges: Vec<SemanticSearchEdge> = Vec::with_capacity(page_ids.len());
+        for (idx, id) in page_ids.iter().enumerate() {
+            let Some(pkg) = packages_map.get(id).cloned() else { continue };
+            let score = best_scores.get(id).copied().unwrap_or(0.0);
+            edges.push(SemanticSearchEdge {
+                node: pkg,
+                cursor: base64_encode_cursor(offset + idx as i32),
+                score,
+            });
+        }
+
+        let start_cursor = edges.first().map(|e| e.cursor.clone());
+        let end_cursor = edges.last().map(|e| e.cursor.clone());
+
+        Ok(SemanticSearchConnection {
+            edges,
+            page_info: PageInfo {
+                has_next_page,
+                has_previous_page: offset > 0,
+                start_cursor,
+                end_cursor,
+            },
+            // Total count is not cheaply available from Qdrant; keep 0 for now.
+            total_count: 0,
         })
     }
 }

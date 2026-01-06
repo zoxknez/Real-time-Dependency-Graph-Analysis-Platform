@@ -2,10 +2,10 @@
 
 import { useMemo, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Activity, TrendingUp, TrendingDown, Minus, Zap, Users, Package } from "lucide-react";
+import { Activity, TrendingUp, TrendingDown, Minus, Users, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLiveStats, useConnectionStatus } from "@/lib/hooks";
-import type { LiveStats, EcosystemStat, EcosystemActivity } from "@/lib/graphql/types";
+import type { EcosystemActivity } from "@/lib/graphql/types";
 
 interface LiveStatsCardProps {
   className?: string;
@@ -13,7 +13,7 @@ interface LiveStatsCardProps {
 
 export function LiveStatsCard({ className }: LiveStatsCardProps) {
   const connectionStatus = useConnectionStatus();
-  const { stats, history, loading } = useLiveStats({
+  const { stats, history, loading: _loading } = useLiveStats({
     paused: false,
   });
 
@@ -250,37 +250,6 @@ function SparklineChart({ data, height = 40 }: { data: number[]; height?: number
       className="w-full" 
       style={{ height }}
     />
-  );
-}
-
-// Ecosystem mini stat (legacy)
-function EcosystemMiniStat({ stat }: { stat: EcosystemStat }) {
-  const ecosystemColors: Record<string, string> = {
-    NPM: "#cb3837",
-    CARGO: "#f7a41d",
-    PY_PI: "#3776ab",
-    MAVEN: "#c71a36",
-    NU_GET: "#004880",
-    GO: "#00add8",
-  };
-
-  const color = ecosystemColors[stat.ecosystem] || "#6366f1";
-
-  return (
-    <div 
-      className="p-2 rounded-lg text-center"
-      style={{ backgroundColor: `${color}15` }}
-    >
-      <div 
-        className="text-xs font-medium mb-0.5"
-        style={{ color }}
-      >
-        {stat.ecosystem.replace("_", "")}
-      </div>
-      <div className="text-sm font-semibold theme-text-primary">
-        +{stat.recentActivity}
-      </div>
-    </div>
   );
 }
 

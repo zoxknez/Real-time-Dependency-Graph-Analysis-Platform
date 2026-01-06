@@ -2,8 +2,12 @@
 """
 Development Seed Script
 
-Seeds local development databases with sample package data for testing.
-Run this after docker-compose up to populate the databases.
+Seeds local development databases with sample package + version data.
+This script is aligned with the API GraphQL/Memgraph schema:
+- Package nodes use stable IDs like "npm:express" (no version)
+- Version nodes belong to packages via (:Version)-[:BELONGS_TO]->(:Package)
+- Dependencies are modeled as (:Version)-[:DEPENDS_ON]->(:Package)
+- Qdrant points include payload { package_id, ecosystem } for filtering
 
 Usage:
     python scripts/dev-seed.py
@@ -180,24 +184,118 @@ DEPENDENCIES = [
 ]
 
 
-def generate_embedding(dim: int = 384) -> list[float]:
-    """Generate a random embedding vector for testing."""
-    return [random.uniform(-1, 1) for _ in range(dim)]
+def _fnv1a_64(data: bytes) -> int:
+    """Stable 64-bit FNV-1a hash."""
+    h = 0xCBF29CE484222325
+    for b in data:
+        h ^= b
+        h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
 
 
-def create_package_node(pkg: dict, version: str) -> dict:
-    """Create a package node structure."""
+def generate_embedding(text: str, dim: int = 384) -> list[float]:
+    """Deterministic lexical embedding.
+
+    Matches the API's mock embedder behavior:
+    - hashes token + char-trigram features into a fixed-size vector
+    - L2 normalizes for cosine distance
+    """
+
+    if dim <= 0:
+        return []
+
+    vec: list[float] = [0.0] * dim
+    normalized = text.lower()
+
+    def add_feature(feature: str, weight: float) -> None:
+        h = _fnv1a_64(feature.encode("utf-8"))
+        idx = int(h % dim)
+        sign = 1.0 if (h & 1) == 0 else -1.0
+        vec[idx] += sign * weight
+
+    def add_token(token: str) -> None:
+        add_feature(f"tok:{token}", 1.0)
+
+        # Prefix/suffix features help match common stems.
+        for n in range(3, 7):
+            if len(token) >= n:
+                add_feature(f"pre:{token[:n]}", 0.15)
+                add_feature(f"suf:{token[-n:]}", 0.15)
+
+        if len(token) >= 3:
+            for i in range(len(token) - 2):
+                tri = token[i : i + 3]
+                add_feature(f"tri:{tri}", 0.2)
+
+    # Full text weak feature
+    add_feature(f"txt:{normalized}", 0.25)
+
+    # Tokenize on non-alphanumeric boundaries
+    token = []
+    prev_token: str | None = None
+    for ch in normalized:
+        if ch.isalnum() and ord(ch) < 128:
+            token.append(ch)
+        else:
+            if token:
+                cur = "".join(token)
+                add_token(cur)
+                if prev_token is not None:
+                    add_feature(f"bi:{prev_token}_{cur}", 0.3)
+                prev_token = cur
+                token = []
+    if token:
+        cur = "".join(token)
+        add_token(cur)
+        if prev_token is not None:
+            add_feature(f"bi:{prev_token}_{cur}", 0.3)
+
+    # Normalize
+    norm = sum(v * v for v in vec) ** 0.5
+    if norm > 0:
+        vec = [v / norm for v in vec]
+    return vec
+
+
+def registry_to_ecosystem(registry: str) -> str:
+    if registry == "npm":
+        return "npm"
+    if registry in ("crates.io", "cargo"):
+        return "cargo"
+    if registry == "pypi":
+        return "pypi"
+    return registry
+
+
+def ecosystem_to_payload(ecosystem: str) -> str:
+    # Must match API's ecosystem_payload_value mapping
+    mapping = {
+        "npm": "NPM",
+        "pypi": "PY_PI",
+        "cargo": "CARGO",
+        "maven": "MAVEN",
+        "nuget": "NU_GET",
+        "go": "GO",
+    }
+    return mapping.get(ecosystem.lower(), "NPM")
+
+
+def stable_package_id(pkg: dict) -> str:
+    eco = registry_to_ecosystem(pkg["registry"])
+    return f"{eco}:{pkg['name']}"
+
+
+def create_version_node(pkg: dict, version: str) -> dict:
+    """Create a version node structure."""
     published = datetime.now() - timedelta(days=random.randint(1, 365))
+    package_id = stable_package_id(pkg)
     return {
-        "id": f"{pkg['registry']}:{pkg['name']}@{version}",
-        "name": pkg["name"],
+        "id": f"{package_id}@{version}",
+        "package_id": package_id,
         "version": version,
-        "registry": pkg["registry"],
-        "description": pkg["description"],
-        "license": pkg["license"],
-        "keywords": pkg["keywords"],
         "published_at": published.isoformat(),
-        "downloads": random.randint(1000, 10000000),
+        "yanked": False,
+        "created_at": int(time.time()),
     }
 
 
@@ -216,24 +314,44 @@ def seed_memgraph(driver, packages: list[dict]) -> None:
         # Insert package nodes
         print("  Inserting package nodes...")
         for pkg in packages:
+            eco = registry_to_ecosystem(pkg["registry"])
+            pkg_id = stable_package_id(pkg)
+            session.run(
+                """
+                MERGE (p:Package {id: $id})
+                SET p.name = $name,
+                    p.ecosystem = $ecosystem,
+                    p.created_at = coalesce(p.created_at, $created_at),
+                    p.updated_at = $updated_at
+                """,
+                id=pkg_id,
+                name=pkg["name"],
+                ecosystem=eco,
+                created_at=int(time.time()),
+                updated_at=int(time.time()),
+            )
+
+        # Insert version nodes
+        print("  Inserting version nodes...")
+        for pkg in packages:
             for version in pkg["versions"]:
-                node = create_package_node(pkg, version)
+                v = create_version_node(pkg, version)
                 session.run(
                     """
-                    MERGE (p:Package {id: $id})
-                    SET p.name = $name,
-                        p.version = $version,
-                        p.registry = $registry,
-                        p.description = $description,
-                        p.license = $license,
-                        p.keywords = $keywords,
-                        p.published_at = $published_at,
-                        p.downloads = $downloads
+                    MERGE (v:Version {id: $id})
+                    SET v.package_id = $package_id,
+                        v.version = $version,
+                        v.published_at = $published_at,
+                        v.yanked = $yanked,
+                        v.created_at = $created_at
+                    WITH v
+                    MATCH (p:Package {id: $package_id})
+                    MERGE (v)-[:BELONGS_TO]->(p)
                     """,
-                    **node
+                    **v,
                 )
         
-        # Insert dependency edges
+        # Insert dependency edges (Version -> Package) and package projection (Package -> Package)
         print("  Creating dependency edges...")
         for dep, target in DEPENDENCIES:
             # Find packages and link latest versions
@@ -241,17 +359,23 @@ def seed_memgraph(driver, packages: list[dict]) -> None:
             target_pkg = next((p for p in packages if p["name"] == target), None)
             
             if dep_pkg and target_pkg:
-                dep_id = f"{dep_pkg['registry']}:{dep_pkg['name']}@{dep_pkg['versions'][-1]}"
-                target_id = f"{target_pkg['registry']}:{target_pkg['name']}@{target_pkg['versions'][-1]}"
+                dep_pkg_id = stable_package_id(dep_pkg)
+                target_pkg_id = stable_package_id(target_pkg)
+                dep_ver_id = f"{dep_pkg_id}@{dep_pkg['versions'][-1]}"
                 
                 session.run(
                     """
-                    MATCH (a:Package {id: $dep_id})
-                    MATCH (b:Package {id: $target_id})
-                    MERGE (a)-[:DEPENDS_ON {version_req: "*", dev: false}]->(b)
+                    MATCH (v:Version {id: $dep_ver_id})
+                    MATCH (b:Package {id: $target_pkg_id})
+                    MERGE (v)-[:DEPENDS_ON {version_req: "*", dev: false}]->(b)
+
+                    WITH v, b
+                    MATCH (a:Package {id: $dep_pkg_id})
+                    MERGE (a)-[:DEPENDS_ON_PKG]->(b)
                     """,
-                    dep_id=dep_id,
-                    target_id=target_id
+                    dep_ver_id=dep_ver_id,
+                    dep_pkg_id=dep_pkg_id,
+                    target_pkg_id=target_pkg_id,
                 )
         
         # Create some maintainer nodes
@@ -287,7 +411,7 @@ def seed_memgraph(driver, packages: list[dict]) -> None:
         for maintainer, pkg_name in maintainer_links:
             pkg = next((p for p in packages if p["name"] == pkg_name), None)
             if pkg:
-                pkg_id = f"{pkg['registry']}:{pkg_name}@{pkg['versions'][-1]}"
+                pkg_id = stable_package_id(pkg)
                 session.run(
                     """
                     MATCH (m:Maintainer {login: $maintainer})
@@ -326,22 +450,26 @@ def seed_qdrant(client: QdrantClient, packages: list[dict]) -> None:
     point_id = 1
     
     for pkg in packages:
-        for version in pkg["versions"]:
-            node = create_package_node(pkg, version)
-            point = PointStruct(
-                id=point_id,
-                vector=generate_embedding(vector_dim),
-                payload={
-                    "package_id": node["id"],
-                    "name": node["name"],
-                    "version": node["version"],
-                    "registry": node["registry"],
-                    "description": node["description"],
-                    "keywords": node["keywords"],
-                },
-            )
-            points.append(point)
-            point_id += 1
+        eco = registry_to_ecosystem(pkg["registry"])
+        pkg_id = stable_package_id(pkg)
+
+        # Use deterministic mock embeddings based on package name.
+        # In mock mode this is a *sanity harness* (querying by exact name),
+        # not a true semantic embedding.
+        point = PointStruct(
+            id=point_id,
+            vector=generate_embedding(pkg["name"], vector_dim),
+            payload={
+                "package_id": pkg_id,
+                "ecosystem": ecosystem_to_payload(eco),
+                "name": pkg["name"],
+                "registry": pkg["registry"],
+                "description": pkg["description"],
+                "keywords": pkg["keywords"],
+            },
+        )
+        points.append(point)
+        point_id += 1
     
     # Batch upsert
     batch_size = 100
@@ -385,11 +513,13 @@ def seed_qdrant(client: QdrantClient, packages: list[dict]) -> None:
     for pkg_name, symbol, symbol_type, code in sample_symbols:
         pkg = next((p for p in packages if p["name"] == pkg_name), None)
         if pkg:
+            eco = registry_to_ecosystem(pkg["registry"])
             point = PointStruct(
                 id=code_id,
-                vector=generate_embedding(vector_dim),
+                vector=generate_embedding(symbol, vector_dim),
                 payload={
-                    "package_id": f"{pkg['registry']}:{pkg_name}@{pkg['versions'][-1]}",
+                    "package_id": stable_package_id(pkg),
+                    "ecosystem": ecosystem_to_payload(eco),
                     "symbol_name": symbol,
                     "symbol_type": symbol_type,
                     "code_snippet": code,
@@ -459,6 +589,18 @@ def main():
         print(f"Connecting to Qdrant at {args.qdrant_host}:{args.qdrant_port}...")
         try:
             client = QdrantClient(host=args.qdrant_host, port=args.qdrant_port)
+            # Qdrant may accept TCP connections before REST is fully ready (e.g. during migrations).
+            # Do a small readiness probe with backoff to avoid flaky seeding.
+            for attempt in range(1, 8):
+                try:
+                    client.get_collections()
+                    break
+                except Exception as e:
+                    if attempt == 7:
+                        raise
+                    delay = min(2 ** attempt, 10)
+                    print(f"  Qdrant not ready yet ({e}); retrying in {delay}s...")
+                    time.sleep(delay)
             seed_qdrant(client, SAMPLE_PACKAGES)
         except Exception as e:
             print(f"  Error connecting to Qdrant: {e}")

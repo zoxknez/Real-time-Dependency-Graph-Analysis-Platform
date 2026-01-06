@@ -13,7 +13,6 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Package,
   Layers,
   GitCompare,
 } from "lucide-react";

@@ -20,6 +20,16 @@ COPY apps/frontend/tailwind.config.ts ./
 COPY apps/frontend/postcss.config.js ./
 COPY apps/frontend/tsconfig.json ./
 
+# Public env (must be set at build time for Next.js client bundles)
+# Provide safe defaults so CI builds don't produce empty endpoints.
+ARG NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8000/graphql
+ARG NEXT_PUBLIC_WS_ENDPOINT=ws://localhost:8000/graphql/ws
+ARG NEXT_PUBLIC_SEARCH_MODE=name
+
+ENV NEXT_PUBLIC_GRAPHQL_ENDPOINT=$NEXT_PUBLIC_GRAPHQL_ENDPOINT
+ENV NEXT_PUBLIC_WS_ENDPOINT=$NEXT_PUBLIC_WS_ENDPOINT
+ENV NEXT_PUBLIC_SEARCH_MODE=$NEXT_PUBLIC_SEARCH_MODE
+
 # Build
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build

@@ -14,7 +14,6 @@ import {
   Monitor,
   Check,
   RotateCcw,
-  Save,
   CheckCircle,
   Download,
   Upload,
@@ -45,7 +44,7 @@ const sections = [
 
 // Default settings values
 const DEFAULT_SETTINGS = {
-  graphqlEndpoint: process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:8080/graphql",
+  graphqlEndpoint: process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:8000/graphql",
   maxDepth: 4,
   maxResults: 100,
   notifications: {
@@ -82,7 +81,6 @@ const APP_INFO = {
 // Hook for persisting settings
 function usePersistedSettings<T>(key: string, defaultValue: T): [T, (value: T) => void] {
   const [value, setValue] = useState<T>(defaultValue);
-  const [isInitialized, setIsInitialized] = useState(false);
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -95,7 +93,6 @@ function usePersistedSettings<T>(key: string, defaultValue: T): [T, (value: T) =
       } catch (e) {
         console.error(`Failed to load setting ${key}:`, e);
       }
-      setIsInitialized(true);
     }
   }, [key]);
 

@@ -61,7 +61,7 @@ Write-Host "  - API:              http://localhost:8000/graphql"
 Write-Host "  - GraphQL Playground: http://localhost:8000/graphql"
 Write-Host "  - Frontend:         http://localhost:3000"
 Write-Host "  - Redpanda Console: http://localhost:8080"
-Write-Host "  - Memgraph Lab:     http://localhost:3000 (port conflict)"
+Write-Host '  - Memgraph Lab:     http://localhost:3002'
 Write-Host "  - RisingWave:       http://localhost:5691"
 Write-Host "  - Qdrant:           http://localhost:6333"
 Write-Host "  - Jaeger:           http://localhost:16686"

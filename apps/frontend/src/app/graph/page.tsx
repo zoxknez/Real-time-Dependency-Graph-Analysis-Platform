@@ -7,12 +7,8 @@ import dynamic from "next/dynamic";
 import { useLazyQuery } from "@apollo/client";
 import {
   GitBranch,
-  ZoomIn,
-  ZoomOut,
   Maximize2,
   Minimize2,
-  RefreshCw,
-  Settings2,
   Download,
   Loader2,
   Info,
@@ -21,23 +17,19 @@ import {
   Image,
   X,
   ExternalLink,
-  Copy,
   Check,
-  Shield,
-  Radio,
 } from "lucide-react";
 import { GET_REVERSE_DEPENDENTS } from "@/lib/graphql/queries";
-import { cn, getEcosystemColor, parsePackageId, formatEcosystemName } from "@/lib/utils";
+import { getEcosystemColor, parsePackageId, formatEcosystemName } from "@/lib/utils";
 import { GraphControls } from "@/components/graph/graph-controls";
-import { GraphLegend } from "@/components/graph/graph-legend";
 import { NodeTooltip } from "@/components/graph/node-tooltip";
 import { GraphMinimap } from "@/components/graph/graph-minimap";
 import { LiveUpdateIndicator } from "@/components/graph/live-update-indicator";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
-import { SkeletonCard } from "@/components/ui/skeleton";
 import { QueryError, EmptyState } from "@/components/ui/error-display";
 import { useDependencyGraphUpdates, useConnectionStatus } from "@/lib/hooks";
-import type { DependencyGraphUpdate } from "@/lib/graphql/types";
+import type { DependencyGraphUpdate, PackageEdge } from "@/lib/graphql/types";
+import type { NodeObject, LinkObject, ForceGraph2DMethods } from "react-force-graph-2d";
 
 // Dynamic import for SSR compatibility
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
@@ -49,19 +41,19 @@ const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ),
 });
 
-interface GraphNode {
+type GraphNode = NodeObject & {
   id: string;
   name: string;
   ecosystem: string;
   color: string;
   depth: number;
   val: number;
-}
+};
 
-interface GraphLink {
-  source: string;
-  target: string;
-}
+type GraphLink = LinkObject & {
+  source: string | { id: string };
+  target: string | { id: string };
+};
 
 interface GraphData {
   nodes: GraphNode[];
@@ -72,7 +64,15 @@ function GraphPageContent() {
   const searchParams = useSearchParams();
   const initialPkg = searchParams.get("pkg") || "";
 
-  const graphRef = useRef<any>(null);
+  type ForceGraphApiCompat = {
+    zoom(): number;
+    zoom(zoom: number, ms?: number): void;
+    centerAt(): { x: number; y: number };
+    centerAt(x: number, y: number, ms?: number): void;
+    zoomToFit(ms?: number, padding?: number): void;
+  };
+
+  const graphRef = useRef<ForceGraph2DMethods | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [packageId, setPackageId] = useState(initialPkg);
   const [inputValue, setInputValue] = useState(initialPkg);
@@ -84,7 +84,7 @@ function GraphPageContent() {
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [showLiveUpdates, setShowLiveUpdates] = useState(true);
+  const showLiveUpdates = true;
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: 0, height: 0 });
 
   const [getReverseDeps, { data: reverseDepsData, loading, error }] = useLazyQuery(GET_REVERSE_DEPENDENTS);
@@ -130,14 +130,7 @@ function GraphPageContent() {
     };
   }, [graphData]);
 
-  // Build graph when data changes
-  useEffect(() => {
-    if (reverseDepsData?.reverseDependents && packageId) {
-      buildGraphData(packageId, reverseDepsData.reverseDependents.edges);
-    }
-  }, [reverseDepsData, packageId]);
-
-  const buildGraphData = useCallback((rootId: string, edges: any[]) => {
+  const buildGraphData = useCallback((rootId: string, edges: PackageEdge[]) => {
     const nodesMap = new Map<string, GraphNode>();
     const links: GraphLink[] = [];
 
@@ -153,7 +146,7 @@ function GraphPageContent() {
     });
 
     // Add dependent nodes
-    edges.forEach((edge: any) => {
+    edges.forEach((edge) => {
       const node = edge.node;
       const depth = edge.depth || 1;
       
@@ -180,6 +173,13 @@ function GraphPageContent() {
       links,
     });
   }, []);
+
+  // Build graph when data changes
+  useEffect(() => {
+    if (reverseDepsData?.reverseDependents && packageId) {
+      buildGraphData(packageId, reverseDepsData.reverseDependents.edges);
+    }
+  }, [reverseDepsData, packageId, buildGraphData]);
 
   const loadGraph = useCallback(() => {
     if (packageId.trim()) {
@@ -211,16 +211,31 @@ function GraphPageContent() {
     setPackageId(inputValue.trim());
   };
 
-  const handleNodeHover = useCallback((node: GraphNode | null, event?: MouseEvent) => {
-    setHoveredNode(node);
-    if (node && event) {
-      setTooltipPos({ x: event.clientX, y: event.clientY });
-    }
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    setTooltipPos({ x: e.clientX, y: e.clientY });
   }, []);
 
-  const handleZoomIn = () => graphRef.current?.zoom(graphRef.current.zoom() * 1.3, 300);
-  const handleZoomOut = () => graphRef.current?.zoom(graphRef.current.zoom() / 1.3, 300);
-  const handleCenter = () => graphRef.current?.zoomToFit(400);
+  const handleNodeHover = useCallback((node: NodeObject | null) => {
+    setHoveredNode(node as GraphNode | null);
+  }, []);
+
+  const handleZoomIn = () => {
+    if (!graphRef.current) return;
+    const fg = graphRef.current as unknown as ForceGraphApiCompat;
+    const currentZoom = fg.zoom();
+    fg.zoom(currentZoom * 1.3, 300);
+  };
+  const handleZoomOut = () => {
+    if (!graphRef.current) return;
+    const fg = graphRef.current as unknown as ForceGraphApiCompat;
+    const currentZoom = fg.zoom();
+    fg.zoom(currentZoom / 1.3, 300);
+  };
+  const handleCenter = () => {
+    if (!graphRef.current) return;
+    const fg = graphRef.current as unknown as ForceGraphApiCompat;
+    fg.zoomToFit(400);
+  };
   const handleRefresh = () => loadGraph();
   
   // Navigate to position from minimap
@@ -235,8 +250,9 @@ function GraphPageContent() {
     if (!graphRef.current || !containerRef.current) return;
     
     const { width, height } = containerRef.current.getBoundingClientRect();
-    const zoom = graphRef.current.zoom();
-    const center = graphRef.current.centerAt();
+    const fg = graphRef.current as unknown as ForceGraphApiCompat;
+    const zoom = fg.zoom();
+    const center = fg.centerAt();
     
     if (center) {
       setViewBox({
@@ -247,6 +263,12 @@ function GraphPageContent() {
       });
     }
   }, []);
+
+  useEffect(() => {
+    if (graphData.nodes.length > 0) {
+      updateViewBox();
+    }
+  }, [graphData.nodes.length, updateViewBox]);
 
   // Export functions
   const exportAsJSON = useCallback(() => {
@@ -260,8 +282,8 @@ function GraphPageContent() {
         depth: n.depth,
       })),
       edges: graphData.links.map(l => ({
-        source: typeof l.source === 'object' ? (l.source as any).id : l.source,
-        target: typeof l.target === 'object' ? (l.target as any).id : l.target,
+        source: typeof l.source === 'object' ? l.source.id : l.source,
+        target: typeof l.target === 'object' ? l.target.id : l.target,
       })),
     };
     
@@ -295,8 +317,8 @@ function GraphPageContent() {
     setTimeout(() => setCopied(false), 2000);
   }, [packageId]);
 
-  const handleNodeClick = useCallback((node: any) => {
-    setSelectedNode(node);
+  const handleNodeClick = useCallback((node: NodeObject) => {
+    setSelectedNode(node as GraphNode);
   }, []);
 
   const navigateToNode = useCallback((nodeId: string) => {
@@ -364,6 +386,7 @@ function GraphPageContent() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
+        onMouseMove={handleMouseMove}
         className={`flex-1 relative graph-container ${isFullscreen ? 'theme-graph-bg' : ''}`}
       >
         {/* Graph Canvas */}
@@ -372,30 +395,32 @@ function GraphPageContent() {
             ref={graphRef}
             graphData={graphData}
             nodeLabel={() => ""}
-            nodeColor={(node: any) => node.color}
-            nodeVal={(node: any) => node.val}
+            nodeColor={(node) => (node as GraphNode).color}
+            nodeVal={(node) => (node as GraphNode).val}
             nodeRelSize={4}
             linkColor={() => "rgba(100, 116, 139, 0.3)"}
             linkWidth={1.5}
             linkDirectionalArrowLength={4}
             linkDirectionalArrowRelPos={1}
             backgroundColor="transparent"
-            onNodeHover={handleNodeHover as any}
+            onNodeHover={handleNodeHover}
             onNodeClick={handleNodeClick}
-            nodeCanvasObject={(node: any, ctx, globalScale) => {
-              const label = node.name;
+            onZoomEnd={updateViewBox}
+            nodeCanvasObject={(node, ctx: CanvasRenderingContext2D, globalScale: number) => {
+              const graphNode = node as GraphNode;
+              const label = graphNode.name;
               const fontSize = Math.min(14 / globalScale, 12);
               ctx.font = `${fontSize}px Inter, sans-serif`;
               
               // Node circle
               ctx.beginPath();
-              ctx.arc(node.x, node.y, node.val / 2, 0, 2 * Math.PI);
-              ctx.fillStyle = node.color;
+              ctx.arc(graphNode.x ?? 0, graphNode.y ?? 0, graphNode.val / 2, 0, 2 * Math.PI);
+              ctx.fillStyle = graphNode.color;
               ctx.fill();
               
               // Glow effect for root
-              if (node.depth === 0) {
-                ctx.shadowColor = node.color;
+              if (graphNode.depth === 0) {
+                ctx.shadowColor = graphNode.color;
                 ctx.shadowBlur = 15;
                 ctx.fill();
                 ctx.shadowBlur = 0;
@@ -406,7 +431,7 @@ function GraphPageContent() {
               ctx.textBaseline = "middle";
               ctx.fillStyle = "#fff";
               if (globalScale > 0.8) {
-                ctx.fillText(label, node.x, node.y + node.val / 2 + fontSize + 2);
+                ctx.fillText(label, graphNode.x ?? 0, (graphNode.y ?? 0) + graphNode.val / 2 + fontSize + 2);
               }
             }}
             cooldownTicks={100}
@@ -453,8 +478,8 @@ function GraphPageContent() {
           <GraphMinimap
             nodes={graphData.nodes.map(n => ({
               id: n.id,
-              x: (n as any).x ?? 0,
-              y: (n as any).y ?? 0,
+              x: n.x ?? 0,
+              y: n.y ?? 0,
               color: n.color,
               depth: n.depth,
             }))}

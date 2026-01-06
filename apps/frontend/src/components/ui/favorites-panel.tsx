@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { useFavoritesStore, useHistoryStore } from "@/lib/stores";
-import { cn, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass } from "@/lib/utils";
+import { formatEcosystemName, getEcosystemColor } from "@/lib/utils";
 
 interface FavoritesPanelProps {
   isOpen: boolean;

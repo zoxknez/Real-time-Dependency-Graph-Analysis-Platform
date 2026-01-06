@@ -3,8 +3,6 @@
 # ═══════════════════════════════════════════════════════════════
 # Usage: docker compose -f docker/docker-compose.prod.yml up -d
 
-version: "3.8"
-
 services:
   # ═══════════════════════════════════════════════════════════════
   # API Service
@@ -12,17 +10,45 @@ services:
   api:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.api
+      dockerfile: deploy/docker/Dockerfile.api
     image: realtime3u1/api:latest
     container_name: rt3u1-api
     ports:
       - "8080:8080"
     environment:
+      # Server
+      - API_HOST=0.0.0.0
+      - API_PORT=8080
       - RUST_LOG=info
-      - MEMGRAPH_HOST=memgraph
-      - MEMGRAPH_PORT=7687
+
+      # Memgraph
+      - MEMGRAPH_URI=bolt://memgraph:7687
+      - MEMGRAPH_USER=
+      - MEMGRAPH_PASSWORD=
+
+      # Redis
       - REDIS_URL=redis://redis:6379
+      - CACHE_TTL_SECS=300
+
+      # Kafka
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_TOPIC=domain.package.events.v1
+      - KAFKA_CONSUMER_GROUP=api-subscriptions-cg
+
+      # Semantic search (Qdrant + embeddings)
+      - QDRANT_ENABLED=true
       - QDRANT_URL=http://qdrant:6334
+      - QDRANT_COLLECTION=package_embeddings
+      - QDRANT_DIMENSION=384
+      - EMBEDDING_PROVIDER=mock
+      - EMBEDDING_DIMENSION=384
+
+      # Guardrails
+      - RATE_LIMIT_RPM=100
+      - MAX_TRAVERSAL_DEPTH=5
+      - MAX_PATH_HOPS=10
+      - MAX_RESULTS=200
+      - MAX_COMPLEXITY=1000
     depends_on:
       memgraph:
         condition: service_healthy
@@ -112,14 +138,20 @@ services:
   # ═══════════════════════════════════════════════════════════════
   frontend:
     build:
-      context: ../apps/frontend
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.frontend
+      args:
+        - NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8080/graphql
+        - NEXT_PUBLIC_WS_ENDPOINT=ws://localhost:8080/graphql/ws
+        - NEXT_PUBLIC_SEARCH_MODE=semantic
     image: realtime3u1/frontend:latest
     container_name: rt3u1-frontend
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_GRAPHQL_URL=http://api:8080/graphql
+      - NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8080/graphql
+      - NEXT_PUBLIC_WS_ENDPOINT=ws://localhost:8080/graphql/ws
+      - NEXT_PUBLIC_SEARCH_MODE=semantic
     depends_on:
       - api
     restart: unless-stopped
@@ -164,15 +196,17 @@ services:
       - rt3u1-network
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:v1.16.2
     container_name: rt3u1-qdrant
     ports:
       - "6333:6333"
       - "6334:6334"
     volumes:
       - qdrant-data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/"]
+      test: ["CMD", "bash", "-lc", "cat < /dev/null > /dev/tcp/127.0.0.1/6333"]
       interval: 10s
       timeout: 5s
       retries: 5

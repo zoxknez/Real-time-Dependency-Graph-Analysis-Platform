@@ -7,8 +7,8 @@ import { createClient } from "graphql-ws";
 import { useMemo, useEffect, useState } from "react";
 
 // GraphQL endpoints
-const GRAPHQL_ENDPOINT = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:8080/graphql";
-const WS_ENDPOINT = process.env.NEXT_PUBLIC_WS_ENDPOINT || "ws://localhost:8080/graphql/ws";
+const GRAPHQL_ENDPOINT = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:8000/graphql";
+const WS_ENDPOINT = process.env.NEXT_PUBLIC_WS_ENDPOINT || "ws://localhost:8000/graphql/ws";
 
 // Connection state for UI feedback
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
@@ -180,12 +180,13 @@ export function useConnectionStatus(): ConnectionStatus {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
 
   useEffect(() => {
-    const handler = (event: CustomEvent<ConnectionStatus>) => {
-      setStatus(event.detail);
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<ConnectionStatus>).detail;
+      setStatus(detail);
     };
     
-    window.addEventListener("ws-status" as any, handler);
-    return () => window.removeEventListener("ws-status" as any, handler);
+    window.addEventListener("ws-status", handler);
+    return () => window.removeEventListener("ws-status", handler);
   }, []);
 
   return status;

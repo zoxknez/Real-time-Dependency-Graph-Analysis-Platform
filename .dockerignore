@@ -1,0 +1,55 @@
+# Keep Docker build context small and stable (especially on Windows)
+
+# VCS
+.git
+.gitignore
+
+# Rust
+**/target
+**/target/**
+
+# Node / Next.js
+**/node_modules
+**/node_modules/**
+**/.next
+**/.next/**
+**/.turbo
+**/.turbo/**
+
+# Python
+**/__pycache__
+**/__pycache__/**
+**/*.pyc
+
+# IDE / OS
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# Logs / local artifacts
+*.log
+build_log.txt
+error_log.txt
+api_local_stdout.log
+api_local_stderr.log
+api_exe_stdout.log
+api_exe_stderr.log
+
+# Large datasets / local caches (not needed for building images)
+raw
+raw/**
+models
+models/**
+
+# Docs are not needed for building runtime images
+docs
+docs/**
+observability
+observability/**
+
+# Playwright artifacts
+apps/frontend/playwright-report
+apps/frontend/playwright-report/**
+apps/frontend/test-results
+apps/frontend/test-results/**

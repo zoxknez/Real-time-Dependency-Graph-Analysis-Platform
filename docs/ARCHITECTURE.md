@@ -123,7 +123,7 @@
 **Key Features:**
 - Apollo Client for GraphQL
 - graphql-ws for subscriptions
-- D3.js/React Flow for graph visualization
+- 2D force-directed graph visualization (react-force-graph-2d)
 - Toast notifications for events
 
 ### Ingestion Service (apps/ingestion)

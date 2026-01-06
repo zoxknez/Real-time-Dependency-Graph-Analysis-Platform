@@ -33,6 +33,14 @@ choco install protoc
 
 ## Quick Start
 
+## Dockerfiles (Canonical Paths)
+
+This repo has a few Dockerfile locations; the canonical, maintained ones live under:
+
+- `deploy/docker/` (use these in Compose/CI)
+
+`docker/` contains legacy/compatibility Dockerfiles (some services), but new changes should prefer `deploy/docker/` to avoid drift.
+
 ### 1. Clone and Setup
 
 ```bash
@@ -73,6 +81,9 @@ cargo build --release
 
 # API Gateway
 cargo run -p api
+
+# GraphQL Playground
+# http://localhost:8000/graphql
 
 # Ingestion Service (optional for dev)
 cargo run -p ingestion
@@ -120,8 +131,8 @@ Create a `.env` file:
 
 ```env
 # Server
-HOST=0.0.0.0
-PORT=8080
+API_HOST=0.0.0.0
+API_PORT=8000
 
 # Memgraph
 MEMGRAPH_URI=bolt://localhost:7687
@@ -132,21 +143,71 @@ MEMGRAPH_PASSWORD=
 REDIS_URL=redis://localhost:6379
 
 # Kafka
-KAFKA_BROKERS=localhost:9092
-KAFKA_TOPIC=versions
-KAFKA_CONSUMER_GROUP=api-subscriptions
+KAFKA_BROKERS=localhost:19092
+KAFKA_TOPIC=domain.package.events.v1
+KAFKA_CONSUMER_GROUP=api-subscriptions-cg
 
 # Qdrant
+# Qdrant exposes REST on 6333 and gRPC on 6334.
+# Rust services use the qdrant-client gRPC transport, so point at 6334.
 QDRANT_URL=http://localhost:6334
 
 # Guardrails
 RATE_LIMIT_RPM=100
 MAX_COMPLEXITY=1000
-MAX_DEPTH=10
+MAX_TRAVERSAL_DEPTH=5
+MAX_PATH_HOPS=10
+MAX_RESULTS=200
 
 # Logging
 RUST_LOG=info,api=debug
 ```
+
+## Semantic Search Quality Harness
+
+This repo includes a small CLI that measures semantic search quality (MRR@k and Recall@k) against a running API.
+
+Note: when `EMBEDDING_PROVIDER=mock`, embeddings are deterministic but **not truly semantic**; the harness is mainly an end-to-end sanity check (e.g. querying by exact package name).
+
+### 1. Start infrastructure + API
+
+```bash
+docker compose up -d
+cargo run -p api
+```
+
+Notes:
+
+- The API talks to Qdrant over gRPC. With local Docker infra, set `QDRANT_URL=http://localhost:6334` (default).
+- The dev seeder (`scripts/dev-seed.py`) uses Qdrant's REST API on `http://localhost:6333`.
+
+Optionally seed sample data (Memgraph + Qdrant):
+
+```bash
+pip install neo4j qdrant-client
+python scripts/dev-seed.py
+```
+
+### 2. Run the harness
+
+```bash
+# Use TEST_API_URL or pass --api-url
+export TEST_API_URL=http://localhost:8000
+
+# Run with the default golden set
+cargo run -p e2e-tests --bin search_quality
+
+# Or explicitly
+cargo run -p e2e-tests --bin search_quality -- \
+  --api-url http://localhost:8000 \
+  --file tests/data/semantic_search_golden.json
+```
+
+### 3. Maintain the golden set
+
+- Golden cases live in `tests/data/semantic_search_golden.json`.
+- Prefer stable, high-signal queries + expected package IDs.
+- Keep expectations conservative (avoid flaky tail results).
 
 ## Development Workflow
 
@@ -265,7 +326,7 @@ RUST_BACKTRACE=1 cargo run -p api
 
 ### GraphQL
 
-Access GraphQL Playground at `http://localhost:8080/graphql`
+Access GraphQL Playground at `http://localhost:8000/graphql`
 
 ### Subscriptions
 
@@ -275,7 +336,7 @@ Test with wscat:
 npm install -g wscat
 
 # Connect to WebSocket
-wscat -c ws://localhost:8080/graphql/ws
+wscat -c ws://localhost:8000/graphql/ws
 
 # Send subscription
 {"type":"connection_init"}

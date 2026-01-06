@@ -1,7 +1,10 @@
 # Build stage
-FROM rust:1.75-bookworm AS builder
+FROM rustlang/rust:nightly-bookworm AS builder
 
 WORKDIR /app
+
+ENV CARGO_HTTP_TIMEOUT=600 \
+    CARGO_NET_RETRY=10
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -14,6 +17,7 @@ RUN apt-get update && apt-get install -y \
 COPY Cargo.toml Cargo.lock ./
 COPY packages packages
 COPY apps apps
+COPY tests tests
 
 # Build release binary
 RUN cargo build --release -p analysis

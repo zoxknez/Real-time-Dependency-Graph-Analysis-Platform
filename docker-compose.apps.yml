@@ -1,7 +1,5 @@
 # Docker Compose for IDP Application Services
 # Use alongside main docker-compose.yml: docker-compose -f docker-compose.yml -f docker-compose.apps.yml up
-version: '3.8'
-
 services:
   # ═══════════════════════════════════════════════════════════════
   # API SERVICE - GraphQL Gateway
@@ -15,8 +13,8 @@ services:
       - "8000:8080"
     environment:
       # Server
-      - SERVER_HOST=0.0.0.0
-      - SERVER_PORT=8080
+      - API_HOST=0.0.0.0
+      - API_PORT=8080
       - RUST_LOG=info,api=debug
       
       # Memgraph
@@ -26,16 +24,26 @@ services:
       
       # Redis
       - REDIS_URL=redis://redis:6379
-      - REDIS_CACHE_TTL_SECS=300
+      - CACHE_TTL_SECS=300
       
       # Kafka
       - KAFKA_BROKERS=redpanda:9092
       - KAFKA_TOPIC=domain.package.events.v1
+
+      # Semantic search (Qdrant + embeddings)
+      - QDRANT_ENABLED=true
+      - QDRANT_URL=http://qdrant:6334
+      - QDRANT_COLLECTION=package_embeddings
+      - QDRANT_DIMENSION=384
+      - EMBEDDING_PROVIDER=mock
+      - EMBEDDING_DIMENSION=384
       
       # Guardrails
       - RATE_LIMIT_RPM=100
-      - MAX_QUERY_DEPTH=15
-      - MAX_QUERY_COMPLEXITY=1000
+      - MAX_TRAVERSAL_DEPTH=5
+      - MAX_PATH_HOPS=10
+      - MAX_RESULTS=200
+      - MAX_COMPLEXITY=1000
       
       # JWT (optional)
       - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
@@ -48,6 +56,8 @@ services:
       redis:
         condition: service_healthy
       redpanda:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
@@ -65,17 +75,28 @@ services:
     build:
       context: .
       dockerfile: deploy/docker/Dockerfile.frontend
+      args:
+        - NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8000/graphql
+        - NEXT_PUBLIC_WS_ENDPOINT=ws://localhost:8000/graphql/ws
+        - NEXT_PUBLIC_SEARCH_MODE=semantic
     container_name: idp-frontend
     ports:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8000/graphql
       - NEXT_PUBLIC_WS_ENDPOINT=ws://localhost:8000/graphql/ws
+      - NEXT_PUBLIC_SEARCH_MODE=semantic
       - NODE_ENV=production
     depends_on:
       - api
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:3000', r => process.exit(r.statusCode >= 200 && r.statusCode < 400 ? 0 : 1)).on('error', () => process.exit(1))"
+        ]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -213,6 +234,7 @@ services:
       # Qdrant
       - QDRANT_URL=http://qdrant:6334
       - QDRANT_COLLECTION=package_embeddings
+      - QDRANT_DIMENSION=384
       
       # Batch settings
       - BATCH_SIZE=100

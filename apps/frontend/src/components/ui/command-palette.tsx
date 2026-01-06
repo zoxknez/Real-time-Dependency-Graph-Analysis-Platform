@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -13,7 +13,6 @@ import {
   Route,
   Activity,
   Settings,
-  X,
   ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -40,15 +39,17 @@ export function CommandPalette() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const router = useRouter();
 
-  const filteredCommands = query
-    ? commands.filter((cmd) =>
-        cmd.name.toLowerCase().includes(query.toLowerCase())
-      )
-    : commands;
+  const filteredCommands = useMemo(() => {
+    return query
+      ? commands.filter((cmd) => cmd.name.toLowerCase().includes(query.toLowerCase()))
+      : commands;
+  }, [query]);
 
-  const allItems = query.length > 2
-    ? [...filteredCommands, ...searchExamples.filter((s) => s.name.toLowerCase().includes(query.toLowerCase()))]
-    : filteredCommands;
+  const allItems = useMemo(() => {
+    return query.length > 2
+      ? [...filteredCommands, ...searchExamples.filter((s) => s.name.toLowerCase().includes(query.toLowerCase()))]
+      : filteredCommands;
+  }, [query, filteredCommands]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -76,15 +77,17 @@ export function CommandPalette() {
           break;
         case "Enter":
           e.preventDefault();
-          const item = allItems[selectedIndex];
-          if (item) {
-            if ("href" in item) {
-              router.push(item.href);
-            } else if ("query" in item) {
-              router.push(`/explore?q=${encodeURIComponent(item.query)}`);
+          {
+            const item = allItems[selectedIndex];
+            if (item) {
+              if ("href" in item) {
+                router.push(item.href);
+              } else if ("query" in item) {
+                router.push(`/explore?q=${encodeURIComponent(item.query)}`);
+              }
+              setIsOpen(false);
+              setQuery("");
             }
-            setIsOpen(false);
-            setQuery("");
           }
           break;
       }

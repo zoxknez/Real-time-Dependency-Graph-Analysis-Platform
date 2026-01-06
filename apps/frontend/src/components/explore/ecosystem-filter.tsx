@@ -3,14 +3,7 @@
 import { motion } from "framer-motion";
 import { cn, formatEcosystemName, getEcosystemColor } from "@/lib/utils";
 
-const ecosystems = [
-  { id: "ALL", name: "All", color: "#6366f1" },
-  { id: "NPM", name: "npm", color: "#CB3837" },
-  { id: "PY_PI", name: "PyPI", color: "#3775A9" },
-  { id: "CARGO", name: "Cargo", color: "#DEA584" },
-  { id: "MAVEN", name: "Maven", color: "#C71A36" },
-  { id: "GO", name: "Go", color: "#00ADD8" },
-];
+const ecosystems = ["ALL", "NPM", "PY_PI", "CARGO", "MAVEN", "NU_GET", "GO"] as const;
 
 interface EcosystemFilterProps {
   selected: string;
@@ -22,11 +15,13 @@ export function EcosystemFilter({ selected, onSelect }: EcosystemFilterProps) {
     <div className="flex items-center gap-2 flex-wrap">
       <span className="text-sm theme-text-muted mr-2">Filter by:</span>
       {ecosystems.map((eco) => {
-        const isSelected = selected === eco.id;
+        const isSelected = selected === eco;
+        const color = getEcosystemColor(eco);
+        const label = eco === "ALL" ? "All" : formatEcosystemName(eco);
         return (
           <button
-            key={eco.id}
-            onClick={() => onSelect(eco.id)}
+            key={eco}
+            onClick={() => onSelect(eco)}
             className={cn(
               "relative px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200",
               isSelected
@@ -38,16 +33,16 @@ export function EcosystemFilter({ selected, onSelect }: EcosystemFilterProps) {
               <motion.div
                 layoutId="ecosystem-filter-bg"
                 className="absolute inset-0 rounded-xl"
-                style={{ backgroundColor: `${eco.color}30`, border: `1px solid ${eco.color}50` }}
+                style={{ backgroundColor: `${color}30`, border: `1px solid ${color}50` }}
                 transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
               />
             )}
             <span className="relative flex items-center gap-2">
               <span
                 className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: eco.color }}
+                style={{ backgroundColor: color }}
               />
-              {eco.name}
+              {label}
             </span>
           </button>
         );

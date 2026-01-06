@@ -128,7 +128,7 @@
 | Graph Writer | ✅ Complete | Memgraph sync |
 | Vector Writer | ✅ Complete | Qdrant embeddings |
 | Syncer | ✅ Complete | RisingWave streaming |
-| Frontend | ✅ Complete | Next.js + WebGPU |
+| Frontend | ✅ Complete | Next.js + 2D graph visualization |
 | Testing | ✅ Complete | Unit, E2E, Load |
 | CI/CD | ✅ Complete | GitHub Actions + Helm |
 | Docs | ✅ Complete | Full documentation |
@@ -176,7 +176,7 @@ docker-compose -f docker-compose.apps.yml up -d
 make dev
 
 # Access the platform
-# GraphQL: http://localhost:8080/graphql
+# GraphQL: http://localhost:8000/graphql
 # Grafana: http://localhost:3001
 ```
 

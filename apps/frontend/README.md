@@ -39,7 +39,7 @@ npm run dev
 Create a `.env.local` file (copy from `.env.example`):
 
 ```env
-NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8080/graphql
+NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8000/graphql
 ```
 
 ## 🖥️ Development
@@ -156,7 +156,12 @@ cd apps/api
 cargo run
 ```
 
-The API should be available at `http://localhost:8080/graphql`.
+The API should be available at `http://localhost:8000/graphql`.
+
+Note:
+
+- Dev default is `http://localhost:8000/graphql`.
+- The production compose file `docker/docker-compose.prod.yml` publishes the API on port 8080.
 
 ## 📝 License
 

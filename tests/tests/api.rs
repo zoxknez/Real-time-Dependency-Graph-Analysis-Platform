@@ -14,7 +14,7 @@ use std::time::Duration;
 async fn start_test_api_server(memgraph_url: &str, redis_url: Option<&str>) -> String {
     // For now, tests expect API to be running externally
     // In future, we could spawn the API process here
-    std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string())
+    std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8000".to_string())
 }
 
 /// Test health endpoint
@@ -23,7 +23,7 @@ async fn test_health_endpoint() {
     init_test_tracing();
     
     let client = Client::new();
-    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
     
     let response = client
         .get(format!("{}/health", api_url))
@@ -49,7 +49,7 @@ async fn test_ready_endpoint() {
     init_test_tracing();
     
     let client = Client::new();
-    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
     
     let response = client
         .get(format!("{}/ready", api_url))

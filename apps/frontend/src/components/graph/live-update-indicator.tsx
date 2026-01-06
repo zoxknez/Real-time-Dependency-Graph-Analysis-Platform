@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { Activity, Zap, Package, RefreshCw } from "lucide-react";
-import { cn, getEcosystemColor, formatEcosystemName } from "@/lib/utils";
+import { cn, getEcosystemColor } from "@/lib/utils";
 import type { DependencyGraphUpdate } from "@/lib/graphql/types";
 
 interface LiveUpdateIndicatorProps {
@@ -16,8 +16,6 @@ export function LiveUpdateIndicator({
   isConnected,
   className,
 }: LiveUpdateIndicatorProps) {
-  const recentUpdate = updates[0];
-  
   return (
     <motion.div
       initial={{ opacity: 0, y: -10 }}
@@ -115,6 +113,7 @@ interface NodeHighlightProps {
 }
 
 export function NodeHighlight({ nodeId, position, color, onComplete }: NodeHighlightProps) {
+  void nodeId;
   return (
     <motion.div
       initial={{ scale: 0, opacity: 1 }}

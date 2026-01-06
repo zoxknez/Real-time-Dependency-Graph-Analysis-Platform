@@ -157,7 +157,7 @@ async fn test_kafka_message_flow() {
     // Create consumer and receive message
     use rdkafka::consumer::Consumer;
     use rdkafka::Message;
-    use futures::StreamExt;
+    use futures_util::StreamExt;
     
     let consumer = helpers::kafka::create_consumer(&brokers, &format!("test-group-{}", unique_test_id())).unwrap();
     consumer.subscribe(&[&topic_name]).unwrap();

@@ -557,7 +557,7 @@ Response:
 import { createClient } from 'graphql-ws';
 
 const client = createClient({
-  url: 'ws://localhost:8080/graphql/ws',
+  url: 'ws://localhost:8000/graphql/ws',
 });
 
 // Subscribe to new versions
@@ -586,7 +586,7 @@ const unsubscribe = client.subscribe(
 from gql import gql, Client
 from gql.transport.aiohttp import AIOHTTPTransport
 
-transport = AIOHTTPTransport(url="http://localhost:8080/graphql")
+transport = AIOHTTPTransport(url="http://localhost:8000/graphql")
 client = Client(transport=transport, fetch_schema_from_transport=True)
 
 query = gql("""
@@ -624,7 +624,7 @@ async fn query_dependents(client: &reqwest::Client, package_id: &str) {
     };
     
     let response: Response<reverse_dependents::ResponseData> = client
-        .post("http://localhost:8080/graphql")
+        .post("http://localhost:8000/graphql")
         .json(&ReverseDependents::build_query(variables))
         .send()
         .await?

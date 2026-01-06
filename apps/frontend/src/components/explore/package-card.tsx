@@ -11,6 +11,7 @@ interface PackageCardProps {
   onClick?: () => void;
   isSelected?: boolean;
   depth?: number;
+  score?: number;
 }
 
 const registryLinks: Record<string, (name: string) => string> = {
@@ -23,7 +24,7 @@ const registryLinks: Record<string, (name: string) => string> = {
   go: (name) => `https://pkg.go.dev/${name}`,
 };
 
-export function PackageCard({ package: pkg, onClick, isSelected, depth }: PackageCardProps) {
+export function PackageCard({ package: pkg, onClick, isSelected, depth, score }: PackageCardProps) {
   const registryLink = registryLinks[pkg.ecosystem.toLowerCase()]?.(pkg.name);
   const { isFavorite, toggleFavorite } = useFavoritesStore();
   const isFav = isFavorite(pkg.id);
@@ -78,6 +79,11 @@ export function PackageCard({ package: pkg, onClick, isSelected, depth }: Packag
               </span>
             </div>
             <p className="text-sm theme-text-muted font-mono">{pkg.id}</p>
+            {typeof score === "number" && (
+              <p className="text-xs theme-text-faint mt-1">
+                Similarity: {score.toFixed(3)}
+              </p>
+            )}
             <div className="flex items-center gap-3 mt-2">
               {depth !== undefined && (
                 <div className="flex items-center gap-1 text-xs theme-text-faint">

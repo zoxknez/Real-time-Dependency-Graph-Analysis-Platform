@@ -18,7 +18,6 @@ import {
   GitBranch,
   Shield,
   Filter,
-  Clock,
   BarChart3,
   AlertTriangle,
   RefreshCw,
@@ -137,14 +136,14 @@ export default function LivePage() {
   const { 
     events: liveEvents, 
     stats: liveStats, 
-    loading: liveLoading,
+    loading: _liveLoading,
     error: liveError,
     clearEvents: clearLiveEvents,
   } = useLivePackageActivity({
     ecosystems: ecosystemFilter,
     eventTypes: eventTypeFilter,
     paused: isPaused || useFallback,
-    onEvent: (event) => {
+    onEvent: (_event) => {
       // Play sound notification if enabled
       if (soundEnabled && typeof window !== 'undefined') {
         // Could add subtle notification sound here
@@ -154,7 +153,7 @@ export default function LivePage() {
 
   // Breaking changes subscription
   const { 
-    breakingChanges,
+    breakingChanges: _breakingChanges,
     unreadCount: breakingChangesCount,
   } = useBreakingChanges({
     paused: isPaused || useFallback,

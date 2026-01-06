@@ -40,7 +40,7 @@ impl Config {
 
         Ok(Self {
             qdrant: QdrantConfig {
-                url: env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:6334".to_string()),
+                url: env::var("QDRANT_URL").unwrap_or_else(|_| "http://localhost:6333".to_string()),
                 collection: env::var("QDRANT_COLLECTION")
                     .unwrap_or_else(|_| "package_embeddings".to_string()),
                 dimension: env::var("QDRANT_DIMENSION")
@@ -81,7 +81,7 @@ impl Default for Config {
     fn default() -> Self {
         Config::from_env().unwrap_or_else(|_| Config {
             qdrant: QdrantConfig {
-                url: "http://localhost:6334".to_string(),
+                url: "http://localhost:6333".to_string(),
                 collection: "package_embeddings".to_string(),
                 dimension: 384,
                 batch_size: 100,

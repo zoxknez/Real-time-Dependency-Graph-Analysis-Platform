@@ -2,7 +2,7 @@
 # Makefile - Development Commands
 # ═══════════════════════════════════════════════════════════════════════════════
 
-.PHONY: help build test lint format clean docker-up docker-down seed
+.PHONY: help build test lint format clean docker-up docker-down seed quality-search quality-search-seeded
 
 # Default target
 help:
@@ -31,6 +31,8 @@ help:
 	@echo "║   make test-unit     - Run unit tests only                                    ║"
 	@echo "║   make test-e2e      - Run E2E tests (Playwright)                             ║"
 	@echo "║   make test-load     - Run load tests (k6)                                    ║"
+	@echo "║   make quality-search - Run semantic search quality harness                   ║"
+	@echo "║   make quality-search-seeded - Seed data + run harness (requires API running) ║"
 	@echo "║                                                                               ║"
 	@echo "║ Frontend Commands:                                                            ║"
 	@echo "║   make frontend-dev  - Start frontend dev server                              ║"
@@ -155,6 +157,19 @@ test-load-ws:
 test-load-rate:
 	@echo "⚡ Running rate limiting tests..."
 	k6 run tests/load/rate-limiting.js
+
+quality-search:
+	@echo "📏 Running semantic search quality harness..."
+	@echo "Set TEST_API_URL (default: http://localhost:8080)"
+	cargo run -p e2e-tests --bin search_quality
+
+quality-search-seeded:
+	@echo "🐳 Ensuring infra is up..."
+	docker-compose -f docker-compose.yml up -d
+	@echo "🌱 Seeding Memgraph + Qdrant (requires: pip install neo4j qdrant-client)"
+	python scripts/dev-seed.py
+	@echo "📏 Running semantic search quality harness..."
+	cargo run -p e2e-tests --bin search_quality
 
 test-all:
 	@$(MAKE) test

@@ -7,8 +7,11 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use crate::cache::CacheClient;
 use crate::config::GuardrailsConfig;
 use crate::graph::GraphClient;
+use crate::embeddings::EmbeddingGenerator;
 use crate::gql::loaders::PackageLoader;
 use crate::gql::types::{VersionEvent, BreakingChangeEvent, LiveStatsEvent, DependencyImpactEvent};
+
+use qdrant_client::Qdrant;
 
 /// Broadcast channels for different event types
 pub struct EventChannels {
@@ -22,6 +25,14 @@ pub struct EventChannels {
     pub dependency_impact_tx: broadcast::Sender<DependencyImpactEvent>,
     /// Active subscription counter
     pub active_subscriptions: AtomicI32,
+}
+
+/// Resources needed for semantic search.
+#[derive(Clone)]
+pub struct SemanticSearchContext {
+    pub qdrant: Arc<Qdrant>,
+    pub collection: String,
+    pub embedder: Arc<EmbeddingGenerator>,
 }
 
 impl EventChannels {
@@ -63,6 +74,9 @@ pub struct GqlContext {
     pub event_tx: Arc<broadcast::Sender<VersionEvent>>,
     /// All event channels
     pub channels: Arc<EventChannels>,
+
+    /// Optional semantic search context
+    pub semantic_search: Option<SemanticSearchContext>,
 }
 
 impl GqlContext {
@@ -82,6 +96,7 @@ impl GqlContext {
             guardrails,
             event_tx: Arc::new(event_tx),
             channels: Arc::new(channels),
+            semantic_search: None,
         }
     }
     
@@ -90,6 +105,7 @@ impl GqlContext {
         cache: Option<CacheClient>,
         guardrails: GuardrailsConfig,
         channels: Arc<EventChannels>,
+        semantic_search: Option<SemanticSearchContext>,
     ) -> Self {
         let package_loader = PackageLoader::new(graph.clone());
         // Create version_tx from channels for backwards compatibility
@@ -102,6 +118,7 @@ impl GqlContext {
             guardrails,
             event_tx: Arc::new(event_tx),
             channels,
+            semantic_search,
         }
     }
 }

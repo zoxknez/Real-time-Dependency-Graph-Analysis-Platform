@@ -1,7 +1,7 @@
 //! AST Parser using Tree-sitter
 //! 
 //! Provides language-agnostic parsing and public API extraction
-//! for Rust, JavaScript/TypeScript, and Python.
+//! for Rust, JavaScript/TypeScript, Python, Go, and Java.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -40,15 +40,33 @@ impl Language {
         }
     }
     
-    /// Get tree-sitter language
-    fn tree_sitter_language(&self) -> tree_sitter::Language {
+    /// Get tree-sitter language (uses file extension for TSX vs TS).
+    fn tree_sitter_language_for_file(&self, file_path: &str) -> tree_sitter::Language {
+        let ext = Path::new(file_path)
+            .extension()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+
         match self {
-            Language::JavaScript | Language::TypeScript => tree_sitter_javascript::LANGUAGE.into(),
+            Language::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
+            Language::TypeScript => {
+                if ext == "tsx" {
+                    tree_sitter_typescript::LANGUAGE_TSX.into()
+                } else {
+                    tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
+                }
+            }
             Language::Python => tree_sitter_python::LANGUAGE.into(),
             Language::Rust => tree_sitter_rust::LANGUAGE.into(),
-            // For Go/Java, fallback to a basic parser or skip
-            Language::Go | Language::Java => tree_sitter_javascript::LANGUAGE.into(),
+            Language::Go => tree_sitter_go::LANGUAGE.into(),
+            Language::Java => tree_sitter_java::LANGUAGE.into(),
         }
+    }
+
+    /// Backwards-compatible default (assumes non-TSX for TypeScript).
+    fn tree_sitter_language(&self) -> tree_sitter::Language {
+        self.tree_sitter_language_for_file("")
     }
     
     /// Get all supported extensions
@@ -265,7 +283,7 @@ impl ParserPool {
         
         // Create parser for this thread
         let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&language.tree_sitter_language())
+        parser.set_language(&language.tree_sitter_language_for_file(file_path))
             .context("Failed to set parser language")?;
         
         // Set timeout
@@ -1292,18 +1310,291 @@ impl ParserPool {
     // GO EXTRACTION (Basic)
     // ─────────────────────────────────────────────────────────────
     
-    fn extract_go_symbols(&self, root: &tree_sitter::Node, source: &str, file_path: &str) -> Vec<ExtractedSymbol> {
-        // Basic Go extraction - would need tree-sitter-go for full support
-        vec![]
+    fn extract_go_symbols(&self, root: &tree_sitter::Node, source: &str, _file_path: &str) -> Vec<ExtractedSymbol> {
+        let mut symbols = Vec::new();
+        let mut cursor = root.walk();
+        self.walk_go_tree(&mut cursor, source, &mut symbols);
+        symbols
+    }
+
+    fn walk_go_tree(
+        &self,
+        cursor: &mut tree_sitter::TreeCursor,
+        source: &str,
+        symbols: &mut Vec<ExtractedSymbol>,
+    ) {
+        loop {
+            let node = cursor.node();
+            match node.kind() {
+                "function_declaration" | "method_declaration" => {
+                    let name = node
+                        .child_by_field_name("name")
+                        .map(|n| self.get_node_text(&n, source))
+                        .unwrap_or_default();
+
+                    if !name.is_empty() {
+                        let visibility = if name
+                            .chars()
+                            .next()
+                            .map(|c| c.is_ascii_uppercase())
+                            .unwrap_or(false)
+                        {
+                            Visibility::Public
+                        } else {
+                            Visibility::Private
+                        };
+
+                        let qualified_path = if node.kind() == "method_declaration" {
+                            let receiver = node
+                                .child_by_field_name("receiver")
+                                .map(|r| self.get_node_text(&r, source))
+                                .unwrap_or_default();
+                            if receiver.is_empty() {
+                                name.clone()
+                            } else {
+                                format!("{}.{}", receiver.replace(['\n', '\r', '\t', ' '], ""), name)
+                            }
+                        } else {
+                            name.clone()
+                        };
+
+                        let raw_signature = self.get_node_text(&node, source);
+                        let signature = self.normalize_signature(&raw_signature);
+                        let start_line = (node.start_position().row + 1) as u32;
+                        let end_line = (node.end_position().row + 1) as u32;
+
+                        symbols.push(ExtractedSymbol {
+                            name,
+                            qualified_path,
+                            kind: SymbolKind::Function,
+                            visibility,
+                            signature,
+                            raw_signature,
+                            start_line,
+                            end_line,
+                            documentation: None,
+                            parameters: Vec::new(),
+                            return_type: None,
+                            generics: Vec::new(),
+                            annotations: Vec::new(),
+                            is_exported: false,
+                        });
+                    }
+                }
+                "type_spec" => {
+                    // Covers: type Foo struct { ... }, type Foo interface { ... }
+                    let name = node
+                        .child_by_field_name("name")
+                        .map(|n| self.get_node_text(&n, source))
+                        .unwrap_or_default();
+
+                    if !name.is_empty() {
+                        let visibility = if name
+                            .chars()
+                            .next()
+                            .map(|c| c.is_ascii_uppercase())
+                            .unwrap_or(false)
+                        {
+                            Visibility::Public
+                        } else {
+                            Visibility::Private
+                        };
+
+                        let kind = node
+                            .child_by_field_name("type")
+                            .map(|t| match t.kind() {
+                                "struct_type" => SymbolKind::Struct,
+                                "interface_type" => SymbolKind::Interface,
+                                _ => SymbolKind::Type,
+                            })
+                            .unwrap_or(SymbolKind::Type);
+
+                        let raw_signature = self.get_node_text(&node, source);
+                        let signature = self.normalize_signature(&raw_signature);
+                        let start_line = (node.start_position().row + 1) as u32;
+                        let end_line = (node.end_position().row + 1) as u32;
+
+                        symbols.push(ExtractedSymbol {
+                            name: name.clone(),
+                            qualified_path: name,
+                            kind,
+                            visibility,
+                            signature,
+                            raw_signature,
+                            start_line,
+                            end_line,
+                            documentation: None,
+                            parameters: Vec::new(),
+                            return_type: None,
+                            generics: Vec::new(),
+                            annotations: Vec::new(),
+                            is_exported: false,
+                        });
+                    }
+                }
+                _ => {}
+            }
+
+            if cursor.goto_first_child() {
+                self.walk_go_tree(cursor, source, symbols);
+                cursor.goto_parent();
+            }
+
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
     }
     
     // ─────────────────────────────────────────────────────────────
     // JAVA EXTRACTION (Basic)
     // ─────────────────────────────────────────────────────────────
     
-    fn extract_java_symbols(&self, root: &tree_sitter::Node, source: &str, file_path: &str) -> Vec<ExtractedSymbol> {
-        // Basic Java extraction - would need tree-sitter-java for full support
-        vec![]
+    fn extract_java_symbols(&self, root: &tree_sitter::Node, source: &str, _file_path: &str) -> Vec<ExtractedSymbol> {
+        let mut symbols = Vec::new();
+        let mut cursor = root.walk();
+        self.walk_java_tree(&mut cursor, source, &mut Vec::new(), &mut symbols);
+        symbols
+    }
+
+    fn walk_java_tree(
+        &self,
+        cursor: &mut tree_sitter::TreeCursor,
+        source: &str,
+        class_stack: &mut Vec<String>,
+        symbols: &mut Vec<ExtractedSymbol>,
+    ) {
+        loop {
+            let node = cursor.node();
+            let kind = node.kind();
+
+            let is_type_decl = matches!(
+                kind,
+                "class_declaration" | "interface_declaration" | "enum_declaration" | "annotation_type_declaration"
+            );
+
+            if is_type_decl {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    let name = self.get_node_text(&name_node, source);
+                    if !name.is_empty() {
+                        let visibility = self.java_visibility(&node, source);
+                        let sym_kind = match kind {
+                            "interface_declaration" => SymbolKind::Interface,
+                            "enum_declaration" => SymbolKind::Enum,
+                            _ => SymbolKind::Class,
+                        };
+
+                        let raw_signature = self.get_node_text(&node, source);
+                        let signature = self.normalize_signature(&raw_signature);
+                        let start_line = (node.start_position().row + 1) as u32;
+                        let end_line = (node.end_position().row + 1) as u32;
+
+                        symbols.push(ExtractedSymbol {
+                            name: name.clone(),
+                            qualified_path: name.clone(),
+                            kind: sym_kind,
+                            visibility,
+                            signature,
+                            raw_signature,
+                            start_line,
+                            end_line,
+                            documentation: None,
+                            parameters: Vec::new(),
+                            return_type: None,
+                            generics: Vec::new(),
+                            annotations: Vec::new(),
+                            is_exported: false,
+                        });
+
+                        class_stack.push(name);
+                    }
+                }
+            } else if matches!(kind, "method_declaration" | "constructor_declaration") {
+                let name = node
+                    .child_by_field_name("name")
+                    .map(|n| self.get_node_text(&n, source))
+                    .unwrap_or_else(|| {
+                        if kind == "constructor_declaration" {
+                            class_stack.last().cloned().unwrap_or_default()
+                        } else {
+                            String::new()
+                        }
+                    });
+
+                if !name.is_empty() {
+                    let visibility = self.java_visibility(&node, source);
+                    let raw_signature = self.get_node_text(&node, source);
+                    let signature = self.normalize_signature(&raw_signature);
+                    let start_line = (node.start_position().row + 1) as u32;
+                    let end_line = (node.end_position().row + 1) as u32;
+
+                    let qualified_path = match class_stack.last() {
+                        Some(class_name) => format!("{}.{}", class_name, name),
+                        None => name.clone(),
+                    };
+
+                    symbols.push(ExtractedSymbol {
+                        name,
+                        qualified_path,
+                        kind: if kind == "constructor_declaration" {
+                            SymbolKind::Method
+                        } else {
+                            SymbolKind::Method
+                        },
+                        visibility,
+                        signature,
+                        raw_signature,
+                        start_line,
+                        end_line,
+                        documentation: None,
+                        parameters: Vec::new(),
+                        return_type: None,
+                        generics: Vec::new(),
+                        annotations: Vec::new(),
+                        is_exported: false,
+                    });
+                }
+            }
+
+            if cursor.goto_first_child() {
+                self.walk_java_tree(cursor, source, class_stack, symbols);
+                cursor.goto_parent();
+            }
+
+            if is_type_decl {
+                // Pop if we pushed a class name
+                // (We only push when we successfully extracted a name.)
+                // To keep this simple, if the top of the stack matches this node's name, pop it.
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    let name = self.get_node_text(&name_node, source);
+                    if class_stack.last().map(|s| s == &name).unwrap_or(false) {
+                        class_stack.pop();
+                    }
+                }
+            }
+
+            if !cursor.goto_next_sibling() {
+                break;
+            }
+        }
+    }
+
+    fn java_visibility(&self, node: &tree_sitter::Node, source: &str) -> Visibility {
+        let mods_text = node
+            .child_by_field_name("modifiers")
+            .map(|m| self.get_node_text(&m, source))
+            .unwrap_or_default();
+
+        let mods_lower = mods_text.to_ascii_lowercase();
+        if mods_lower.contains("public") {
+            Visibility::Public
+        } else if mods_lower.contains("protected") {
+            Visibility::Protected
+        } else if mods_lower.contains("private") {
+            Visibility::Private
+        } else {
+            Visibility::Internal
+        }
     }
     
     // ─────────────────────────────────────────────────────────────

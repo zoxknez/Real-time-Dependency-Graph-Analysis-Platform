@@ -5,10 +5,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Bell,
   X,
-  Check,
   CheckCheck,
   Trash2,
-  Package,
   Shield,
   AlertTriangle,
   Info,

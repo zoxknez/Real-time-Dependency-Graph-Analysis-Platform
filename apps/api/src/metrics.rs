@@ -45,6 +45,11 @@ pub mod names {
     
     pub const IMPACT_CALCULATIONS_TOTAL: &str = "impact_calculations_total";
     pub const IMPACT_CALCULATION_DURATION_SECONDS: &str = "impact_calculation_duration_seconds";
+
+    pub const EMBEDDINGS_REQUESTS_TOTAL: &str = "embeddings_requests_total";
+    pub const EMBEDDINGS_REQUEST_DURATION_SECONDS: &str = "embeddings_request_duration_seconds";
+    pub const EMBEDDINGS_ERRORS_TOTAL: &str = "embeddings_errors_total";
+    pub const EMBEDDINGS_RATE_LIMIT_DELAYS_TOTAL: &str = "embeddings_rate_limit_delays_total";
 }
 
 /// Initialize the Prometheus metrics recorder and return a handle for rendering metrics
@@ -74,7 +79,13 @@ pub fn init_metrics() -> PrometheusHandle {
             Matcher::Full(names::IMPACT_CALCULATION_DURATION_SECONDS.to_string()),
             &[0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0],
         )
-        .expect("Failed to set impact buckets");
+        .expect("Failed to set impact buckets")
+        // Embeddings latency buckets
+        .set_buckets_for_metric(
+            Matcher::Full(names::EMBEDDINGS_REQUEST_DURATION_SECONDS.to_string()),
+            &[0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0],
+        )
+        .expect("Failed to set embeddings buckets");
     
     builder
         .install_recorder()

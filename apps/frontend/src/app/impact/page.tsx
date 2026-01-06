@@ -10,25 +10,23 @@ import {
   Package,
   Zap,
   Loader2,
-  ChevronRight,
   Target,
   Flame,
-  TrendingUp,
   AlertOctagon,
   ExternalLink,
   Share2,
   Download,
   GitBranch,
-  Copy,
   Check,
   FileJson,
   Sparkles,
 } from "lucide-react";
 import { GET_IMPACT_RADIUS } from "@/lib/graphql/queries";
-import { cn, formatNumber, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass } from "@/lib/utils";
+import { cn, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass } from "@/lib/utils";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
-import { SkeletonCard, SkeletonText } from "@/components/ui/skeleton";
-import { QueryError, EmptyState } from "@/components/ui/error-display";
+import { SkeletonCard } from "@/components/ui/skeleton";
+import { QueryError } from "@/components/ui/error-display";
+import type { ImpactNode } from "@/lib/graphql/types";
 
 // Severity thresholds
 const getSeverity = (impactedPackages: number): { level: string; color: string; bgColor: string; icon: typeof Shield } => {
@@ -138,7 +136,7 @@ function ImpactPageContent() {
         impactedVersions: impact.impactedVersions,
         maxDepth: impact.maxDepth,
       },
-      topImpacted: impact.topImpacted.map((item: any) => ({
+      topImpacted: impact.topImpacted.map((item: ImpactNode) => ({
         id: item.package.id,
         name: item.package.name,
         ecosystem: item.package.ecosystem,
@@ -455,7 +453,7 @@ function ImpactPageContent() {
                 </span>
               </h3>
               <div className="space-y-2">
-                {impact.topImpacted.map((item: any, index: number) => {
+                {impact.topImpacted.map((item: ImpactNode, index: number) => {
                   const depthColor = item.depth === 1 
                     ? "text-red-400" 
                     : item.depth === 2 
@@ -559,7 +557,7 @@ function ImpactPageContent() {
                 {/* Rings */}
                 <div className="relative w-72 h-72 flex-shrink-0">
                   {[3, 2, 1, 0].map((ring) => {
-                    const depthPackages = impact.topImpacted.filter((i: any) => i.depth === ring + 1).length;
+                    const depthPackages = impact.topImpacted.filter((i: ImpactNode) => i.depth === ring + 1).length;
                     return (
                       <motion.div
                         key={ring}
@@ -606,7 +604,7 @@ function ImpactPageContent() {
                 <div className="flex-1 space-y-3">
                   <h4 className="text-sm font-medium theme-text-tertiary mb-4">Depth Breakdown</h4>
                   {[1, 2, 3].map((depth) => {
-                    const count = impact.topImpacted.filter((i: any) => i.depth === depth).length;
+                    const count = impact.topImpacted.filter((i: ImpactNode) => i.depth === depth).length;
                     const percentage = impact.topImpacted.length > 0 
                       ? Math.round((count / impact.topImpacted.length) * 100) 
                       : 0;

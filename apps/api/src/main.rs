@@ -13,6 +13,7 @@ mod config;
 mod gql;
 mod graph;
 mod handlers;
+mod embeddings;
 mod kafka;
 mod metrics;
 mod middleware;
@@ -55,6 +56,10 @@ async fn main() -> Result<()> {
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,api=debug".into()))
         .with(tracing_subscriber::fmt::layer())
         .init();
+
+    // Load environment variables from a local .env file if present.
+    // This keeps local development aligned with docs and avoids shell-specific env syntax.
+    dotenvy::dotenv().ok();
 
     info!("🌐 Starting API Gateway");
 

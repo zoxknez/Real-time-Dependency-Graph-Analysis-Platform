@@ -10,7 +10,7 @@ Enterprise-grade platform for real-time analysis of 100M+ packages from npm/PyPI
 - **🔍 Real-time Package Crawling** - Continuous ingestion from npm, PyPI, and crates.io
 - **🧠 AST Analysis** - Tree-sitter based parsing for 6 languages (JS/TS/Python/Rust/Go/Java)
 - **⚠️ Breaking Change Detection** - Automatic semantic versioning analysis
-- **📊 Graph Visualization** - WebGPU-powered interactive dependency graphs
+- **📊 Graph Visualization** - Interactive dependency graphs (2D force layout)
 - **🔎 Semantic Search** - Vector embeddings for natural language package search
 - **📈 Real-time Subscriptions** - WebSocket-based live updates
 - **🔒 Enterprise Security** - JWT auth, rate limiting, audit logging
@@ -44,7 +44,7 @@ python scripts/dev-seed.py
 ```
 
 **Access Points:**
-- 🌐 **GraphQL Playground**: http://localhost:8080/graphql
+- 🌐 **GraphQL Playground**: http://localhost:8000/graphql
 - 📊 **Grafana Dashboards**: http://localhost:3001 (admin/admin)
 - 🗄️ **Memgraph Lab**: http://localhost:3000
 - 📬 **Redpanda Console**: http://localhost:8081
@@ -59,7 +59,7 @@ docker-compose up -d
 cd apps/frontend && npm install && cd ../..
 
 # Run backend services (in separate terminals)
-cargo run -p api          # API Gateway → http://localhost:8080
+cargo run -p api          # API Gateway → http://localhost:8000
 cargo run -p ingestion    # Registry Crawler
 cargo run -p analysis     # AST Analysis
 cargo run -p graph-writer # Memgraph Sync
@@ -82,47 +82,45 @@ make frontend-dev   # Start frontend dev server
 ## 📖 Sample GraphQL Queries
 
 ```graphql
-# Search for packages
+# Name search for packages
 query SearchPackages {
-  search(term: "json parser", limit: 10) {
-    name
-    description
-    ecosystem
-    score
+  searchPackages(query: "react", ecosystem: NPM, first: 10) {
+    edges { node { id name ecosystem } }
+    pageInfo { hasNextPage endCursor }
+    totalCount
   }
 }
 
-# Get package details with dependents
+# Semantic search (Qdrant-backed)
+query SemanticSearchPackages {
+  semanticSearchPackages(query: "http client with retries", ecosystem: NPM, first: 10) {
+    edges { node { id name ecosystem } score }
+    pageInfo { hasNextPage endCursor }
+    totalCount
+  }
+}
+
+# Get package details
 query PackageDetails {
-  package(name: "react") {
-    name
-    latestVersion
-    dependentCount
-    reverseDependents(first: 5) {
-      name
-      usedVersion
-    }
+  package(id: "npm:react") { id name ecosystem }
+}
+
+# Reverse dependents
+query ReverseDependents {
+  reverseDependents(packageId: "npm:react", maxDepth: 2, first: 10) {
+    edges { node { id name ecosystem } depth }
+    pageInfo { hasNextPage endCursor }
+    totalCount
   }
 }
 
-# Calculate impact radius
+# Impact radius
 query ImpactAnalysis {
-  impactRadius(packageId: "npm:lodash", depth: 3) {
-    directDependents
-    transitiveDependents
-    affectedPackages {
-      name
-      depth
-    }
-  }
-}
-
-# Subscribe to real-time updates (WebSocket)
-subscription LiveStats {
-  liveStats {
-    totalPackages
-    packagesUpdatedToday
-    activeSubscriptions
+  impactRadius(packageId: "npm:lodash", maxDepth: 3, limit: 100) {
+    packageId
+    impactedPackages
+    impactedVersions
+    topImpacted { package { id name ecosystem } depth }
   }
 }
 ```
@@ -156,7 +154,7 @@ subscription LiveStats {
                     │
            ┌────────▼────────┐
            │   Web Platform  │
-           │    (WebGPU)     │
+           │  (Next.js/2D)   │
            └─────────────────┘
 ```
 
@@ -192,8 +190,9 @@ subscription LiveStats {
 | 4566  | RisingWave        | postgres://root@localhost    |
 | 5691  | RisingWave Dashboard | http://localhost:5691     |
 | 7687  | Memgraph (Bolt)   | bolt://localhost:7687        |
-| 3000  | Memgraph Lab      | http://localhost:3000        |
-| 6333  | Qdrant            | http://localhost:6333        |
+| 3002  | Memgraph Lab      | http://localhost:3002        |
+| 6333  | Qdrant (REST)     | http://localhost:6333        |
+| 6334  | Qdrant (gRPC)     | http://localhost:6334        |
 | 5432  | PostgreSQL        | postgres://idp@localhost     |
 | 6379  | Redis             | redis://localhost:6379       |
 | 16686 | Jaeger UI         | http://localhost:16686       |
@@ -213,7 +212,7 @@ docker-compose --profile monitoring up -d
 | Messaging | Redpanda | v25.3.4 |
 | Stream SQL | RisingWave | v2.7.0 |
 | Graph DB | Memgraph | v3.0 |
-| Vector DB | Qdrant | v1.13.0 |
+| Vector DB | Qdrant | v1.16.2 |
 | Metadata | PostgreSQL | 16 |
 | Tracing | Jaeger | 1.54 |
 | Backend | Rust + Axum | 0.8 |
@@ -227,7 +226,7 @@ docker-compose --profile monitoring up -d
 │   ├── graph-writer/       # Memgraph synchronization
 │   ├── vector-writer/      # Qdrant embeddings writer
 │   ├── syncer/             # RisingWave → Storage sync
-│   └── frontend/           # Next.js + React + WebGPU
+│   └── frontend/           # Next.js + React
 ├── packages/
 │   ├── models/             # Shared domain types
 │   ├── storage/            # Database clients (Memgraph, Qdrant, RisingWave)
@@ -254,9 +253,10 @@ Environment variables for each service:
 
 ```bash
 # API Service
-API_PORT=8080
-MEMGRAPH_URL=bolt://localhost:7687
-QDRANT_URL=http://localhost:6333
+API_PORT=8000
+MEMGRAPH_URI=bolt://localhost:7687
+# Rust services use Qdrant gRPC (6334). The dev seeder uses Qdrant REST (6333).
+QDRANT_URL=http://localhost:6334
 REDIS_URL=redis://localhost:6379
 JWT_SECRET=your-secret-key
 

@@ -1,0 +1,29 @@
+{
+  "k": 20,
+  "cases": [
+    {
+      "name": "npm-react",
+      "query": "react",
+      "ecosystem": "NPM",
+      "expected": ["npm:react"]
+    },
+    {
+      "name": "npm-express",
+      "query": "express",
+      "ecosystem": "NPM",
+      "expected": ["npm:express"]
+    },
+    {
+      "name": "cargo-tokio",
+      "query": "tokio",
+      "ecosystem": "CARGO",
+      "expected": ["cargo:tokio"]
+    },
+    {
+      "name": "pypi-requests",
+      "query": "requests",
+      "ecosystem": "PY_PI",
+      "expected": ["pypi:requests"]
+    }
+  ]
+}

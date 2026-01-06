@@ -23,7 +23,6 @@ import {
 import { GET_PACKAGE, GET_REVERSE_DEPENDENTS } from "@/lib/graphql/queries";
 import { cn, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass, formatNumber } from "@/lib/utils";
 import { QueryError, EmptyState } from "@/components/ui/error-display";
-import { Skeleton } from "@/components/ui/skeleton";
 
 interface ComparePackage {
   id: string;

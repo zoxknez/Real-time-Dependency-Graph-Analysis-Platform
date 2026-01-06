@@ -1,10 +1,9 @@
 "use client";
 
-import { useSubscription, useApolloClient } from "@apollo/client";
+import { useSubscription } from "@apollo/client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LIVE_PACKAGE_ACTIVITY,
-  NEW_VERSION_SUBSCRIPTION,
   BREAKING_CHANGE_DETECTED,
   LIVE_STATS,
   WATCH_PACKAGES,
@@ -20,13 +19,11 @@ import type {
   DependencyImpactEvent,
   Ecosystem,
   EventType,
-  Severity,
   BreakingSeverity,
   LivePackageActivityVariables,
   BreakingChangeVariables,
   WatchPackagesVariables,
   DependencyGraphUpdateVariables,
-  DependencyImpactVariables,
 } from "@/lib/graphql/types";
 
 // ═══════════════════════════════════════════════════════════════
@@ -61,7 +58,7 @@ export function useLivePackageActivity(options: UseLivePackageActivityOptions = 
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
 
-  const { data, loading, error } = useSubscription<
+  const { data: _data, loading, error } = useSubscription<
     { livePackageActivity: LivePackageEvent },
     LivePackageActivityVariables
   >(LIVE_PACKAGE_ACTIVITY, {
@@ -146,7 +143,7 @@ export function useBreakingChanges(options: UseBreakingChangesOptions = {}) {
   const onBreakingChangeRef = useRef(onBreakingChange);
   onBreakingChangeRef.current = onBreakingChange;
 
-  const { data, loading, error } = useSubscription<
+  const { data: _data, loading, error } = useSubscription<
     { breakingChangeDetected: BreakingChangeEvent },
     BreakingChangeVariables
   >(BREAKING_CHANGE_DETECTED, {
@@ -197,7 +194,7 @@ export function useLiveStats(options: UseLiveStatsOptions = {}) {
   const [stats, setStats] = useState<LiveStats | null>(null);
   const [history, setHistory] = useState<LiveStats[]>([]);
 
-  const { data, loading, error } = useSubscription<{ liveStats: LiveStats }>(
+  const { data: _data, loading, error } = useSubscription<{ liveStats: LiveStats }>(
     LIVE_STATS,
     {
       skip: paused,
@@ -238,7 +235,7 @@ export function useDependencyImpact(options: UseDependencyImpactOptions = {}) {
   const onImpactRef = useRef(onImpact);
   onImpactRef.current = onImpact;
 
-  const { data, loading, error } = useSubscription<
+  const { data: _data, loading, error } = useSubscription<
     { dependencyImpact: DependencyImpactEvent }
   >(DEPENDENCY_IMPACT, {
     variables: { ecosystem, minImpactScore },
@@ -282,7 +279,7 @@ export function useWatchPackages(options: UseWatchPackagesOptions) {
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
 
-  const { data, loading, error } = useSubscription<
+  const { data: _data, loading, error } = useSubscription<
     { watchPackages: WatchedPackageEvent },
     WatchPackagesVariables
   >(WATCH_PACKAGES, {
@@ -328,7 +325,7 @@ export function useDependencyGraphUpdates(options: UseDependencyGraphUpdatesOpti
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
 
-  const { data, loading, error } = useSubscription<
+  const { data: _data, loading, error } = useSubscription<
     { dependencyGraphUpdate: DependencyGraphUpdate },
     DependencyGraphUpdateVariables
   >(DEPENDENCY_GRAPH_UPDATES, {

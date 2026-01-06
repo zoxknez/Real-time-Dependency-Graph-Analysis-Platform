@@ -136,17 +136,50 @@ export const SEARCH_PACKAGES = gql`
     $query: String!
     $ecosystem: Ecosystem
     $first: Int = 20
+    $after: String
   ) {
     searchPackages(
       query: $query
       ecosystem: $ecosystem
       first: $first
+      after: $after
     ) {
       edges {
         node {
           ...PackageFields
         }
         cursor
+      }
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
+      totalCount
+    }
+  }
+  ${PACKAGE_FRAGMENT}
+`;
+
+// Semantic search packages by meaning (vector search)
+export const SEMANTIC_SEARCH_PACKAGES = gql`
+  query SemanticSearchPackages(
+    $query: String!
+    $ecosystem: Ecosystem
+    $first: Int = 20
+    $after: String
+  ) {
+    semanticSearchPackages(
+      query: $query
+      ecosystem: $ecosystem
+      first: $first
+      after: $after
+    ) {
+      edges {
+        node {
+          ...PackageFields
+        }
+        cursor
+        score
       }
       pageInfo {
         hasNextPage

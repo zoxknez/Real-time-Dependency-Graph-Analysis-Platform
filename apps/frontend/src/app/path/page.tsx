@@ -7,7 +7,7 @@ import { useLazyQuery } from "@apollo/client";
 import {
   Route,
   ArrowRight,
-  Package,
+  Package as PackageIcon,
   Loader2,
   CheckCircle,
   XCircle,
@@ -26,7 +26,8 @@ import { GET_DEPENDENCY_PATH } from "@/lib/graphql/queries";
 import { cn, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass } from "@/lib/utils";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { SkeletonCard } from "@/components/ui/skeleton";
-import { QueryError, EmptyState } from "@/components/ui/error-display";
+import { QueryError } from "@/components/ui/error-display";
+import type { GetDependencyPathResponse, GetDependencyPathVariables, Package as PackageModel } from "@/lib/graphql/types";
 
 // Popular path examples
 const EXAMPLE_PATHS = [
@@ -47,7 +48,7 @@ function PathPageContent() {
   const [maxHops, setMaxHops] = useState(6);
   const [shareCopied, setShareCopied] = useState(false);
 
-  const [findPath, { data, loading, error }] = useLazyQuery(GET_DEPENDENCY_PATH);
+  const [findPath, { data, loading, error }] = useLazyQuery<GetDependencyPathResponse, GetDependencyPathVariables>(GET_DEPENDENCY_PATH);
   const [copied, setCopied] = useState(false);
 
   // Auto-search when URL has both params
@@ -72,7 +73,7 @@ function PathPageContent() {
   // Copy path to clipboard
   const copyPath = useCallback(async () => {
     if (!data?.dependencyPath?.packages) return;
-    const pathStr = data.dependencyPath.packages.map((p: any) => p.id).join(" → ");
+    const pathStr = data.dependencyPath.packages.map((p) => p.id).join(" → ");
     await navigator.clipboard.writeText(pathStr);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -253,7 +254,7 @@ function PathPageContent() {
             <QueryError
               error={error}
               onRetry={() => fromPackage && toPackage && findPath({
-                variables: { from: fromPackage, to: toPackage, maxHops },
+                variables: { fromPackageId: fromPackage, toPackageId: toPackage, maxHops },
               })}
             />
           </motion.div>
@@ -352,7 +353,7 @@ function PathPageContent() {
                   <div className="absolute left-6 top-8 bottom-8 w-0.5 bg-gradient-to-b from-success via-primary-500 to-accent-500" />
 
                   <div className="space-y-4">
-                    {result.packages.map((pkg: any, index: number) => (
+                    {result.packages.map((pkg: PackageModel, index: number) => (
                       <motion.div
                         key={pkg.id}
                         initial={{ opacity: 0, x: -20 }}
@@ -387,7 +388,7 @@ function PathPageContent() {
                                 backgroundColor: `${getEcosystemColor(pkg.ecosystem)}20`,
                               }}
                             >
-                              <Package
+                              <PackageIcon
                                 className="w-5 h-5"
                                 style={{ color: getEcosystemColor(pkg.ecosystem) }}
                               />

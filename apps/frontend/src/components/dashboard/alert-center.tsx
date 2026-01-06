@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   AlertTriangle, 
@@ -156,8 +156,8 @@ export function AlertCenter({
   className,
   maxVisible = 5,
   autoDismissMs = 10000,
-  watchedPackageIds,
-  minSeverity,
+  watchedPackageIds: _watchedPackageIds,
+  minSeverity: _minSeverity,
 }: AlertCenterProps) {
   const [visibleAlerts, setVisibleAlerts] = useState<
     Array<{ id: string; event: BreakingChangeEvent | DependencyImpactEvent; type: "breaking" | "impact" }>
@@ -166,7 +166,7 @@ export function AlertCenter({
   const connectionStatus = useConnectionStatus();
 
   // Subscribe to breaking changes
-  const { latestBreakingChange } = useBreakingChanges({
+  const { latestBreakingChange: _latestBreakingChange } = useBreakingChanges({
     onBreakingChange: (event) => {
       const id = `breaking-${Date.now()}-${Math.random()}`;
       setVisibleAlerts((prev) => [{ id, event, type: "breaking" as const }, ...prev].slice(0, maxVisible));
@@ -181,7 +181,7 @@ export function AlertCenter({
   });
 
   // Subscribe to dependency impacts
-  const { latestImpact } = useDependencyImpact({
+  const { latestImpact: _latestImpact } = useDependencyImpact({
     minImpactScore: 0.7, // Only high-impact events
     onImpact: (event) => {
       const id = `impact-${Date.now()}-${Math.random()}`;

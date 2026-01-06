@@ -9,6 +9,8 @@ pub struct Config {
     pub memgraph: MemgraphConfig,
     pub redis: RedisConfig,
     pub kafka: KafkaConfig,
+    pub qdrant: QdrantConfig,
+    pub embedding: EmbeddingConfig,
     pub guardrails: GuardrailsConfig,
 }
 
@@ -40,6 +42,39 @@ pub struct KafkaConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct QdrantConfig {
+    pub enabled: bool,
+    pub url: String,
+    pub collection: String,
+    pub dimension: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EmbeddingConfig {
+    /// Embedding provider: "mock" (default) or "openai"
+    pub provider: String,
+    /// OpenAI API key (when provider=openai)
+    pub openai_api_key: Option<String>,
+    /// OpenAI model name (when provider=openai)
+    pub model: String,
+    /// Expected vector dimension (must match Qdrant collection)
+    pub dimension: usize,
+
+    /// Per-request timeout for embeddings calls
+    pub timeout_secs: u64,
+    /// Max retries for transient provider failures (e.g. 429/5xx)
+    pub max_retries: usize,
+    /// Base delay in milliseconds for exponential backoff
+    pub retry_base_delay_ms: u64,
+    /// Optional per-process rate limit (requests per minute). 0 disables.
+    pub rate_limit_rpm: u32,
+    /// In-memory cache TTL for embeddings
+    pub cache_ttl_secs: u64,
+    /// In-memory cache max entries
+    pub cache_max_entries: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct GuardrailsConfig {
     /// Max depth for graph traversals (reverseDependents, impactRadius)
     pub max_traversal_depth: i32,
@@ -61,7 +96,7 @@ impl Default for Config {
                 port: env::var("API_PORT")
                     .ok()
                     .and_then(|p| p.parse().ok())
-                    .unwrap_or(8080),
+                    .unwrap_or(8000),
             },
             memgraph: MemgraphConfig {
                 uri: env::var("MEMGRAPH_URI")
@@ -88,6 +123,56 @@ impl Default for Config {
                     .unwrap_or_else(|_| "domain.package.events.v1".to_string()),
                 consumer_group: env::var("KAFKA_CONSUMER_GROUP")
                     .unwrap_or_else(|_| "api-subscriptions-cg".to_string()),
+            },
+            qdrant: QdrantConfig {
+                enabled: env::var("QDRANT_ENABLED")
+                    .ok()
+                    .map(|s| matches!(s.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+                    .unwrap_or(true),
+                url: env::var("QDRANT_URL")
+                    .unwrap_or_else(|_| "http://127.0.0.1:6334".to_string()),
+                collection: env::var("QDRANT_COLLECTION")
+                    .unwrap_or_else(|_| "package_embeddings".to_string()),
+                dimension: env::var("QDRANT_DIMENSION")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(384),
+            },
+            embedding: EmbeddingConfig {
+                provider: env::var("EMBEDDING_PROVIDER")
+                    .unwrap_or_else(|_| "mock".to_string()),
+                openai_api_key: env::var("OPENAI_API_KEY").ok(),
+                model: env::var("EMBEDDING_MODEL")
+                    .unwrap_or_else(|_| "text-embedding-3-small".to_string()),
+                dimension: env::var("EMBEDDING_DIMENSION")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(384),
+
+                timeout_secs: env::var("EMBEDDING_TIMEOUT_SECS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(30),
+                max_retries: env::var("EMBEDDING_MAX_RETRIES")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(2),
+                retry_base_delay_ms: env::var("EMBEDDING_RETRY_BASE_DELAY_MS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(200),
+                rate_limit_rpm: env::var("EMBEDDING_RATE_LIMIT_RPM")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0),
+                cache_ttl_secs: env::var("EMBEDDING_CACHE_TTL_SECS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(3600),
+                cache_max_entries: env::var("EMBEDDING_CACHE_MAX_ENTRIES")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(10_000),
             },
             guardrails: GuardrailsConfig {
                 max_traversal_depth: env::var("MAX_TRAVERSAL_DEPTH")

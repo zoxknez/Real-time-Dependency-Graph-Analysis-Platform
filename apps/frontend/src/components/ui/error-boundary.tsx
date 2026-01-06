@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { AlertTriangle, RefreshCw, Home } from "lucide-react";
 
 interface ErrorBoundaryProps {
@@ -57,13 +58,13 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
                 <RefreshCw className="w-4 h-4" />
                 Try Again
               </button>
-              <a
+              <Link
                 href="/"
                 className="btn-secondary flex items-center gap-2"
               >
                 <Home className="w-4 h-4" />
                 Go Home
-              </a>
+              </Link>
             </div>
           </div>
         </div>

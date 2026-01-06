@@ -149,6 +149,22 @@ impl EventConsumer {
                 "package_id".to_string(),
                 PayloadValue::String(event.package_id.clone()),
             );
+            // Normalize ecosystem from package_id prefix (e.g. "npm:react" -> "NPM")
+            if let Some(prefix) = event.package_id.split(':').next() {
+                let normalized: String = match prefix.to_ascii_lowercase().as_str() {
+                    "npm" => "NPM".to_string(),
+                    "pypi" | "py_pi" | "py-pi" => "PY_PI".to_string(),
+                    "cargo" => "CARGO".to_string(),
+                    "maven" => "MAVEN".to_string(),
+                    "nuget" | "nu_get" | "nu-get" => "NU_GET".to_string(),
+                    "go" => "GO".to_string(),
+                    _ => prefix.to_ascii_uppercase(),
+                };
+                payload.insert(
+                    "ecosystem".to_string(),
+                    PayloadValue::String(normalized),
+                );
+            }
             payload.insert(
                 "version".to_string(),
                 PayloadValue::String(event.version.clone()),

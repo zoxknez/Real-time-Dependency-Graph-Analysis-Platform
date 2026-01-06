@@ -308,3 +308,18 @@ pub struct SearchEdge {
     pub node: Package,
     pub cursor: String,
 }
+
+#[derive(SimpleObject, Clone, Debug)]
+pub struct SemanticSearchConnection {
+    pub edges: Vec<SemanticSearchEdge>,
+    pub page_info: PageInfo,
+    pub total_count: i32,
+}
+
+#[derive(SimpleObject, Clone, Debug)]
+pub struct SemanticSearchEdge {
+    pub node: Package,
+    pub cursor: String,
+    /// Cosine similarity score from Qdrant
+    pub score: f32,
+}

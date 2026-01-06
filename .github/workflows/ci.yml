@@ -209,8 +209,8 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          NEXT_PUBLIC_GRAPHQL_ENDPOINT: http://localhost:8080/graphql
-          NEXT_PUBLIC_WS_ENDPOINT: ws://localhost:8080/graphql/ws
+          NEXT_PUBLIC_GRAPHQL_ENDPOINT: http://localhost:8000/graphql
+          NEXT_PUBLIC_WS_ENDPOINT: ws://localhost:8000/graphql/ws
 
   # ═══════════════════════════════════════════════════════════════
   # Frontend E2E Tests (Playwright)
@@ -242,7 +242,7 @@ jobs:
       - name: Run E2E tests
         run: npx playwright test || true
         env:
-          NEXT_PUBLIC_GRAPHQL_ENDPOINT: http://localhost:8080/graphql
+          NEXT_PUBLIC_GRAPHQL_ENDPOINT: http://localhost:8000/graphql
 
   # ═══════════════════════════════════════════════════════════════
   # Build Docker Images
@@ -259,16 +259,16 @@ jobs:
       matrix:
         include:
           - service: api
-            dockerfile: docker/Dockerfile.api
+            dockerfile: deploy/docker/Dockerfile.api
             context: .
           - service: frontend
-            dockerfile: apps/frontend/Dockerfile
-            context: apps/frontend
+            dockerfile: deploy/docker/Dockerfile.frontend
+            context: .
           - service: ingestion
-            dockerfile: docker/Dockerfile.ingestion
+            dockerfile: deploy/docker/Dockerfile.ingestion
             context: .
           - service: graph-writer
-            dockerfile: docker/Dockerfile.graph-writer
+            dockerfile: deploy/docker/Dockerfile.graph-writer
             context: .
     steps:
       - uses: actions/checkout@v4

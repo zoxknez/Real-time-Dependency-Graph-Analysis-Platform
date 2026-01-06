@@ -1,22 +1,47 @@
-# Build stage
-FROM rustlang/rust:nightly-bookworm AS builder
+# Build stage (optimized with cargo-chef for dependency layer caching)
+FROM rustlang/rust:nightly-bookworm AS chef
 
 WORKDIR /app
 
 # Install build dependencies
+# - protobuf-compiler is required for crates using tonic_build/prost_build
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     cmake \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy workspace files
+# Install cargo-chef (cached in its own layer)
+RUN cargo install cargo-chef --locked
+
+FROM chef AS planner
+
+# Copy source to compute the dependency recipe (fast, no compilation)
 COPY Cargo.toml Cargo.lock ./
 COPY packages packages
 COPY apps apps
 COPY tests tests
 
-# Build release binary
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS cacher
+
+COPY --from=planner /app/recipe.json recipe.json
+RUN cargo chef cook --release --recipe-path recipe.json
+
+FROM chef AS builder
+
+# Reuse the dependency build cache
+COPY --from=cacher /app/target /app/target
+COPY --from=cacher /usr/local/cargo /usr/local/cargo
+
+# Copy the full source and build only the API package
+COPY Cargo.toml Cargo.lock ./
+COPY packages packages
+COPY apps apps
+COPY tests tests
+
 RUN cargo build --release -p api
 
 # Runtime stage

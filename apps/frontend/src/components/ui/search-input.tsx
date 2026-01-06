@@ -41,8 +41,8 @@ export function SearchInput({
   onChange,
   onSearch,
   placeholder = "Search packages...",
-  suggestions = [],
-  recentSearches = [],
+  suggestions: _suggestions = [],
+  recentSearches: _recentSearches = [],
   isLoading = false,
   className,
 }: SearchInputProps) {

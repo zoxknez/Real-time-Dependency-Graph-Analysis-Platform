@@ -1,13 +1,8 @@
-import { dirname } from "path";
-import { fileURLToPath } from "url";
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
 import nextPlugin from "@next/eslint-plugin-next";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
 
 export default tseslint.config(
   js.configs.recommended,
@@ -46,7 +41,7 @@ export default tseslint.config(
       "@next/next/no-img-element": "warn",
       
       // TypeScript rules
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
       "@typescript-eslint/no-explicit-any": "warn",
       "@typescript-eslint/explicit-function-return-type": "off",
       "@typescript-eslint/explicit-module-boundary-types": "off",
@@ -58,6 +53,12 @@ export default tseslint.config(
       "node_modules/**",
       "out/**",
       "public/**",
+      "e2e/**",
+      "playwright.config.ts",
+      "src/types/**",
+      "next.config.js",
+      "postcss.config.js",
+      "**/*.config.js",
     ],
   }
 );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useLazyQuery } from "@apollo/client";
@@ -9,19 +9,15 @@ import {
   Package,
   SlidersHorizontal,
   Loader2,
-  AlertCircle,
   Sparkles,
 } from "lucide-react";
-import { GET_PACKAGE, GET_REVERSE_DEPENDENTS, SEARCH_PACKAGES } from "@/lib/graphql/queries";
-import { cn, formatEcosystemName, getEcosystemBadgeClass, parsePackageId } from "@/lib/utils";
+import { GET_PACKAGE, GET_REVERSE_DEPENDENTS, SEARCH_PACKAGES, SEMANTIC_SEARCH_PACKAGES } from "@/lib/graphql/queries";
 import { PackageCard } from "@/components/explore/package-card";
 import { PackageDetail } from "@/components/explore/package-detail";
 import { EcosystemFilter } from "@/components/explore/ecosystem-filter";
 import { SearchInput } from "@/components/ui/search-input";
 import { SkeletonCard } from "@/components/ui/skeleton";
-import { QueryError, EmptyState } from "@/components/ui/error-display";
-
-const ecosystems = ["ALL", "NPM", "PY_PI", "CARGO", "MAVEN", "GO"];
+import { QueryError } from "@/components/ui/error-display";
 
 function ExplorePageContent() {
   const searchParams = useSearchParams();
@@ -32,17 +28,38 @@ function ExplorePageContent() {
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedEcosystem, setSelectedEcosystem] = useState(initialEcosystem);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
+  const [isLoadingMoreSearch, setIsLoadingMoreSearch] = useState(false);
+
+  const useSemanticSearch =
+    (process.env.NEXT_PUBLIC_SEARCH_MODE || "").toLowerCase() === "semantic";
 
   // Direct package lookup (for exact ID matches)
   const [getPackage, { data: packageData, loading: packageLoading, error: packageError }] = 
     useLazyQuery(GET_PACKAGE);
 
   // Fuzzy search for packages
-  const [searchPackages, { data: searchData, loading: searchLoading, error: searchError }] = 
+  const [searchPackagesByName, { data: nameSearchData, loading: nameSearchLoading, error: nameSearchError, fetchMore: fetchMoreNameSearch }] = 
     useLazyQuery(SEARCH_PACKAGES);
+
+  const [searchPackagesSemantic, { data: semanticSearchData, loading: semanticSearchLoading, error: semanticSearchError, fetchMore: fetchMoreSemanticSearch }] = 
+    useLazyQuery(SEMANTIC_SEARCH_PACKAGES);
 
   const [getReverseDeps, { data: reverseDepsData, loading: reverseDepsLoading, fetchMore }] = 
     useLazyQuery(GET_REVERSE_DEPENDENTS);
+
+  const foundPackage = packageData?.package;
+  const searchConnection = useSemanticSearch
+    ? semanticSearchData?.semanticSearchPackages
+    : nameSearchData?.searchPackages;
+
+  const searchResults: Array<{
+    node: { id: string; name: string; ecosystem: string };
+    cursor: string;
+    score?: number;
+  }> = searchConnection?.edges || [];
+
+  const isLoading = packageLoading || nameSearchLoading || semanticSearchLoading;
+  const error = packageError || nameSearchError || semanticSearchError;
 
   // Handle selecting a package from reverse deps list
   const handleSelectPackage = useCallback((packageId: string) => {
@@ -76,18 +93,81 @@ function ExplorePageContent() {
         // Direct package lookup
         getPackage({ variables: { id: query.trim() } });
       } else {
-        // Fuzzy search
+        // Search
         const ecosystemFilter = selectedEcosystem !== "ALL" ? selectedEcosystem : undefined;
-        searchPackages({ 
-          variables: { 
-            query: query.trim(),
-            ecosystem: ecosystemFilter,
-            first: 20
-          } 
-        });
+        const variables = {
+          query: query.trim(),
+          ecosystem: ecosystemFilter,
+          first: 20,
+        };
+
+        if (useSemanticSearch) {
+          searchPackagesSemantic({ variables });
+        } else {
+          searchPackagesByName({ variables });
+        }
       }
     }
-  }, [router, getPackage, searchPackages, selectedEcosystem]);
+  }, [router, getPackage, searchPackagesByName, searchPackagesSemantic, selectedEcosystem, useSemanticSearch]);
+
+  const handleLoadMoreSearch = useCallback(async () => {
+    const endCursor = searchConnection?.pageInfo?.endCursor;
+    const hasNextPage = Boolean(searchConnection?.pageInfo?.hasNextPage);
+    if (!hasNextPage || !endCursor) return;
+
+    const ecosystemFilter = selectedEcosystem !== "ALL" ? selectedEcosystem : undefined;
+    const variables = {
+      query: searchQuery.trim(),
+      ecosystem: ecosystemFilter,
+      first: 20,
+      after: endCursor,
+    };
+
+    setIsLoadingMoreSearch(true);
+    try {
+      if (useSemanticSearch && fetchMoreSemanticSearch) {
+        await fetchMoreSemanticSearch({
+          variables,
+          updateQuery: (prev, { fetchMoreResult }) => {
+            if (!fetchMoreResult?.semanticSearchPackages) return prev;
+            const prevConn = prev.semanticSearchPackages;
+            const nextConn = fetchMoreResult.semanticSearchPackages;
+            return {
+              ...prev,
+              semanticSearchPackages: {
+                ...prevConn,
+                edges: [...(prevConn?.edges || []), ...(nextConn.edges || [])],
+                pageInfo: nextConn.pageInfo,
+                totalCount: nextConn.totalCount,
+              },
+            };
+          },
+        });
+      }
+
+      if (!useSemanticSearch && fetchMoreNameSearch) {
+        await fetchMoreNameSearch({
+          variables,
+          updateQuery: (prev, { fetchMoreResult }) => {
+            if (!fetchMoreResult?.searchPackages) return prev;
+            const prevConn = prev.searchPackages;
+            const nextConn = fetchMoreResult.searchPackages;
+            return {
+              ...prev,
+              searchPackages: {
+                ...prevConn,
+                edges: [...(prevConn?.edges || []), ...(nextConn.edges || [])],
+                pageInfo: nextConn.pageInfo,
+                totalCount: nextConn.totalCount,
+              },
+            };
+          },
+        });
+      }
+    } finally {
+      setIsLoadingMoreSearch(false);
+    }
+  }, [fetchMoreNameSearch, fetchMoreSemanticSearch, searchConnection, searchQuery, selectedEcosystem, useSemanticSearch]);
 
   // Auto-search if query param exists
   useEffect(() => {
@@ -97,10 +177,16 @@ function ExplorePageContent() {
       if (initialQuery.includes(":")) {
         getPackage({ variables: { id: initialQuery } });
       } else {
-        searchPackages({ variables: { query: initialQuery, first: 20 } });
+        const ecosystemFilter = initialEcosystem !== "ALL" ? initialEcosystem : undefined;
+        const variables = { query: initialQuery, ecosystem: ecosystemFilter, first: 20 };
+        if (useSemanticSearch) {
+          searchPackagesSemantic({ variables });
+        } else {
+          searchPackagesByName({ variables });
+        }
       }
     }
-  }, [initialQuery, getPackage, searchPackages]);
+  }, [initialQuery, initialEcosystem, getPackage, searchPackagesByName, searchPackagesSemantic, useSemanticSearch]);
 
   // Load reverse deps when package is selected
   useEffect(() => {
@@ -113,12 +199,7 @@ function ExplorePageContent() {
         } 
       });
     }
-  }, [selectedPackageId]);
-
-  const foundPackage = packageData?.package;
-  const searchResults = searchData?.searchPackages?.edges || [];
-  const isLoading = packageLoading || searchLoading;
-  const error = packageError || searchError;
+  }, [selectedPackageId, getReverseDeps]);
 
   return (
     <div className="space-y-6">
@@ -238,16 +319,29 @@ function ExplorePageContent() {
           {searchResults.length > 0 && (
             <div className="space-y-3">
               <p className="text-sm theme-text-tertiary">
-                Found {searchData?.searchPackages?.totalCount || searchResults.length} packages
+                Found {searchConnection?.totalCount || searchResults.length} packages
               </p>
-              {searchResults.map(({ node }: { node: { id: string; name: string; ecosystem: string } }) => (
+              {searchResults.map(({ node, score }) => (
                 <PackageCard
                   key={node.id}
                   package={{ ...node, ecosystem: node.ecosystem as "NPM" | "PY_PI" | "CARGO" | "MAVEN" | "NU_GET" | "GO" }}
                   onClick={() => setSelectedPackageId(node.id)}
                   isSelected={selectedPackageId === node.id}
+                  score={useSemanticSearch ? score : undefined}
                 />
               ))}
+
+              {searchConnection?.pageInfo?.hasNextPage && (
+                <div className="pt-2">
+                  <button
+                    onClick={handleLoadMoreSearch}
+                    disabled={isLoadingMoreSearch || isLoading}
+                    className="w-full px-4 py-2 rounded-lg theme-inner-card theme-hover-text theme-inner-card-hover transition-colors"
+                  >
+                    {isLoadingMoreSearch ? "Loading..." : "Load more"}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
