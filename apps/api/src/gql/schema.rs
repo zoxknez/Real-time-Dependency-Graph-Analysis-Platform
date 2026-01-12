@@ -13,6 +13,7 @@ use crate::graph::GraphClient;
 use crate::gql::context::{GqlContext, EventChannels, SemanticSearchContext};
 use crate::gql::query::QueryRoot;
 use crate::gql::subscription::SubscriptionRoot;
+use crate::services::gemini::GeminiService;
 
 use qdrant_client::Qdrant;
 
@@ -21,10 +22,17 @@ pub type ApiSchema = Schema<QueryRoot, EmptyMutation, SubscriptionRoot>;
 
 /// Build the GraphQL schema with all dependencies
 pub async fn build_schema(config: &Config) -> Result<(ApiSchema, Arc<EventChannels>, GraphClient, Option<CacheClient>)> {
+    println!("DEBUG: Building GraphQL schema...");
     info!("Building GraphQL schema...");
 
-    // Connect to Memgraph
-    let graph = GraphClient::connect(&config.memgraph).await?;
+    // Connect to Memgraph (Required)
+    info!("Connecting to Memgraph at {}...", config.memgraph.uri);
+    let graph = match tokio::time::timeout(Duration::from_secs(5), GraphClient::connect(&config.memgraph)).await {
+        Ok(res) => res?,
+        Err(_) => anyhow::bail!("Timed out connecting to Memgraph at {}", config.memgraph.uri),
+    };
+    println!("DEBUG: Connected to Memgraph successfully");
+    info!("Connected to Memgraph successfully");
 
     // Connect to Redis with timeout (optional - graceful degradation)
     let cache = match tokio::time::timeout(
@@ -96,6 +104,21 @@ pub async fn build_schema(config: &Config) -> Result<(ApiSchema, Arc<EventChanne
         None
     };
 
+
+
+    // Initialize Gemini Service
+    let gemini = if !config.gemini.api_key.is_empty() {
+        info!("Gemini service enabled");
+        Some(Arc::new(GeminiService::new(
+            config.gemini.api_key.clone(),
+            config.gemini.flash_model.clone(),
+            config.gemini.thinking_model.clone(),
+        )))
+    } else {
+        warn!("Gemini API key missing; Gemini service disabled");
+        None
+    };
+
     // Create GraphQL context with all event channels
     let ctx = GqlContext::with_channels(
         graph.clone(),
@@ -103,6 +126,7 @@ pub async fn build_schema(config: &Config) -> Result<(ApiSchema, Arc<EventChanne
         config.guardrails.clone(),
         channels.clone(),
         semantic_search,
+        gemini,
     );
 
     // Build schema with complexity limits

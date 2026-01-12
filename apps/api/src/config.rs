@@ -11,7 +11,15 @@ pub struct Config {
     pub kafka: KafkaConfig,
     pub qdrant: QdrantConfig,
     pub embedding: EmbeddingConfig,
+    pub gemini: GeminiConfig,
     pub guardrails: GuardrailsConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GeminiConfig {
+    pub api_key: String,
+    pub flash_model: String,
+    pub thinking_model: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -173,6 +181,13 @@ impl Default for Config {
                     .ok()
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(10_000),
+            },
+            gemini: GeminiConfig {
+                api_key: env::var("GEMINI_API_KEY").unwrap_or_default(),
+                flash_model: env::var("GEMINI_FLASH_MODEL")
+                    .unwrap_or_else(|_| "gemini-3-flash-preview".to_string()),
+                thinking_model: env::var("GEMINI_THINKING_MODEL")
+                    .unwrap_or_else(|_| "gemini-3-pro-preview".to_string()),
             },
             guardrails: GuardrailsConfig {
                 max_traversal_depth: env::var("MAX_TRAVERSAL_DEPTH")

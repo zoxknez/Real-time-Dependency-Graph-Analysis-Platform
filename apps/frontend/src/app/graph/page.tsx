@@ -18,6 +18,8 @@ import {
   X,
   ExternalLink,
   Check,
+  Sparkles,
+  MessageSquare,
 } from "lucide-react";
 import { GET_REVERSE_DEPENDENTS } from "@/lib/graphql/queries";
 import { getEcosystemColor, parsePackageId, formatEcosystemName } from "@/lib/utils";
@@ -25,6 +27,7 @@ import { GraphControls } from "@/components/graph/graph-controls";
 import { NodeTooltip } from "@/components/graph/node-tooltip";
 import { GraphMinimap } from "@/components/graph/graph-minimap";
 import { LiveUpdateIndicator } from "@/components/graph/live-update-indicator";
+import { GeminiChat } from "@/components/GeminiChat";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { QueryError, EmptyState } from "@/components/ui/error-display";
 import { useDependencyGraphUpdates, useConnectionStatus } from "@/lib/hooks";
@@ -84,14 +87,15 @@ function GraphPageContent() {
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   const showLiveUpdates = true;
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: 0, height: 0 });
 
   const [getReverseDeps, { data: reverseDepsData, loading, error }] = useLazyQuery(GET_REVERSE_DEPENDENTS);
-  
+
   // Connection status for real-time updates
   const connectionStatus = useConnectionStatus();
-  
+
   // Subscribe to live dependency graph updates
   const { updates: liveUpdates } = useDependencyGraphUpdates({
     rootPackageId: packageId,
@@ -111,7 +115,7 @@ function GraphPageContent() {
   // Compute graph statistics
   const graphStats = useMemo(() => {
     if (graphData.nodes.length === 0) return null;
-    
+
     const depths = graphData.nodes.map(n => n.depth);
     const ecosystems = new Set(graphData.nodes.map(n => n.ecosystem));
     const maxDepthFound = Math.max(...depths);
@@ -119,7 +123,7 @@ function GraphPageContent() {
       acc[d] = (acc[d] || 0) + 1;
       return acc;
     }, {} as Record<number, number>);
-    
+
     return {
       nodeCount: graphData.nodes.length,
       edgeCount: graphData.links.length,
@@ -149,7 +153,7 @@ function GraphPageContent() {
     edges.forEach((edge) => {
       const node = edge.node;
       const depth = edge.depth || 1;
-      
+
       if (!nodesMap.has(node.id)) {
         nodesMap.set(node.id, {
           id: node.id,
@@ -237,7 +241,7 @@ function GraphPageContent() {
     fg.zoomToFit(400);
   };
   const handleRefresh = () => loadGraph();
-  
+
   // Navigate to position from minimap
   const navigateToPosition = useCallback((x: number, y: number) => {
     if (graphRef.current) {
@@ -248,12 +252,12 @@ function GraphPageContent() {
   // Update viewport state when graph moves (for minimap)
   const updateViewBox = useCallback(() => {
     if (!graphRef.current || !containerRef.current) return;
-    
+
     const { width, height } = containerRef.current.getBoundingClientRect();
     const fg = graphRef.current as unknown as ForceGraphApiCompat;
     const zoom = fg.zoom();
     const center = fg.centerAt();
-    
+
     if (center) {
       setViewBox({
         x: center.x - (width / 2 / zoom),
@@ -286,7 +290,7 @@ function GraphPageContent() {
         target: typeof l.target === 'object' ? l.target.id : l.target,
       })),
     };
-    
+
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -299,7 +303,7 @@ function GraphPageContent() {
 
   const exportAsPNG = useCallback(() => {
     if (!graphRef.current) return;
-    
+
     const canvas = document.querySelector('.force-graph-container canvas') as HTMLCanvasElement;
     if (canvas) {
       const link = document.createElement('a');
@@ -411,13 +415,13 @@ function GraphPageContent() {
               const label = graphNode.name;
               const fontSize = Math.min(14 / globalScale, 12);
               ctx.font = `${fontSize}px Inter, sans-serif`;
-              
+
               // Node circle
               ctx.beginPath();
               ctx.arc(graphNode.x ?? 0, graphNode.y ?? 0, graphNode.val / 2, 0, 2 * Math.PI);
               ctx.fillStyle = graphNode.color;
               ctx.fill();
-              
+
               // Glow effect for root
               if (graphNode.depth === 0) {
                 ctx.shadowColor = graphNode.color;
@@ -425,7 +429,7 @@ function GraphPageContent() {
                 ctx.fill();
                 ctx.shadowBlur = 0;
               }
-              
+
               // Label
               ctx.textAlign = "center";
               ctx.textBaseline = "middle";
@@ -446,11 +450,11 @@ function GraphPageContent() {
                 <p>Loading graph data...</p>
               </>
             ) : error ? (
-              <QueryError 
-                error={error} 
-                onRetry={() => packageId && getReverseDeps({ 
-                  variables: { packageId, maxDepth, first: 500 } 
-                })} 
+              <QueryError
+                error={error}
+                onRetry={() => packageId && getReverseDeps({
+                  variables: { packageId, maxDepth, first: 500 }
+                })}
               />
             ) : (
               <EmptyState
@@ -505,7 +509,7 @@ function GraphPageContent() {
 
         {/* Stats Overlay - Enhanced with Legend */}
         {graphStats && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="absolute bottom-4 left-4 glass-card p-4 space-y-3"
@@ -531,13 +535,13 @@ function GraphPageContent() {
             <div className="flex items-center gap-2 pt-2 border-t theme-border">
               <span className="text-xs theme-text-faint mr-1">Ecosystems:</span>
               {graphStats.ecosystems.map(eco => (
-                <button 
+                <button
                   key={eco}
                   onClick={() => {
                     // Could filter by ecosystem in future
                   }}
                   className="px-2 py-0.5 rounded text-xs font-medium hover:ring-1 transition-all cursor-pointer"
-                  style={{ 
+                  style={{
                     backgroundColor: `${getEcosystemColor(eco)}20`,
                     color: getEcosystemColor(eco),
                   }}
@@ -564,7 +568,7 @@ function GraphPageContent() {
               <Maximize2 className="w-5 h-5 theme-text-muted" />
             )}
           </button>
-          
+
           {/* Share Button */}
           {packageId && (
             <button
@@ -579,7 +583,16 @@ function GraphPageContent() {
               )}
             </button>
           )}
-          
+
+          {/* Gemini Chat Toggle */}
+          <button
+            onClick={() => setShowChat(!showChat)}
+            className={`glass-card p-2 theme-inner-card-hover transition-colors ${showChat ? "text-purple-400 border-purple-500/50 bg-purple-500/10" : "theme-text-muted"}`}
+            title="Ask Gemini AI"
+          >
+            <Sparkles className="w-5 h-5" />
+          </button>
+
           {/* Export Button */}
           <div className="relative">
             <button
@@ -589,7 +602,7 @@ function GraphPageContent() {
             >
               <Download className="w-5 h-5 theme-text-muted" />
             </button>
-            
+
             <AnimatePresence>
               {showExportMenu && (
                 <motion.div
@@ -631,12 +644,12 @@ function GraphPageContent() {
             >
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div 
+                  <div
                     className="w-4 h-4 rounded-full"
                     style={{ backgroundColor: selectedNode.color }}
                   />
                   <span className="text-xs font-medium px-2 py-0.5 rounded"
-                    style={{ 
+                    style={{
                       backgroundColor: `${selectedNode.color}20`,
                       color: selectedNode.color,
                     }}
@@ -651,11 +664,11 @@ function GraphPageContent() {
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              
+
               <h3 className="text-lg font-semibold theme-text-primary font-mono mb-2">
                 {selectedNode.name}
               </h3>
-              
+
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="theme-text-muted">ID</span>
@@ -668,7 +681,7 @@ function GraphPageContent() {
                   <span className="theme-text-secondary">{selectedNode.depth}</span>
                 </div>
               </div>
-              
+
               <div className="mt-4 pt-3 border-t theme-border space-y-2">
                 <div className="flex gap-2">
                   <button

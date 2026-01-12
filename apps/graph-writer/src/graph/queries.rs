@@ -44,6 +44,7 @@ impl GraphQueries {
                 ON CREATE SET
                     p.ecosystem = $ecosystem,
                     p.name = $name,
+                    p.name_lc = toLower($name),
                     p.created_at = $now,
                     p.updated_at = $now
                 ON MATCH SET
@@ -112,6 +113,7 @@ impl GraphQueries {
                     ON CREATE SET
                         p.ecosystem = $dep_ecosystem,
                         p.name = $dep_name,
+                        p.name_lc = toLower($dep_name),
                         p.created_at = $now,
                         p.updated_at = $now
                     CREATE (v)-[:DEPENDS_ON {version_req: $version_req}]->(p)

@@ -1,5 +1,7 @@
 //! GraphQL types matching the enterprise schema
 
+#![allow(dead_code)]
+
 use async_graphql::{Enum, InputObject, SimpleObject, ID};
 use serde::{Deserialize, Serialize};
 

@@ -7,8 +7,9 @@
 //! - Rate limit violations
 //! - GraphQL operation tracking
 
+#![allow(dead_code)]
+
 use axum::{
-    body::Body,
     extract::Request,
     http::{header, StatusCode},
     middleware::Next,

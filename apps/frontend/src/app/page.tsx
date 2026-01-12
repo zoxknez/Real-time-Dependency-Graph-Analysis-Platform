@@ -1,13 +1,14 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { 
-  Package, 
-  Layers, 
-  GitBranch, 
+import {
+  Package,
+  Layers,
+  GitBranch,
   Activity,
   ArrowRight,
   Zap,
+  Sparkles,
   Search,
 } from "lucide-react";
 import Link from "next/link";
@@ -72,7 +73,7 @@ export default function DashboardPage() {
               Inverse Dependency Platform
             </h1>
             <p className="text-lg text-white/70 mb-6">
-              Explore, analyze, and visualize package dependencies across multiple ecosystems. 
+              Explore, analyze, and visualize package dependencies across multiple ecosystems.
               Track vulnerability impact and discover hidden connections in your dependency graph.
             </p>
             <div className="flex gap-4">
@@ -83,6 +84,10 @@ export default function DashboardPage() {
               <Link href="/graph" className="flex items-center gap-2 text-white hover:text-accent-300 transition-colors font-medium">
                 View Graph
                 <ArrowRight className="w-4 h-4" />
+              </Link>
+              <Link href="/ask" className="flex items-center gap-2 text-white hover:text-accent-300 transition-colors font-medium">
+                Ask AI
+                <Sparkles className="w-4 h-4" />
               </Link>
             </div>
           </div>
@@ -162,7 +167,7 @@ export default function DashboardPage() {
         <motion.div variants={itemVariants}>
           <QuickActions />
         </motion.div>
-        
+
         {/* Top Packages */}
         <motion.div variants={itemVariants} className="lg:col-span-2">
           <TopPackages />

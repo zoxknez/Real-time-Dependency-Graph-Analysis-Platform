@@ -669,6 +669,37 @@ impl QueryRoot {
             total_count: 0,
         })
     }
+
+    /// Ask Gemini 3.0 (Thinking Model)
+    #[instrument(skip(self, ctx))]
+    async fn ask_gemini(&self, ctx: &Context<'_>, question: String, context_packages: Vec<ID>) -> Result<String> {
+        let gql_ctx = ctx.data::<GqlContext>()?;
+        if let Some(gemini) = &gql_ctx.gemini {
+             let prompt = if context_packages.is_empty() {
+                 question
+             } else {
+                 let ids: Vec<String> = context_packages.iter().map(|id| id.to_string()).collect();
+                 format!("Context Packages: {:?}\n\nQuestion: {}", ids, question)
+             };
+             let answer = gemini.generate_thinking(&prompt).await?;
+             Ok(answer)
+        } else {
+             Err("Gemini service unavailable. Please check API key configuration.".into())
+        }
+    }
+
+    /// Explain dependency graph using Gemini
+    #[instrument(skip(self, ctx))]
+    async fn explain_dependency_graph(&self, ctx: &Context<'_>, package_id: ID) -> Result<String> {
+        let gql_ctx = ctx.data::<GqlContext>()?;
+        if let Some(gemini) = &gql_ctx.gemini {
+             let prompt = format!("Analyze and explain the dependency graph for package {}. What are its critical dependencies and potential risks? Provide a concise summary.", package_id.to_string());
+             let explanation = gemini.generate_thinking(&prompt).await?;
+             Ok(explanation)
+        } else {
+             Err("Gemini service unavailable".into())
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════

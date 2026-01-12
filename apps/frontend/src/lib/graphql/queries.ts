@@ -1,5 +1,18 @@
 import { gql } from "@apollo/client";
 
+export const ASK_GEMINI = gql`
+  query AskGemini($question: String!, $contextPackages: [ID!]!) {
+    askGemini(question: $question, contextPackages: $contextPackages)
+  }
+`;
+
+export const EXPLAIN_DEPENDENCY_GRAPH = gql`
+  query ExplainDependencyGraph($packageId: ID!) {
+    explainDependencyGraph(packageId: $packageId)
+  }
+`;
+
+
 // ═══════════════════════════════════════════════════════════════
 // FRAGMENTS
 // ═══════════════════════════════════════════════════════════════

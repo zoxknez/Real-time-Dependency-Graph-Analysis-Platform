@@ -1,5 +1,7 @@
 //! GraphQL Context - shared state for resolvers
 
+#![allow(dead_code)]
+
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -10,6 +12,7 @@ use crate::graph::GraphClient;
 use crate::embeddings::EmbeddingGenerator;
 use crate::gql::loaders::PackageLoader;
 use crate::gql::types::{VersionEvent, BreakingChangeEvent, LiveStatsEvent, DependencyImpactEvent};
+use crate::services::gemini::GeminiService;
 
 use qdrant_client::Qdrant;
 
@@ -77,6 +80,8 @@ pub struct GqlContext {
 
     /// Optional semantic search context
     pub semantic_search: Option<SemanticSearchContext>,
+    /// Gemini AI service (for thinking/generation)
+    pub gemini: Option<Arc<GeminiService>>,
 }
 
 impl GqlContext {
@@ -97,6 +102,7 @@ impl GqlContext {
             event_tx: Arc::new(event_tx),
             channels: Arc::new(channels),
             semantic_search: None,
+            gemini: None,
         }
     }
     
@@ -106,6 +112,7 @@ impl GqlContext {
         guardrails: GuardrailsConfig,
         channels: Arc<EventChannels>,
         semantic_search: Option<SemanticSearchContext>,
+        gemini: Option<Arc<GeminiService>>,
     ) -> Self {
         let package_loader = PackageLoader::new(graph.clone());
         // Create version_tx from channels for backwards compatibility
@@ -119,6 +126,7 @@ impl GqlContext {
             event_tx: Arc::new(event_tx),
             channels,
             semantic_search,
+            gemini,
         }
     }
 }

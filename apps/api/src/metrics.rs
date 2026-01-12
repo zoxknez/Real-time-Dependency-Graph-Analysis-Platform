@@ -6,6 +6,8 @@
 //! - Database connection pool metrics
 //! - Cache hit/miss rates
 
+#![allow(dead_code)]
+
 use axum::{
     body::Body,
     extract::MatchedPath,
@@ -268,7 +270,7 @@ pub fn record_rate_limit_hit(endpoint: &str, tier: &str) {
 }
 
 /// Record impact radius calculation
-pub fn record_impact_calculation(depth: u8, duration_secs: f64, packages_impacted: u64) {
+pub fn record_impact_calculation(depth: u8, duration_secs: f64, _packages_impacted: u64) {
     counter!(
         names::IMPACT_CALCULATIONS_TOTAL,
         &[("depth", depth.to_string())]

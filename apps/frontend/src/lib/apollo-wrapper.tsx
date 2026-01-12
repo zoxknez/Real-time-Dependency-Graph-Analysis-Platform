@@ -7,8 +7,8 @@ import { createClient } from "graphql-ws";
 import { useMemo, useEffect, useState } from "react";
 
 // GraphQL endpoints
-const GRAPHQL_ENDPOINT = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:8000/graphql";
-const WS_ENDPOINT = process.env.NEXT_PUBLIC_WS_ENDPOINT || "ws://localhost:8000/graphql/ws";
+const GRAPHQL_ENDPOINT = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:8081/graphql";
+const WS_ENDPOINT = process.env.NEXT_PUBLIC_WS_ENDPOINT || "ws://localhost:8081/graphql/ws";
 
 // Connection state for UI feedback
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
@@ -16,15 +16,15 @@ export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "er
 // Create WebSocket client with automatic reconnection
 function createWsClient() {
   if (typeof window === "undefined") return null;
-  
+
   // Check if WebSocket endpoint is reachable (don't block on failure)
   try {
     return createClient({
       url: WS_ENDPOINT,
       connectionParams: () => {
         // Add auth token if available
-        const token = typeof window !== "undefined" 
-          ? localStorage.getItem("auth_token") 
+        const token = typeof window !== "undefined"
+          ? localStorage.getItem("auth_token")
           : null;
         return token ? { authorization: `Bearer ${token}` } : {};
       },
@@ -58,7 +58,7 @@ function createWsClient() {
         },
         error: (error) => {
           // Log error details for debugging
-          console.warn("[Apollo WS] Connection error (subscriptions unavailable):", 
+          console.warn("[Apollo WS] Connection error (subscriptions unavailable):",
             error instanceof Error ? error.message : JSON.stringify(error));
           window.dispatchEvent(new CustomEvent("ws-status", { detail: "error" }));
         },
@@ -84,16 +84,16 @@ function createApolloClient() {
   // Split traffic between HTTP and WebSocket based on operation type
   const splitLink = wsLink
     ? split(
-        ({ query }) => {
-          const definition = getMainDefinition(query);
-          return (
-            definition.kind === "OperationDefinition" &&
-            definition.operation === "subscription"
-          );
-        },
-        wsLink,
-        httpLink
-      )
+      ({ query }) => {
+        const definition = getMainDefinition(query);
+        return (
+          definition.kind === "OperationDefinition" &&
+          definition.operation === "subscription"
+        );
+      },
+      wsLink,
+      httpLink
+    )
     : httpLink;
 
   return new ApolloClient({
@@ -184,7 +184,7 @@ export function useConnectionStatus(): ConnectionStatus {
       const detail = (event as CustomEvent<ConnectionStatus>).detail;
       setStatus(detail);
     };
-    
+
     window.addEventListener("ws-status", handler);
     return () => window.removeEventListener("ws-status", handler);
   }, []);
@@ -194,7 +194,7 @@ export function useConnectionStatus(): ConnectionStatus {
 
 export function ApolloWrapper({ children }: React.PropsWithChildren) {
   const client = useMemo(() => createApolloClient(), []);
-  
+
   return (
     <ApolloProvider client={client}>
       {children}

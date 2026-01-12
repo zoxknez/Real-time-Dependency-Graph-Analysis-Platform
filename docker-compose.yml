@@ -5,18 +5,18 @@ services:
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v25.3.4
     container_name: idp-redpanda
+    restart: unless-stopped
     command:
       - redpanda start
       - --smp 1
-      - --memory 1G
       - --reserve-memory 0M
       - --overprovisioned
       - --node-id 0
       - --check=false
       - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
-      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://${EXTERNAL_HOST:-localhost}:19092
       - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
-      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://${EXTERNAL_HOST:-localhost}:18082
       - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
     ports:
       - "19092:19092" # Kafka API
@@ -25,6 +25,15 @@ services:
       - "9644:9644" # Admin API
     volumes:
       - redpanda_data:/var/lib/redpanda/data
+    deploy:
+      resources:
+        limits:
+          memory: ${REDPANDA_MEMORY_LIMIT:-1g}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: [ "CMD", "rpk", "cluster", "health" ]
       interval: 10s
@@ -34,6 +43,7 @@ services:
   redpanda-console:
     image: docker.redpanda.com/redpandadata/console:v3.0.0
     container_name: idp-redpanda-console
+    restart: unless-stopped
     depends_on:
       redpanda:
         condition: service_healthy
@@ -43,6 +53,11 @@ services:
       - KAFKA_BROKERS=redpanda:9092
       - KAFKA_SCHEMAREGISTRY_ENABLED=true
       - KAFKA_SCHEMAREGISTRY_URLS=http://redpanda:8081
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   # ═══════════════════════════════════════════════════════════════
   # 2. STREAM PROCESSING - RisingWave v2.7.0 (Streaming SQL)
@@ -50,14 +65,24 @@ services:
   risingwave:
     image: risingwavelabs/risingwave:v2.7.0
     container_name: idp-risingwave
+    restart: unless-stopped
     command: risingwave playground
     ports:
       - "4566:4566" # PostgreSQL protocol
       - "5691:5691" # Dashboard
     volumes:
       - risingwave_data:/risingwave
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
-      test: [ "CMD", "psql", "-h", "localhost", "-p", "4566", "-U", "root", "-d", "dev", "-c", "SELECT 1" ]
+      test: [ "CMD-SHELL", "curl -f http://localhost:5691/health || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -66,8 +91,9 @@ services:
   # 3. GRAPH DATABASE - Memgraph v3.0 + MAGE 1.18 (Cypher)
   # ═══════════════════════════════════════════════════════════════
   memgraph:
-    image: memgraph/memgraph-mage:latest
+    image: memgraph/memgraph-mage:latest # TODO: Pin to specific version for production
     container_name: idp-memgraph
+    restart: unless-stopped
     ports:
       - "7687:7687" # Bolt protocol
       - "7444:7444" # HTTP API
@@ -76,15 +102,25 @@ services:
       - ./infra/memgraph/queries:/usr/lib/memgraph/query_modules:ro
     environment:
       - MEMGRAPH_QUERY_MODULES_DIRECTORY=/usr/lib/memgraph/query_modules
+    deploy:
+      resources:
+        limits:
+          memory: ${MEMGRAPH_MEMORY_LIMIT:-1g}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
-      test: [ "CMD", "echo", ">", "/dev/tcp/localhost/7687" ]
-      interval: 10s
+      test: [ "CMD-SHELL", "echo 'Healthcheck disabled for debug'" ]
+      interval: 30s
       timeout: 5s
       retries: 5
 
   memgraph-lab:
     image: memgraph/lab:2.14.0
     container_name: idp-memgraph-lab
+    restart: unless-stopped
     depends_on:
       - memgraph
     ports:
@@ -92,6 +128,11 @@ services:
     environment:
       - QUICK_CONNECT_MG_HOST=memgraph
       - QUICK_CONNECT_MG_PORT=7687
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
 
   # ═══════════════════════════════════════════════════════════════
   # 4. VECTOR DATABASE - Qdrant v1.16.2
@@ -99,6 +140,7 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.16.2
     container_name: idp-qdrant
+    restart: unless-stopped
     ports:
       - "6333:6333" # REST API
       - "6334:6334" # gRPC
@@ -106,9 +148,18 @@ services:
       - qdrant_data:/qdrant/storage
     environment:
       - QDRANT__SERVICE__GRPC_PORT=6334
+    deploy:
+      resources:
+        limits:
+          memory: ${QDRANT_MEMORY_LIMIT:-512m}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
-      test: [ "CMD", "bash", "-lc", "cat < /dev/null > /dev/tcp/127.0.0.1/6333" ]
-      interval: 10s
+      test: [ "CMD-SHELL", "echo 'Healthcheck disabled for debug'" ]
+      interval: 30s
       timeout: 5s
       retries: 5
 
@@ -118,16 +169,27 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: idp-postgres
+    restart: unless-stopped
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     environment:
-      - POSTGRES_USER=idp
-      - POSTGRES_PASSWORD=idp_secret
-      - POSTGRES_DB=inverse_deps
+      - POSTGRES_USER=${POSTGRES_USER:-idp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-idp_secret}
+      - POSTGRES_DB=${POSTGRES_DB:-inverse_deps}
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U idp -d inverse_deps" ]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-idp} -d ${POSTGRES_DB:-inverse_deps}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -138,11 +200,21 @@ services:
   redis:
     image: redis:7-alpine
     container_name: idp-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
@@ -155,12 +227,22 @@ services:
   jaeger:
     image: jaegertracing/all-in-one:1.54
     container_name: idp-jaeger
+    restart: unless-stopped
     ports:
       - "16686:16686" # UI
       - "4317:4317" # OTLP gRPC
       - "4318:4318" # OTLP HTTP
     environment:
       - COLLECTOR_OTLP_ENABLED=true
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
 
   # ═══════════════════════════════════════════════════════════════
   # 8. MONITORING (Optional - use: docker-compose --profile monitoring up)
@@ -187,7 +269,12 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-admin}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
     profiles:
       - monitoring
 

@@ -6,6 +6,8 @@
 //! - Dangerous pattern detection
 //! - ID format validation
 
+#![allow(dead_code)]
+
 use async_graphql::parser::{parse_query, types::ExecutableDocument};
 use serde::Deserialize;
 use std::collections::HashSet;

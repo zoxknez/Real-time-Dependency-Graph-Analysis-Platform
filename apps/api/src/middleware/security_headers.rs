@@ -10,7 +10,6 @@
 //! - Permissions-Policy
 
 use axum::{
-    body::Body,
     http::{header::HeaderName, HeaderValue, Request, Response},
 };
 use std::task::{Context, Poll};
@@ -58,6 +57,7 @@ pub struct SecurityHeadersLayer {
 }
 
 impl SecurityHeadersLayer {
+    #[allow(dead_code)]
     pub fn new(config: SecurityHeadersConfig) -> Self {
         Self { config }
     }

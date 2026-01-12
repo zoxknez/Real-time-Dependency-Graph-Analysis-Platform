@@ -17,10 +17,11 @@ mod embeddings;
 mod kafka;
 mod metrics;
 mod middleware;
+mod services;
 
 use anyhow::Result;
 use async_graphql::http::GraphiQLSource;
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLProtocol, GraphQLSubscription, GraphQLWebSocket};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLProtocol, GraphQLWebSocket};
 use axum::{
     extract::{State, WebSocketUpgrade},
     response::{Html, IntoResponse, Json},
@@ -29,10 +30,11 @@ use axum::{
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use axum::http::HeaderValue;
 
 use crate::config::Config;
 use crate::gql::ApiSchema;
@@ -80,6 +82,12 @@ async fn main() -> Result<()> {
     // Build GraphQL schema (returns channels and clients)
     let (schema, channels, graph, cache) = gql::build_schema(&config).await?;
 
+    // Run graph migrations (indexes & backfill) in background
+    let migration_client = graph.clone();
+    tokio::spawn(async move {
+        crate::graph::migrations::run_migrations(&migration_client).await;
+    });
+
     // Create app state for health checks
     let app_state = AppState {
         graph: graph.clone(),
@@ -97,9 +105,19 @@ async fn main() -> Result<()> {
 
     // CORS configuration
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin("http://localhost:3000".parse::<HeaderValue>().unwrap())
+        .allow_methods([
+            axum::http::Method::GET,
+            axum::http::Method::POST,
+            axum::http::Method::OPTIONS,
+        ])
+        .allow_credentials(true)
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            axum::http::header::AUTHORIZATION,
+            axum::http::header::ACCEPT,
+            axum::http::header::ORIGIN,
+        ]);
 
     // Security headers middleware
     let security_headers = SecurityHeadersLayer::default_headers();

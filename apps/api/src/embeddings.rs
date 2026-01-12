@@ -46,6 +46,7 @@ pub type EmbeddingRateLimiter = Arc<RateLimiter<NotKeyed, InMemoryState, QuantaC
 #[derive(Debug, thiserror::Error)]
 pub enum EmbeddingError {
     #[error("provider misconfigured: {0}")]
+    #[allow(dead_code)]
     Config(String),
 
     #[error("request timed out")]
@@ -141,6 +142,7 @@ impl EmbeddingGenerator {
         })
     }
 
+    #[allow(dead_code)]
     pub fn dimension(&self) -> usize {
         self.dimension
     }

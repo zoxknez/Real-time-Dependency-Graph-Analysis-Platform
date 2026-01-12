@@ -324,25 +324,25 @@ impl GraphQueries {
             Some(_) => r#"
                 MATCH (p:Package)
                 WHERE p.deleted_at IS NULL 
-                  AND toLower(p.name) CONTAINS toLower($query)
+                  AND (p.name_lc CONTAINS toLower($query) OR toLower(p.name) CONTAINS toLower($query))
                   AND toLower(p.ecosystem) = toLower($ecosystem)
                 RETURN p.id AS id,
                        p.ecosystem AS ecosystem,
                        p.name AS name
                 ORDER BY 
-                  CASE WHEN toLower(p.name) = toLower($query) THEN 0 ELSE 1 END,
+                  CASE WHEN p.name_lc = toLower($query) THEN 0 ELSE 1 END,
                   size(p.name)
                 LIMIT $limit
             "#,
             None => r#"
                 MATCH (p:Package)
                 WHERE p.deleted_at IS NULL 
-                  AND toLower(p.name) CONTAINS toLower($query)
+                  AND (p.name_lc CONTAINS toLower($query) OR toLower(p.name) CONTAINS toLower($query))
                 RETURN p.id AS id,
                        p.ecosystem AS ecosystem,
                        p.name AS name
                 ORDER BY 
-                  CASE WHEN toLower(p.name) = toLower($query) THEN 0 ELSE 1 END,
+                  CASE WHEN p.name_lc = toLower($query) THEN 0 ELSE 1 END,
                   size(p.name)
                 LIMIT $limit
             "#,
@@ -365,14 +365,14 @@ impl GraphQueries {
             Some(_) => r#"
                 MATCH (p:Package)
                 WHERE p.deleted_at IS NULL 
-                  AND toLower(p.name) CONTAINS toLower($query)
+                  AND (p.name_lc CONTAINS toLower($query) OR toLower(p.name) CONTAINS toLower($query))
                   AND toLower(p.ecosystem) = toLower($ecosystem)
                 RETURN count(p) AS total
             "#,
             None => r#"
                 MATCH (p:Package)
                 WHERE p.deleted_at IS NULL 
-                  AND toLower(p.name) CONTAINS toLower($query)
+                  AND (p.name_lc CONTAINS toLower($query) OR toLower(p.name) CONTAINS toLower($query))
                 RETURN count(p) AS total
             "#,
         };

@@ -7,6 +7,8 @@
 //! - IP and API key based identification
 //! - Graceful degradation when Redis is unavailable
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use axum::{
     body::Body,
@@ -15,12 +17,12 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
-use redis::{aio::MultiplexedConnection, AsyncCommands};
+use redis::aio::MultiplexedConnection;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use tracing::{debug, error, warn, instrument};
+use tracing::{debug, warn, instrument};
 
 /// Rate limit tiers with different limits
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
