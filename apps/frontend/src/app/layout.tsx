@@ -25,19 +25,19 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
-      <body className="min-h-screen theme-bg-primary gradient-mesh transition-colors duration-300">
+      <body className="min-h-screen theme-bg-primary gradient-mesh transition-colors duration-300" suppressHydrationWarning>
         <ThemeProvider>
           <ApolloWrapper>
             <ToastProvider>
               <div className="flex h-screen overflow-hidden">
                 {/* Sidebar Navigation */}
                 <Sidebar />
-                
+
                 {/* Main Content Area */}
                 <div className="flex-1 flex flex-col overflow-hidden">
                   {/* Top Header */}
                   <Header />
-                  
+
                   {/* Page Content with Error Boundary */}
                   <main className="flex-1 overflow-y-auto p-6">
                     <ErrorBoundary>
@@ -46,7 +46,7 @@ export default function RootLayout({
                   </main>
                 </div>
               </div>
-              
+
               {/* Global Command Palette (Cmd+K) */}
               <CommandPalette />
             </ToastProvider>
