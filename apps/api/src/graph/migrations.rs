@@ -30,7 +30,8 @@ async fn ensure_indexes(client: &GraphClient) -> Result<()> {
     
     // Create index on Package(name_lc) for fast case-insensitive search
     match client.query(
-        neo4rs::query("CREATE INDEX ON :Package(name_lc)")
+        neo4rs::query("CREATE INDEX ON :Package(name_lc)"), 
+        None
     ).await {
         Ok(_) => info!("Index on :Package(name_lc) created/verified"),
         Err(e) => warn!("Index creation note (may already exist): {}", e),
@@ -48,7 +49,7 @@ async fn backfill_name_lc(client: &GraphClient) -> Result<()> {
     
     // client.query_one returns Result<Option<Row>>
     let mut needed = 0;
-    if let Some(row) = client.query_one(count_query).await? {
+    if let Some(row) = client.query_one(count_query, None).await? {
         needed = row.get::<i64>("count").unwrap_or(0);
     }
 
@@ -71,7 +72,7 @@ async fn backfill_name_lc(client: &GraphClient) -> Result<()> {
             "#
         );
 
-        let rows = client.query(update_query).await?;
+        let rows = client.query(update_query, None).await?;
         let mut updated = 0;
         
         if let Some(row) = rows.first() {

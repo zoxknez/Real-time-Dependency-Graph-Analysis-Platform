@@ -5,10 +5,13 @@
 
 pub mod package;
 pub mod analysis;
+pub mod tenant;
+pub mod generated;
 
 // Re-export common types
 pub use package::*;
 pub use analysis::*;
+pub use tenant::*;
 
 /// Common ID type used across the platform
 pub type PackageId = String;

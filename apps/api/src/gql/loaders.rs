@@ -25,18 +25,20 @@ impl PackageLoader {
     }
 
     /// Load a single package by ID
-    pub async fn load(&self, id: &str) -> Option<Package> {
+    pub async fn load(&self, id: &str, tenant_id: &str) -> Option<Package> {
+        let cache_key = format!("{}::{}", tenant_id, id);
+
         // Check cache first
         {
             let cache = self.cache.lock().await;
-            if let Some(pkg) = cache.get(id) {
+            if let Some(pkg) = cache.get(&cache_key) {
                 return Some(pkg.clone());
             }
         }
 
         // Fetch from database
-        let query = GraphQueries::get_package(id);
-        match self.graph.query_one(query).await {
+        let query = GraphQueries::get_package(tenant_id, id);
+        match self.graph.query_one(query, None).await {
             Ok(Some(row)) => {
                 let pkg = Package {
                     id: ID(row.get::<String>("id").unwrap_or_default()),
@@ -53,7 +55,11 @@ impl PackageLoader {
                 // Cache the result
                 {
                     let mut cache = self.cache.lock().await;
-                    cache.insert(id.to_string(), pkg.clone());
+                     // Minimal eviction: prevent unbounded growth
+                    if cache.len() > 10000 {
+                        cache.clear();
+                    }
+                    cache.insert(cache_key, pkg.clone());
                 }
 
                 Some(pkg)
@@ -67,7 +73,7 @@ impl PackageLoader {
     }
 
     /// Batch load multiple packages by IDs
-    pub async fn load_many(&self, ids: &[String]) -> HashMap<String, Package> {
+    pub async fn load_many(&self, ids: &[String], tenant_id: &str) -> HashMap<String, Package> {
         if ids.is_empty() {
             return HashMap::new();
         }
@@ -81,7 +87,8 @@ impl PackageLoader {
         {
             let cache = self.cache.lock().await;
             for id in ids {
-                if let Some(pkg) = cache.get(id) {
+                let cache_key = format!("{}::{}", tenant_id, id);
+                if let Some(pkg) = cache.get(&cache_key) {
                     result.insert(id.clone(), pkg.clone());
                 } else {
                     missing_ids.push(id.clone());
@@ -91,9 +98,9 @@ impl PackageLoader {
 
         // Fetch missing from database
         if !missing_ids.is_empty() {
-            let query = GraphQueries::get_packages_batch(&missing_ids);
+            let query = GraphQueries::get_packages_batch(tenant_id, &missing_ids);
             
-            if let Ok(rows) = self.graph.query(query).await {
+            if let Ok(rows) = self.graph.query(query, None).await {
                 let mut cache = self.cache.lock().await;
                 
                 for row in rows {
@@ -110,7 +117,12 @@ impl PackageLoader {
                         updated_at: row.get("updated_at").ok(),
                     };
 
-                    cache.insert(id.clone(), pkg.clone());
+                    let cache_key = format!("{}::{}", tenant_id, id);
+                    // Minimal eviction
+                     if cache.len() > 10000 {
+                         cache.clear();
+                     }
+                    cache.insert(cache_key, pkg.clone());
                     result.insert(id, pkg);
                 }
             }

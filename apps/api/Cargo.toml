@@ -27,6 +27,7 @@ tower-http.workspace = true
 # GraphQL
 async-graphql.workspace = true
 async-graphql-axum.workspace = true
+async-trait.workspace = true
 
 # Database clients
 neo4rs.workspace = true

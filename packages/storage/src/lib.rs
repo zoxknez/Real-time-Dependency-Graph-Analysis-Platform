@@ -4,15 +4,24 @@
 //! - Memgraph (graph database)
 //! - Qdrant (vector database)
 //! - RisingWave (streaming SQL)
+//! - Circuit breaker pattern for resilience
+//! - Timeout, retry, and backoff utilities
+//! - Bulkhead pattern for concurrency limiting
 
 pub mod memgraph;
 pub mod qdrant;
 pub mod risingwave;
+pub mod circuit_breaker;
+pub mod resilience;
+pub mod bulkhead;
 
 // Re-exports for convenience
 pub use memgraph::{MemgraphClient, MemgraphConfig, QueryBuilder, GraphStats};
 pub use qdrant::{QdrantClient, QdrantConfig, VectorPoint, SearchResult, FilterBuilder};
 pub use risingwave::{RisingWaveClient, RisingWaveConfig, EcosystemStats, DependencyCount};
+pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerRegistry, CircuitState};
+pub use resilience::{ResilienceConfig, with_resilience, with_idempotency, IdempotencyToken, IsRetryable, ErrorClass};
+pub use bulkhead::{Bulkhead, BulkheadConfig};
 
 use anyhow::Result;
 

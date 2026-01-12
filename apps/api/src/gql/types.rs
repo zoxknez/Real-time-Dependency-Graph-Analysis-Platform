@@ -18,6 +18,7 @@ pub enum Ecosystem {
     Maven,
     NuGet,
     Go,
+    Unknown,
 }
 
 impl From<&str> for Ecosystem {
@@ -29,7 +30,7 @@ impl From<&str> for Ecosystem {
             "maven" => Ecosystem::Maven,
             "nuget" => Ecosystem::NuGet,
             "go" | "golang" => Ecosystem::Go,
-            _ => Ecosystem::Npm, // Default
+            _ => Ecosystem::Unknown,
         }
     }
 }
@@ -200,7 +201,7 @@ pub struct LiveStatsEvent {
     pub total_versions: i64,
     pub packages_last_hour: i64,
     pub versions_last_hour: i64,
-    pub active_subscriptions: i32,
+    pub active_subscriptions: usize,
     pub processing_queue_size: i32,
     pub ecosystem_activity: Vec<EcosystemActivity>,
 }
@@ -255,7 +256,7 @@ pub struct EventMeta {
 }
 
 /// Union type for all subscription events
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, async_graphql::Union)]
 pub enum SubscriptionEvent {
     Version(VersionEvent),
     BreakingChange(BreakingChangeEvent),

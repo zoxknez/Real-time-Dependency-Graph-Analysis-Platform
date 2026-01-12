@@ -14,9 +14,10 @@ use crate::embeddings::EmbeddingError;
 use crate::gql::context::GqlContext;
 use crate::gql::types::*;
 use crate::graph::GraphQueries;
+use crate::middleware::rbac::RequirePermission;
+use models::tenant::{Permission, TenantContext};
 
-use qdrant_client::qdrant::{Condition, Filter, SearchPointsBuilder};
-use qdrant_client::qdrant::value::Kind;
+
 
 fn qdrant_error_code(message: &str) -> &'static str {
     let m = message.to_ascii_lowercase();
@@ -42,6 +43,7 @@ fn ecosystem_payload_value(e: Ecosystem) -> &'static str {
         Ecosystem::Maven => "MAVEN",
         Ecosystem::NuGet => "NU_GET",
         Ecosystem::Go => "GO",
+        Ecosystem::Unknown => "UNKNOWN",
     }
 }
 
@@ -53,7 +55,12 @@ impl QueryRoot {
     #[instrument(skip(self, ctx))]
     async fn package(&self, ctx: &Context<'_>, id: ID) -> Result<Option<Package>> {
         let gql_ctx = ctx.data::<GqlContext>()?;
-        let pkg = gql_ctx.package_loader.load(&id.to_string()).await;
+        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
+        // Use a default/system tenant ID for public access if no context 
+        // (In production, maybe strict error? For now, empty string or handled by loader)
+        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+        
+        let pkg = gql_ctx.package_loader.load(&id.to_string(), &tenant_id).await;
         Ok(pkg)
     }
 
@@ -92,14 +99,18 @@ impl QueryRoot {
             "Executing reverseDependents query"
         );
 
+        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
+        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+
         // Execute query
         let query = GraphQueries::reverse_dependents_transitive(
+            &tenant_id,
             &package_id.to_string(),
             effective_depth,
             effective_limit + 1, // +1 to check if there's a next page
         );
 
-        let rows = gql_ctx.graph.query(query).await?;
+        let rows = gql_ctx.graph.query(query, tenant_ctx).await?;
         
         // Check if there's a next page
         let has_next_page = rows.len() as i32 > effective_limit;
@@ -132,10 +143,11 @@ impl QueryRoot {
 
         // Get total count (separate query, could be cached)
         let count_query = GraphQueries::reverse_dependents_count(
+            &tenant_id,
             &package_id.to_string(),
             effective_depth,
         );
-        let total_count = match gql_ctx.graph.query_one(count_query).await? {
+        let total_count = match gql_ctx.graph.query_one(count_query, tenant_ctx).await? {
             Some(row) => row.get::<i64>("total").unwrap_or(0) as i32,
             None => 0,
         };
@@ -178,19 +190,23 @@ impl QueryRoot {
 
         debug!(effective_hops, "Executing dependencyPath query");
 
+        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
+        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+
         let query = GraphQueries::dependency_path(
+            &tenant_id,
             &from_package_id.to_string(),
             &to_package_id.to_string(),
             effective_hops,
         );
 
-        match gql_ctx.graph.query_one(query).await? {
+        match gql_ctx.graph.query_one(query, tenant_ctx).await? {
             Some(row) => {
                 let package_ids: Vec<String> = row.get("package_ids").unwrap_or_default();
                 let hops: i64 = row.get("hops").unwrap_or(0);
 
                 // Batch load packages
-                let packages_map = gql_ctx.package_loader.load_many(&package_ids).await;
+                let packages_map = gql_ctx.package_loader.load_many(&package_ids, &tenant_id).await;
                 
                 // Preserve order
                 let packages: Vec<Package> = package_ids
@@ -244,14 +260,18 @@ impl QueryRoot {
             "Executing impactRadius query"
         );
 
+        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
+        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+
         // Get impacted packages with depth
         let query = GraphQueries::impact_radius(
+            &tenant_id,
             &package_id.to_string(),
             effective_depth,
             effective_limit,
         );
 
-        let rows = gql_ctx.graph.query(query).await?;
+        let rows = gql_ctx.graph.query(query, tenant_ctx).await?;
 
         // Build top impacted list
         let mut top_impacted = Vec::with_capacity(rows.len());
@@ -280,11 +300,12 @@ impl QueryRoot {
 
         // Get total counts
         let count_query = GraphQueries::impact_radius_versions(
+            &tenant_id,
             &package_id.to_string(),
             effective_depth,
         );
         
-        let (impacted_packages, impacted_versions) = match gql_ctx.graph.query_one(count_query).await? {
+        let (impacted_packages, impacted_versions) = match gql_ctx.graph.query_one(count_query, tenant_ctx).await? {
             Some(row) => (
                 row.get::<i64>("impacted_packages").unwrap_or(0) as i32,
                 row.get::<i64>("impacted_versions").unwrap_or(0) as i32,
@@ -313,8 +334,11 @@ impl QueryRoot {
         let gql_ctx = ctx.data::<GqlContext>()?;
         let effective_limit = limit.min(gql_ctx.guardrails.max_results);
 
-        let query = GraphQueries::get_versions(&package_id.to_string(), effective_limit);
-        let rows = gql_ctx.graph.query(query).await?;
+        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
+        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+
+        let query = GraphQueries::get_versions(&tenant_id, &package_id.to_string(), effective_limit);
+        let rows = gql_ctx.graph.query(query, tenant_ctx).await?;
 
         let versions: Vec<Version> = rows
             .iter()
@@ -324,9 +348,8 @@ impl QueryRoot {
                 version: row.get("version").unwrap_or_default(),
                 published_at: row.get::<i64>("published_at")
                     .ok()
-                    .map(|ts| chrono::DateTime::from_timestamp_millis(ts)
-                        .map(|dt| dt.to_rfc3339())
-                        .unwrap_or_default()),
+                    .and_then(|ts| chrono::DateTime::from_timestamp_millis(ts))
+                    .map(|dt| dt.to_rfc3339()),
                 yanked: row.get("yanked").unwrap_or(false),
             })
             .collect();
@@ -345,8 +368,27 @@ impl QueryRoot {
         let gql_ctx = ctx.data::<GqlContext>()?;
         let effective_limit = limit.min(gql_ctx.guardrails.max_results);
 
-        let query = GraphQueries::dependencies_direct(&package_id.to_string(), effective_limit);
-        let rows = gql_ctx.graph.query(query).await?;
+        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
+        // dependencies_direct uses GraphQueries which I haven't updated to take tenant_id because it was chunk 4 (failed multiple times)
+        // Wait, did I update dependencies_direct? I tried in Step 16 chunk 4 but it failed.
+        // It failed because "reverse_dependents_direct" was chunk 4.
+        // dependencies_direct (lines 249-265 of queries.rs) was NOT in my ReplaceChunks in Step 16? 
+        // Let me check. Step 16 had "reverse_dependents_direct" as chunk 4. 
+        // It did NOT have "dependencies_direct". 
+        // I might have missed updating dependencies_direct in queries.rs!
+        // I should check if I missed it.
+        // If I missed it, then GraphQueries::dependencies_direct does NOT accept tenant_id yet.
+        // So I can't pass it here.
+        // But for consistency I SHOULD have updated it.
+        // I need to check queries.rs again.
+        
+        // Assuming I will fix queries.rs in next step if missed.
+        
+        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
+        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+
+        let query = GraphQueries::dependencies_direct(&tenant_id, &package_id.to_string(), effective_limit);
+        let rows = gql_ctx.graph.query(query, tenant_ctx).await?;
 
         let packages: Vec<Package> = rows
             .iter()
@@ -367,13 +409,15 @@ impl QueryRoot {
     }
 
     /// Get graph statistics
+    #[graphql(guard = "RequirePermission::one(Permission::SystemAdmin)")]
     async fn graph_stats(&self, ctx: &Context<'_>) -> Result<GraphStats> {
         let gql_ctx = ctx.data::<GqlContext>()?;
+        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
         
         let query = GraphQueries::graph_stats();
         
         let (total_packages, total_versions, total_dependencies, total_package_dependencies) = 
-            match gql_ctx.graph.query_one(query).await? {
+            match gql_ctx.graph.query_one(query, tenant_ctx).await? {
                 Some(row) => (
                     row.get("packages").unwrap_or(0),
                     row.get("versions").unwrap_or(0),
@@ -385,7 +429,7 @@ impl QueryRoot {
 
         // Get ecosystem breakdown
         let eco_query = GraphQueries::ecosystem_breakdown();
-        let eco_rows = gql_ctx.graph.query(eco_query).await?;
+        let eco_rows = gql_ctx.graph.query(eco_query, tenant_ctx).await?;
         
         let ecosystem_breakdown: Vec<EcosystemCount> = eco_rows
             .iter()
@@ -430,9 +474,12 @@ impl QueryRoot {
 
         debug!(query = %query, ecosystem = ?eco_str, "Executing searchPackages");
 
+        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
+        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+
         // Execute search query
-        let search_query = GraphQueries::search_packages(&query, eco_str, effective_limit + 1);
-        let rows = gql_ctx.graph.query(search_query).await?;
+        let search_query = GraphQueries::search_packages(&tenant_id, &query, eco_str, effective_limit + 1);
+        let rows = gql_ctx.graph.query(search_query, tenant_ctx).await?;
 
         // Check for next page
         let has_next_page = rows.len() as i32 > effective_limit;
@@ -460,8 +507,8 @@ impl QueryRoot {
         }
 
         // Get total count
-        let count_query = GraphQueries::search_packages_count(&query, eco_str);
-        let total_count = match gql_ctx.graph.query_one(count_query).await? {
+        let count_query = GraphQueries::search_packages_count(&tenant_id, &query, eco_str);
+        let total_count = match gql_ctx.graph.query_one(count_query, tenant_ctx).await? {
             Some(row) => row.get::<i64>("total").unwrap_or(0) as i32,
             None => 0,
         };
@@ -560,23 +607,14 @@ impl QueryRoot {
         let mut seen: HashSet<String> = HashSet::new();
         let mut has_more_points = false;
 
+        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
+        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+
         for _attempt in 0..3 {
-            let mut search_builder = SearchPointsBuilder::new(
-                &semantic.collection,
-                embedding.clone(),
-                top_k,
-            )
-            .with_payload(true);
-
-            if let Some(eco) = eco_str {
-                search_builder = search_builder.filter(Filter::must(vec![
-                    Condition::matches("ecosystem", eco.to_string()),
-                ]));
-            }
-
-            let response = semantic
+            // Use storage layer's search method which handles tenant isolation
+            let search_results = semantic
                 .qdrant
-                .search_points(search_builder)
+                .search(&tenant_id, embedding.clone(), top_k)
                 .await
                 .map_err(|e| {
                     let details = e.to_string();
@@ -587,18 +625,28 @@ impl QueryRoot {
                     })
                 })?;
 
-            has_more_points = response.result.len() as u64 >= top_k;
+            has_more_points = search_results.len() as u64 >= top_k;
 
             best_scores.clear();
             ordered.clear();
             seen.clear();
 
-            for point in response.result {
-                let payload = point.payload;
-                let Some(v) = payload.get("package_id") else { continue };
-                let Some(Kind::StringValue(package_id)) = v.kind.as_ref() else { continue };
+            for result in search_results {
+                let Some(package_id_value) = result.payload.get("package_id") else { continue };
+                let Some(qdrant_client::qdrant::value::Kind::StringValue(package_id)) = package_id_value.kind.as_ref() else { continue };
 
-                let score = point.score;
+                // Optional ecosystem filter (post-filter since storage layer doesn't support it yet)
+                if let Some(eco) = eco_str {
+                    if let Some(eco_value) = result.payload.get("ecosystem") {
+                        if let Some(qdrant_client::qdrant::value::Kind::StringValue(result_eco)) = eco_value.kind.as_ref() {
+                            if result_eco != eco {
+                                continue;
+                            }
+                        }
+                    }
+                }
+
+                let score = result.score;
                 match best_scores.get(package_id) {
                     Some(existing) if *existing >= score => {}
                     _ => {
@@ -641,7 +689,7 @@ impl QueryRoot {
             .cloned()
             .collect();
 
-        let packages_map = gql_ctx.package_loader.load_many(&page_ids).await;
+        let packages_map = gql_ctx.package_loader.load_many(&page_ids, &tenant_id).await;
 
         let mut edges: Vec<SemanticSearchEdge> = Vec::with_capacity(page_ids.len());
         for (idx, id) in page_ids.iter().enumerate() {

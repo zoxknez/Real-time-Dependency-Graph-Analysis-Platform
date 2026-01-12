@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::cache::CacheClient;
 use crate::config::GuardrailsConfig;
@@ -14,7 +14,7 @@ use crate::gql::loaders::PackageLoader;
 use crate::gql::types::{VersionEvent, BreakingChangeEvent, LiveStatsEvent, DependencyImpactEvent};
 use crate::services::gemini::GeminiService;
 
-use qdrant_client::Qdrant;
+use storage::qdrant::QdrantClient;
 
 /// Broadcast channels for different event types
 pub struct EventChannels {
@@ -27,15 +27,17 @@ pub struct EventChannels {
     /// Dependency impact events
     pub dependency_impact_tx: broadcast::Sender<DependencyImpactEvent>,
     /// Active subscription counter
-    pub active_subscriptions: AtomicI32,
+    pub active_subscriptions: AtomicUsize,
 }
 
-/// Resources needed for semantic search.
-#[derive(Clone)]
-pub struct SemanticSearchContext {
-    pub qdrant: Arc<Qdrant>,
-    pub collection: String,
-    pub embedder: Arc<EmbeddingGenerator>,
+pub struct SubscriptionGuard {
+    channels: Arc<EventChannels>,
+}
+
+impl Drop for SubscriptionGuard {
+    fn drop(&mut self) {
+        self.channels.active_subscriptions.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 impl EventChannels {
@@ -45,21 +47,27 @@ impl EventChannels {
             breaking_change_tx: broadcast::channel(channel_capacity).0,
             live_stats_tx: broadcast::channel(channel_capacity).0,
             dependency_impact_tx: broadcast::channel(channel_capacity).0,
-            active_subscriptions: AtomicI32::new(0),
+            active_subscriptions: AtomicUsize::new(0),
         }
     }
     
-    pub fn increment_subscriptions(&self) -> i32 {
-        self.active_subscriptions.fetch_add(1, Ordering::SeqCst) + 1
+    pub fn track_subscription(self: &Arc<Self>) -> SubscriptionGuard {
+        self.active_subscriptions.fetch_add(1, Ordering::Relaxed);
+        SubscriptionGuard {
+            channels: self.clone(),
+        }
     }
     
-    pub fn decrement_subscriptions(&self) -> i32 {
-        self.active_subscriptions.fetch_sub(1, Ordering::SeqCst) - 1
+    pub fn subscription_count(&self) -> usize {
+        self.active_subscriptions.load(Ordering::Relaxed)
     }
-    
-    pub fn subscription_count(&self) -> i32 {
-        self.active_subscriptions.load(Ordering::SeqCst)
-    }
+}
+
+/// Resources needed for semantic search.
+#[derive(Clone)]
+pub struct SemanticSearchContext {
+    pub qdrant: Arc<QdrantClient>,
+    pub embedder: Arc<EmbeddingGenerator>,
 }
 
 /// Context passed to all GraphQL resolvers

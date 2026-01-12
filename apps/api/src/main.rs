@@ -42,6 +42,9 @@ use crate::handlers::AppState;
 use crate::middleware::security_headers::SecurityHeadersLayer;
 #[allow(unused_imports)]
 use crate::middleware::create_rate_limiter;
+use crate::middleware::auth::{optional_jwt_middleware, JwtConfig, JwtState};
+use models::tenant::TenantContext;
+use axum::{Extension, middleware as axum_middleware};
 
 /// Combined app state
 #[derive(Clone)]
@@ -49,6 +52,7 @@ pub struct CombinedState {
     pub schema: ApiSchema,
     pub app_state: AppState,
     pub rate_limit_rpm: u32,
+    pub jwt_state: JwtState,
 }
 
 #[tokio::main]
@@ -78,6 +82,8 @@ async fn main() -> Result<()> {
         rate_limit_rpm = config.guardrails.rate_limit_rpm,
         "Configuration loaded"
     );
+
+    let jwt_config = Arc::new(JwtConfig::default());
 
     // Build GraphQL schema (returns channels and clients)
     let (schema, channels, graph, cache) = gql::build_schema(&config).await?;
@@ -130,6 +136,7 @@ async fn main() -> Result<()> {
         schema,
         app_state,
         rate_limit_rpm: config.guardrails.rate_limit_rpm,
+        jwt_state: jwt_config.clone(),
     };
 
     // Build router with security layers
@@ -141,6 +148,7 @@ async fn main() -> Result<()> {
         .route("/graphql/ws", get(graphql_ws_handler))
         .layer(axum::Extension(metrics_handle))
         .layer(axum::Extension(ws_schema))
+        .layer(axum_middleware::from_fn_with_state(jwt_config, optional_jwt_middleware))
         .layer(security_headers)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
@@ -194,9 +202,14 @@ async fn ready_handler(
 /// GraphQL handler for queries and mutations
 async fn graphql_handler(
     State(state): State<CombinedState>,
+    Extension(tenant_context): Extension<Option<TenantContext>>,
     req: GraphQLRequest,
 ) -> GraphQLResponse {
-    state.schema.execute(req.into_inner()).await.into()
+    let mut request = req.into_inner();
+    if let Some(ctx) = tenant_context {
+        request = request.data(ctx);
+    }
+    state.schema.execute(request).await.into()
 }
 
 /// GraphQL Playground UI (GraphiQL)

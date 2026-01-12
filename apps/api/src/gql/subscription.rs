@@ -19,23 +19,6 @@ use crate::gql::types::{
     DependencyImpactEvent, BreakingSeverity,
 };
 
-/// Guard to track subscription count (decrements on drop)
-struct SubscriptionGuard {
-    channels: Arc<EventChannels>,
-}
-
-impl SubscriptionGuard {
-    fn new(channels: Arc<EventChannels>) -> Self {
-        channels.increment_subscriptions();
-        Self { channels }
-    }
-}
-
-impl Drop for SubscriptionGuard {
-    fn drop(&mut self) {
-        self.channels.decrement_subscriptions();
-    }
-}
 
 pub struct SubscriptionRoot;
 
@@ -57,7 +40,7 @@ impl SubscriptionRoot {
         let gql_ctx = ctx.data::<GqlContext>()?;
         
         let rx = gql_ctx.channels.version_tx.subscribe();
-        let guard = Arc::new(SubscriptionGuard::new(gql_ctx.channels.clone()));
+        let guard = Arc::new(gql_ctx.channels.track_subscription());
 
         info!(
             ecosystem = ?ecosystem,
@@ -113,7 +96,7 @@ impl SubscriptionRoot {
         
         let rx = gql_ctx.channels.breaking_change_tx.subscribe();
         let min_sev = min_severity.unwrap_or(BreakingSeverity::Low);
-        let guard = Arc::new(SubscriptionGuard::new(gql_ctx.channels.clone()));
+        let guard = Arc::new(gql_ctx.channels.track_subscription());
 
         info!(
             ecosystem = ?ecosystem,
@@ -167,7 +150,7 @@ impl SubscriptionRoot {
         
         let rx = gql_ctx.channels.live_stats_tx.subscribe();
         let min_interval = std::time::Duration::from_millis(interval_ms.max(1000) as u64);
-        let guard = Arc::new(SubscriptionGuard::new(gql_ctx.channels.clone()));
+        let guard = Arc::new(gql_ctx.channels.track_subscription());
 
         debug!(
             interval_ms = interval_ms,
@@ -206,7 +189,7 @@ impl SubscriptionRoot {
         let gql_ctx = ctx.data::<GqlContext>()?;
         
         let rx = gql_ctx.channels.dependency_impact_tx.subscribe();
-        let guard = Arc::new(SubscriptionGuard::new(gql_ctx.channels.clone()));
+        let guard = Arc::new(gql_ctx.channels.track_subscription());
 
         info!(
             ecosystem = ?ecosystem,
@@ -257,7 +240,7 @@ impl SubscriptionRoot {
         
         let rx = gql_ctx.channels.version_tx.subscribe();
         let target_id = package_id.to_string();
-        let guard = Arc::new(SubscriptionGuard::new(gql_ctx.channels.clone()));
+        let guard = Arc::new(gql_ctx.channels.track_subscription());
 
         info!(
             package_id = %target_id,

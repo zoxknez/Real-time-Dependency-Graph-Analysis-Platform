@@ -15,23 +15,23 @@ use crate::gql::query::QueryRoot;
 use crate::gql::subscription::SubscriptionRoot;
 use crate::services::gemini::GeminiService;
 
-use qdrant_client::Qdrant;
+use storage::qdrant::{QdrantClient, QdrantConfig};
 
 /// The complete GraphQL schema type
 pub type ApiSchema = Schema<QueryRoot, EmptyMutation, SubscriptionRoot>;
 
 /// Build the GraphQL schema with all dependencies
 pub async fn build_schema(config: &Config) -> Result<(ApiSchema, Arc<EventChannels>, GraphClient, Option<CacheClient>)> {
-    println!("DEBUG: Building GraphQL schema...");
+
     info!("Building GraphQL schema...");
 
     // Connect to Memgraph (Required)
+    // Connect to Memgraph (Required)
     info!("Connecting to Memgraph at {}...", config.memgraph.uri);
-    let graph = match tokio::time::timeout(Duration::from_secs(5), GraphClient::connect(&config.memgraph)).await {
+    let graph = match tokio::time::timeout(Duration::from_secs(5), GraphClient::connect(config)).await {
         Ok(res) => res?,
         Err(_) => anyhow::bail!("Timed out connecting to Memgraph at {}", config.memgraph.uri),
     };
-    println!("DEBUG: Connected to Memgraph successfully");
     info!("Connected to Memgraph successfully");
 
     // Connect to Redis with timeout (optional - graceful degradation)
@@ -75,16 +75,23 @@ pub async fn build_schema(config: &Config) -> Result<(ApiSchema, Arc<EventChanne
         };
 
         if let Some(embedder) = embedder {
-            match tokio::time::timeout(Duration::from_secs(3), async {
-                Qdrant::from_url(&config.qdrant.url).build()
-            })
+            let qdrant_config = QdrantConfig {
+                url: config.qdrant.url.clone(),
+                api_key: None,
+                collection: config.qdrant.collection.clone(),
+                dimension: config.qdrant.dimension as u64,
+                timeout: std::time::Duration::from_secs(30),
+                batch_size: 100,
+                max_retries: 3,
+            };
+
+            match tokio::time::timeout(Duration::from_secs(3), QdrantClient::new(qdrant_config))
             .await
             {
                 Ok(Ok(client)) => {
                     info!(url = %config.qdrant.url, collection = %config.qdrant.collection, "Qdrant enabled for semantic search");
                     Some(SemanticSearchContext {
                         qdrant: Arc::new(client),
-                        collection: config.qdrant.collection.clone(),
                         embedder,
                     })
                 }

@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package domain.tenant.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option java_package = "com.inversedeps.domain.tenant.v1";
+
+// Rate Limit Tier
+enum RateTier {
+  // Default free tier
+  RATE_TIER_FREE = 0;
+  // Professional tier
+  RATE_TIER_PRO = 1;
+  // Enterprise tier
+  RATE_TIER_ENTERPRISE = 2;
+}
+
+// Tenant Status
+enum TenantStatus {
+  // Active tenant
+  TENANT_STATUS_ACTIVE = 0;
+  // Suspended tenant
+  TENANT_STATUS_SUSPENDED = 1;
+  // Deleted tenant
+  TENANT_STATUS_DELETED = 2;
+}
+
+// Tenant Entity
+message Tenant {
+  // Unique tenant identifier
+  string id = 1;
+  // Organization identifier
+  string org_id = 2;
+  // Tenant name
+  string name = 3;
+  // Current status
+  TenantStatus status = 4;
+  // Rate limit tier
+  RateTier tier = 5;
+  // Creation timestamp
+  google.protobuf.Timestamp created_at = 6;
+  // Last update timestamp
+  google.protobuf.Timestamp updated_at = 7;
+}

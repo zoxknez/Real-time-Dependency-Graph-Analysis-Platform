@@ -46,8 +46,8 @@ python scripts/dev-seed.py
 **Access Points:**
 - 🌐 **GraphQL Playground**: http://localhost:8000/graphql
 - 📊 **Grafana Dashboards**: http://localhost:3001 (admin/admin)
-- 🗄️ **Memgraph Lab**: http://localhost:3000
-- 📬 **Redpanda Console**: http://localhost:8081
+- 🗄️ **Memgraph Lab**: http://localhost:3002
+- 📬 **Redpanda Console**: http://localhost:8080
 
 ### Option 2: Development Mode
 
@@ -299,16 +299,16 @@ Access Grafana at http://localhost:3001 with pre-configured dashboards:
 
 ```bash
 # Lint chart
-helm lint deploy/helm/depgraph
+helm lint deploy/helm/idp
 
 # Install to staging
-helm install depgraph deploy/helm/depgraph \
-  -f deploy/helm/depgraph/values-staging.yaml \
+helm install idp deploy/helm/idp \
+  -f deploy/helm/idp/values-staging.yaml \
   --namespace staging
 
 # Production
-helm install depgraph deploy/helm/depgraph \
-  -f deploy/helm/depgraph/values-production.yaml \
+helm install idp deploy/helm/idp \
+  -f deploy/helm/idp/values-production.yaml \
   --namespace production
 ```
 

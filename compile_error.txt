@@ -1,0 +1,126 @@
+    Checking storage v0.1.0 (D:\ProjektiApp\randomapp\packages\storage)
+warning: unused import: `warn`
+  --> packages\storage\src\memgraph.rs:15:40
+   |
+15 | use tracing::{error, info, instrument, warn};
+   |                                        ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `warn`
+  --> packages\storage\src\qdrant.rs:16:40
+   |
+16 | use tracing::{error, info, instrument, warn};
+   |                                        ^^^^
+
+warning: unused import: `Duration`
+  --> packages\storage\src\circuit_breaker.rs:12:17
+   |
+12 | use std::time::{Duration, SystemTime, UNIX_EPOCH};
+   |                 ^^^^^^^^
+
+error[E0283]: type annotations needed
+   --> packages\storage\src\qdrant.rs:241:39
+    |
+241 |                  self.circuit_breaker.call(async {
+    |                                       ^^^^ cannot infer type of the type parameter `E` declared on the method `call`
+    |
+    = note: cannot satisfy `_: std::fmt::Display`
+note: required by a bound in `CircuitBreaker::call`
+   --> packages\storage\src\circuit_breaker.rs:107:12
+    |
+104 |     pub async fn call<F, T, E>(&self, operation: F) -> Result<T>
+    |                  ---- required by a bound in this associated function
+...
+107 |         E: std::fmt::Display,
+    |            ^^^^^^^^^^^^^^^^^ required by this bound in `CircuitBreaker::call`
+help: consider specifying the generic arguments
+    |
+241 |                  self.circuit_breaker.call::<_, SearchResponse, E>(async {
+    |                                           ++++++++++++++++++++++++
+
+error[E0283]: type annotations needed
+   --> packages\storage\src\qdrant.rs:241:39
+    |
+241 |                  self.circuit_breaker.call(async {
+    |                                       ^^^^ cannot infer type of the type parameter `E` declared on the method `call`
+...
+249 |                         .context("Failed to search points")?;
+    |                                                            - type must be known at this point
+    |
+    = note: multiple `impl`s satisfying `_: From<anyhow::Error>` found in the `anyhow` crate:
+            - impl From<anyhow::Error> for Box<(dyn std::error::Error + 'static)>;
+            - impl From<anyhow::Error> for Box<(dyn std::error::Error + Send + 'static)>;
+            - impl From<anyhow::Error> for Box<(dyn std::error::Error + Send + Sync + 'static)>;
+help: consider specifying the generic arguments
+    |
+241 |                  self.circuit_breaker.call::<_, SearchResponse, E>(async {
+    |                                           ++++++++++++++++++++++++
+
+error[E0283]: type annotations needed
+   --> packages\storage\src\qdrant.rs:279:38
+    |
+279 |                 self.circuit_breaker.call(async {
+    |                                      ^^^^ cannot infer type of the type parameter `E` declared on the method `call`
+    |
+    = note: cannot satisfy `_: std::fmt::Display`
+note: required by a bound in `CircuitBreaker::call`
+   --> packages\storage\src\circuit_breaker.rs:107:12
+    |
+104 |     pub async fn call<F, T, E>(&self, operation: F) -> Result<T>
+    |                  ---- required by a bound in this associated function
+...
+107 |         E: std::fmt::Display,
+    |            ^^^^^^^^^^^^^^^^^ required by this bound in `CircuitBreaker::call`
+help: consider specifying the generic arguments
+    |
+279 |                 self.circuit_breaker.call::<_, (), E>(async {
+    |                                          ++++++++++++
+
+error[E0283]: type annotations needed
+   --> packages\storage\src\qdrant.rs:279:38
+    |
+279 |                 self.circuit_breaker.call(async {
+    |                                      ^^^^ cannot infer type of the type parameter `E` declared on the method `call`
+...
+286 |                         .context("Failed to delete points")?;
+    |                                                            - type must be known at this point
+    |
+    = note: multiple `impl`s satisfying `_: From<anyhow::Error>` found in the `anyhow` crate:
+            - impl From<anyhow::Error> for Box<(dyn std::error::Error + 'static)>;
+            - impl From<anyhow::Error> for Box<(dyn std::error::Error + Send + 'static)>;
+            - impl From<anyhow::Error> for Box<(dyn std::error::Error + Send + Sync + 'static)>;
+help: consider specifying the generic arguments
+    |
+279 |                 self.circuit_breaker.call::<_, (), E>(async {
+    |                                          ++++++++++++
+
+warning: variable `last_error` is assigned to, but never used
+   --> packages\storage\src\resilience.rs:142:9
+    |
+142 |     let mut last_error: Option<String> = None;
+    |         ^^^^^^^^^^^^^^
+    |
+    = note: consider using `_last_error` instead
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `last_error` is never read
+   --> packages\storage\src\resilience.rs:162:17
+    |
+162 |                 last_error = Some(e.to_string());
+    |                 ^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `last_error` is never read
+   --> packages\storage\src\resilience.rs:222:21
+    |
+222 |                     last_error = Some("timeout".to_string());
+    |                     ^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+For more information about this error, try `rustc --explain E0283`.
+warning: `storage` (lib) generated 6 warnings
+error: could not compile `storage` (lib) due to 4 previous errors; 6 warnings emitted

@@ -20,6 +20,9 @@ use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, warn};
+use models::tenant::{TenantContext, Permission, RateTier};
+use std::collections::HashSet;
+use uuid::Uuid;
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -80,6 +83,12 @@ pub struct Claims {
     /// API tier (free, pro, enterprise)
     #[serde(default = "default_tier")]
     pub tier: String,
+    /// Tenant ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tenant_id: Option<Uuid>,
+    /// Organization ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub org_id: Option<Uuid>,
 }
 
 fn default_tier() -> String {
@@ -104,6 +113,43 @@ impl Claims {
             "pro" => 1000,
             _ => 100,
         }
+    }
+
+
+    /// Convert claims to TenantContext
+    pub fn to_tenant_context(&self) -> TenantContext {
+        let tenant_id = self.tenant_id.unwrap_or_else(Uuid::new_v4);
+        let org_id = self.org_id.unwrap_or_else(Uuid::new_v4);
+        let user_id = Uuid::parse_str(&self.sub).unwrap_or_else(|_| Uuid::new_v4());
+
+        let mut permissions = HashSet::new();
+        
+        // Map roles to permissions
+        for role in &self.roles {
+            match role.as_str() {
+                "admin" => {
+                    permissions.insert(Permission::SystemAdmin);
+                    permissions.insert(Permission::TenantAdmin);
+                    permissions.insert(Permission::PackageWrite);
+                    permissions.insert(Permission::PackageDelete);
+                    permissions.insert(Permission::GraphMutate);
+                }
+                "user" => {
+                    permissions.insert(Permission::PackageRead);
+                    permissions.insert(Permission::GraphQuery);
+                }
+                _ => {}
+            }
+        }
+
+        // Map tier
+        let rate_tier = match self.tier.as_str() {
+            "enterprise" => RateTier::Enterprise,
+            "pro" => RateTier::Pro,
+            _ => RateTier::Free,
+        };
+
+        TenantContext::new(tenant_id, org_id, user_id, permissions, rate_tier)
     }
 }
 
@@ -130,8 +176,12 @@ pub async fn jwt_auth_middleware(
 ) -> Response {
     match extract_and_validate_token(&config, &request) {
         Ok(claims) => {
-            // Inject claims into request extensions
+            // Create tenant context
+            let tenant_context = claims.to_tenant_context();
+            
+            // Inject claims and context into request extensions
             request.extensions_mut().insert(claims);
+            request.extensions_mut().insert::<Option<TenantContext>>(Some(tenant_context));
             next.run(request).await
         }
         Err(error) => error.into_response(),
@@ -147,7 +197,11 @@ pub async fn optional_jwt_middleware(
 ) -> Response {
     // Try to extract token, but don't fail if missing
     if let Ok(claims) = extract_and_validate_token(&config, &request) {
+        let tenant_context = claims.to_tenant_context();
         request.extensions_mut().insert(claims);
+        request.extensions_mut().insert::<Option<TenantContext>>(Some(tenant_context));
+    } else {
+        request.extensions_mut().insert::<Option<TenantContext>>(None);
     }
     next.run(request).await
 }
@@ -293,6 +347,8 @@ mod tests {
             aud: None,
             roles: vec!["admin".to_string(), "user".to_string()],
             tier: "pro".to_string(),
+            tenant_id: None,
+            org_id: None,
         };
 
         assert!(claims.has_role("admin"));
@@ -310,6 +366,8 @@ mod tests {
             aud: None,
             roles: vec![],
             tier: "free".to_string(),
+            tenant_id: None,
+            org_id: None,
         };
         assert_eq!(free.rate_limit(), 100);
 
@@ -330,6 +388,8 @@ mod tests {
             aud: None,
             roles: vec![],
             tier: "free".to_string(),
+            tenant_id: None,
+            org_id: None,
         };
 
         let token = create_test_token(&claims, "secret");

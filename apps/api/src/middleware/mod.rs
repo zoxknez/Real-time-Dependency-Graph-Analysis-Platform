@@ -13,6 +13,7 @@ pub mod auth;
 pub mod complexity;
 pub mod distributed_rate_limit;
 pub mod rate_limit;
+pub mod rbac;
 pub mod security_headers;
 pub mod validation;
 

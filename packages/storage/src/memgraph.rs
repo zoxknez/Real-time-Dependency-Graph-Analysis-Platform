@@ -13,6 +13,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{error, info, instrument, warn};
+use crate::resilience::IsRetryable;
+use models::tenant::TenantContext;
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -93,6 +95,10 @@ pub struct MemgraphClient {
     config: MemgraphConfig,
     /// Connection health status
     healthy: Arc<RwLock<bool>>,
+    /// Circuit breaker for fault tolerance
+    circuit_breaker: Arc<crate::circuit_breaker::CircuitBreaker>,
+    /// Resilience config
+    resilience_config: crate::resilience::ResilienceConfig,
 }
 
 impl MemgraphClient {
@@ -116,10 +122,31 @@ impl MemgraphClient {
 
         info!("Successfully connected to Memgraph");
 
+        let circuit_breaker = Arc::new(crate::circuit_breaker::CircuitBreaker::new(
+            "memgraph",
+            "query",
+            crate::circuit_breaker::CircuitBreakerConfig {
+                failure_threshold: config.max_retries, // align with config
+                success_threshold: 2,
+                timeout_ms: 30_000,
+                half_open_requests: 5,
+            }
+        ));
+
+        let resilience_config = crate::resilience::ResilienceConfig {
+            timeout: config.query_timeout,
+            max_retries: config.max_retries,
+            base_delay: Duration::from_millis(100),
+            max_delay: Duration::from_secs(5),
+            use_jitter: true,
+        };
+
         Ok(Self {
             graph,
             config,
             healthy: Arc::new(RwLock::new(true)),
+            circuit_breaker,
+            resilience_config,
         })
     }
 
@@ -129,34 +156,23 @@ impl MemgraphClient {
         Self::new(config).await
     }
 
-    /// Execute a query with retry logic
-    #[instrument(skip(self, query), fields(query_text))]
-    pub async fn execute(&self, query: Query) -> Result<Vec<neo4rs::Row>> {
-        let mut attempts = 0;
-        let mut last_error = None;
-
-        while attempts < self.config.max_retries {
-            match self.execute_once(query.clone()).await {
-                Ok(rows) => return Ok(rows),
-                Err(e) => {
-                    attempts += 1;
-                    last_error = Some(e);
-                    
-                    if attempts < self.config.max_retries {
-                        let delay = Duration::from_millis(100 * 2u64.pow(attempts));
-                        warn!(
-                            attempt = attempts,
-                            max_retries = self.config.max_retries,
-                            delay_ms = delay.as_millis(),
-                            "Query failed, retrying"
-                        );
-                        tokio::time::sleep(delay).await;
-                    }
-                }
-            }
+    /// Execute a query with retry logic and circuit breaker
+    #[instrument(skip(self, query, tenant_ctx), fields(query_text))]
+    pub async fn execute(&self, mut query: Query, tenant_ctx: Option<&TenantContext>) -> Result<Vec<neo4rs::Row>> {
+        if let Some(ctx) = tenant_ctx {
+            query = query.param("tenant_id", ctx.tenant_id.to_string());
         }
 
-        Err(last_error.unwrap())
+        crate::resilience::with_resilience(
+            "memgraph",
+            "execute",
+            &self.resilience_config,
+            || async {
+                self.circuit_breaker.call::<_, _, anyhow::Error>(async {
+                    self.execute_once(query.clone()).await
+                }).await
+            }
+        ).await
     }
 
     /// Execute query once without retry
@@ -176,8 +192,25 @@ impl MemgraphClient {
     }
 
     /// Execute a query that returns no results
-    #[instrument(skip(self, query))]
-    pub async fn run(&self, query: Query) -> Result<()> {
+    #[instrument(skip(self, query, tenant_ctx))]
+    pub async fn run(&self, mut query: Query, tenant_ctx: Option<&TenantContext>) -> Result<()> {
+        if let Some(ctx) = tenant_ctx {
+            query = query.param("tenant_id", ctx.tenant_id.to_string());
+        }
+
+        crate::resilience::with_resilience(
+            "memgraph",
+            "run",
+            &self.resilience_config,
+            || async {
+                self.circuit_breaker.call::<_, _, anyhow::Error>(async {
+                    self.run_once(query.clone()).await
+                }).await
+            }
+        ).await
+    }
+
+    async fn run_once(&self, query: Query) -> Result<()> {
         self.graph
             .run(query)
             .await
@@ -186,8 +219,33 @@ impl MemgraphClient {
     }
 
     /// Execute multiple queries in a transaction
-    #[instrument(skip(self, queries))]
-    pub async fn transaction(&self, queries: Vec<Query>) -> Result<()> {
+    #[instrument(skip(self, queries, tenant_ctx))]
+    pub async fn transaction(&self, mut queries: Vec<Query>, tenant_ctx: Option<&TenantContext>) -> Result<()> {
+        // Inject tenant ID into all queries if context is present
+        if let Some(ctx) = tenant_ctx {
+            let tenant_id = ctx.tenant_id.to_string();
+            for query in &mut queries {
+                // Cloning string here is acceptable for txn overhead
+                *query = query.clone().param("tenant_id", tenant_id.clone());
+            }
+        }
+
+         // Transactions are harder to wrap with simple retry because they are stateful.
+         // For now, we wrap the whole transaction block with CB, but handling retry needs care.
+         // If we retry, we rerun the whole txn block.
+        crate::resilience::with_resilience(
+            "memgraph",
+            "transaction",
+            &self.resilience_config,
+            || async {
+                self.circuit_breaker.call::<_, _, anyhow::Error>(async {
+                    self.transaction_once(queries.clone()).await
+                }).await
+            }
+        ).await
+    }
+    
+    async fn transaction_once(&self, queries: Vec<Query>) -> Result<()> {
         let mut txn = self
             .graph
             .start_txn()
@@ -207,7 +265,8 @@ impl MemgraphClient {
 
     /// Health check
     pub async fn health_check(&self) -> bool {
-        match self.execute(query("RETURN 1 AS health")).await {
+        // We use execute() which now includes resilience
+        match self.execute(query("RETURN 1 AS health"), None).await {
             Ok(_) => {
                 *self.healthy.write().await = true;
                 true
@@ -228,29 +287,31 @@ impl MemgraphClient {
     /// Get graph statistics
     #[instrument(skip(self))]
     pub async fn get_stats(&self) -> Result<GraphStats> {
+        // These are composed of multiple calls, maybe wrap each or the whole thing?
+        // Since get_stats is read-only composed, wrapping individual calls via execute is fine.
         let node_count: i64 = self
-            .execute(query("MATCH (n) RETURN count(n) as count"))
+            .execute(query("MATCH (n) RETURN count(n) as count"), None)
             .await?
             .first()
             .and_then(|r| r.get("count").ok())
             .unwrap_or(0);
 
         let edge_count: i64 = self
-            .execute(query("MATCH ()-[r]->() RETURN count(r) as count"))
+            .execute(query("MATCH ()-[r]->() RETURN count(r) as count"), None)
             .await?
             .first()
             .and_then(|r| r.get("count").ok())
             .unwrap_or(0);
 
         let package_count: i64 = self
-            .execute(query("MATCH (p:Package) RETURN count(p) as count"))
+            .execute(query("MATCH (p:Package) RETURN count(p) as count"), None)
             .await?
             .first()
             .and_then(|r| r.get("count").ok())
             .unwrap_or(0);
 
         let version_count: i64 = self
-            .execute(query("MATCH (v:Version) RETURN count(v) as count"))
+            .execute(query("MATCH (v:Version) RETURN count(v) as count"), None)
             .await?
             .first()
             .and_then(|r| r.get("count").ok())
@@ -287,67 +348,72 @@ pub struct QueryBuilder;
 
 impl QueryBuilder {
     /// Create a package node
-    pub fn create_package(id: &str, name: &str, ecosystem: &str) -> Query {
-        query("MERGE (p:Package {id: $id}) SET p.name = $name, p.ecosystem = $ecosystem")
+    pub fn create_package(tenant_id: &str, id: &str, name: &str, ecosystem: &str) -> Query {
+        query("MERGE (p:Package {id: $id, tenant_id: $tenant_id}) SET p.name = $name, p.ecosystem = $ecosystem")
+            .param("tenant_id", tenant_id)
             .param("id", id)
             .param("name", name)
             .param("ecosystem", ecosystem)
     }
 
     /// Create a version node
-    pub fn create_version(package_id: &str, version: &str) -> Query {
+    pub fn create_version(tenant_id: &str, package_id: &str, version: &str) -> Query {
         let version_id = format!("{}@{}", package_id, version);
         query(
             r#"
-            MATCH (p:Package {id: $package_id})
-            MERGE (v:Version {id: $version_id})
+            MATCH (p:Package {id: $package_id, tenant_id: $tenant_id})
+            MERGE (v:Version {id: $version_id, tenant_id: $tenant_id})
             SET v.version = $version
             MERGE (p)-[:HAS_VERSION]->(v)
             "#,
         )
+        .param("tenant_id", tenant_id)
         .param("package_id", package_id)
         .param("version_id", version_id)
         .param("version", version)
     }
 
     /// Create a dependency edge
-    pub fn create_dependency(from_version_id: &str, to_package_id: &str, version_req: &str) -> Query {
+    pub fn create_dependency(tenant_id: &str, from_version_id: &str, to_package_id: &str, version_req: &str) -> Query {
         query(
             r#"
-            MATCH (from:Version {id: $from_id})
-            MATCH (to:Package {id: $to_id})
+            MATCH (from:Version {id: $from_id, tenant_id: $tenant_id})
+            MATCH (to:Package {id: $to_id, tenant_id: $tenant_id})
             MERGE (from)-[d:DEPENDS_ON]->(to)
             SET d.version_req = $version_req
             "#,
         )
+        .param("tenant_id", tenant_id)
         .param("from_id", from_version_id)
         .param("to_id", to_package_id)
         .param("version_req", version_req)
     }
 
     /// Find reverse dependents
-    pub fn reverse_dependents(package_id: &str, limit: i32) -> Query {
+    pub fn reverse_dependents(tenant_id: &str, package_id: &str, limit: i32) -> Query {
         query(
             r#"
-            MATCH (p:Package {id: $id})<-[:DEPENDS_ON]-(v:Version)<-[:HAS_VERSION]-(dep:Package)
+            MATCH (p:Package {id: $id, tenant_id: $tenant_id})<-[:DEPENDS_ON]-(v:Version)<-[:HAS_VERSION]-(dep:Package)
             RETURN DISTINCT dep.id as id, dep.name as name, dep.ecosystem as ecosystem
             LIMIT $limit
             "#,
         )
+        .param("tenant_id", tenant_id)
         .param("id", package_id)
         .param("limit", limit as i64)
     }
 
     /// Find dependency path between two packages
-    pub fn dependency_path(from_id: &str, to_id: &str) -> Query {
+    pub fn dependency_path(tenant_id: &str, from_id: &str, to_id: &str) -> Query {
         query(
             r#"
             MATCH path = shortestPath(
-                (from:Package {id: $from_id})-[:DEPENDS_ON*..10]->(to:Package {id: $to_id})
+                (from:Package {id: $from_id, tenant_id: $tenant_id})-[:DEPENDS_ON*..10]->(to:Package {id: $to_id})
             )
             RETURN [node in nodes(path) | node.id] as path
             "#,
         )
+        .param("tenant_id", tenant_id)
         .param("from_id", from_id)
         .param("to_id", to_id)
     }
@@ -367,18 +433,19 @@ mod tests {
 
     #[test]
     fn test_query_builder_create_package() {
-        let _query = QueryBuilder::create_package("cargo:serde", "serde", "cargo");
+        let _query = QueryBuilder::create_package("tenant-1", "cargo:serde", "serde", "cargo");
         // Query is valid if it doesn't panic
     }
 
     #[test]
     fn test_query_builder_create_version() {
-        let _query = QueryBuilder::create_version("cargo:serde", "1.0.0");
+        let _query = QueryBuilder::create_version("tenant-1", "cargo:serde", "1.0.0");
     }
 
     #[test]
     fn test_query_builder_create_dependency() {
         let _query = QueryBuilder::create_dependency(
+            "tenant-1",
             "cargo:my-crate@1.0.0",
             "cargo:serde",
             "^1.0",

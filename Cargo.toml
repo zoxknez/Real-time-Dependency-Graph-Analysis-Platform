@@ -67,7 +67,7 @@ opentelemetry-otlp = "0.27"
 tracing-opentelemetry = "0.28"
 
 # Utilities
-uuid = { version = "1.11", features = ["v4", "v7", "serde"] }
+uuid = { version = "1.11", features = ["v4", "v5", "v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 config = "0.14"
 dotenvy = "0.15"
