@@ -45,3 +45,4 @@ storage = { path = "../../packages/storage" }
 
 [build-dependencies]
 tonic-build = "0.12"
+protoc-bin-vendored = "3.0"

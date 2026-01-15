@@ -2,10 +2,9 @@
 
 import { useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Activity, TrendingUp, TrendingDown, Minus, Users, Package } from "lucide-react";
+import { Activity, TrendingUp, TrendingDown, Minus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLiveStats, useConnectionStatus } from "@/lib/hooks";
-import type { EcosystemActivity } from "@/lib/graphql/types";
 
 interface LiveStatsCardProps {
   className?: string;
@@ -261,41 +260,3 @@ function SparklineChart({ data, height = 40 }: { data: number[]; height?: number
   );
 }
 
-// Ecosystem mini stat (new - uses EcosystemActivity)
-function EcosystemMiniStatNew({ stat }: { stat: EcosystemActivity }) {
-  const ecosystemColors: Record<string, string> = {
-    NPM: "#cb3837",
-    CARGO: "#f7a41d",
-    PY_PI: "#3776ab",
-    MAVEN: "#c71a36",
-    NU_GET: "#004880",
-    GO: "#00add8",
-  };
-
-  const color = ecosystemColors[stat.ecosystem] || "#6366f1";
-  const change = stat.change24h;
-  const isPositive = change > 0;
-
-  return (
-    <div
-      className="p-2 rounded-lg text-center"
-      style={{ backgroundColor: `${color}15` }}
-    >
-      <div
-        className="text-xs font-medium mb-0.5"
-        style={{ color }}
-      >
-        {stat.ecosystem.replace("_", "")}
-      </div>
-      <div className="text-sm font-semibold theme-text-primary">
-        {stat.count.toLocaleString()}
-      </div>
-      <div className={cn(
-        "text-xs",
-        isPositive ? "text-green-400" : change < 0 ? "text-red-400" : "theme-text-muted"
-      )}>
-        {isPositive ? "+" : ""}{change.toFixed(1)}%
-      </div>
-    </div>
-  );
-}

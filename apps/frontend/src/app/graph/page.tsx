@@ -19,7 +19,6 @@ import {
   ExternalLink,
   Check,
   Sparkles,
-  MessageSquare,
 } from "lucide-react";
 import { GET_REVERSE_DEPENDENTS } from "@/lib/graphql/queries";
 import { getEcosystemColor, parsePackageId, formatEcosystemName } from "@/lib/utils";
@@ -27,7 +26,6 @@ import { GraphControls } from "@/components/graph/graph-controls";
 import { NodeTooltip } from "@/components/graph/node-tooltip";
 import { GraphMinimap } from "@/components/graph/graph-minimap";
 import { LiveUpdateIndicator } from "@/components/graph/live-update-indicator";
-import { GeminiChat } from "@/components/GeminiChat";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { QueryError, EmptyState } from "@/components/ui/error-display";
 import { useDependencyGraphUpdates, useConnectionStatus } from "@/lib/hooks";

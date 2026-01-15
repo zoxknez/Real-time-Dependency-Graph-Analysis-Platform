@@ -4,6 +4,7 @@
 // The generated code will be available as prost-generated types at compile time.
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    std::env::set_var("PROTOC", protoc_bin_vendored::protoc_bin_path().unwrap());
     let proto_root = "../../proto";
 
     // Configure the protobuf compiler

@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useLazyQuery } from "@apollo/client";
-import { Send, Loader2, Sparkles, X, MessageSquare } from "lucide-react";
+import { Send, Loader2, Sparkles, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { ASK_GEMINI, EXPLAIN_DEPENDENCY_GRAPH } from "@/lib/graphql/queries";
 
 interface Message {
@@ -153,8 +153,8 @@ export function GeminiChat({ packageId, onClose }: GeminiChatProps) {
                     >
                         <div
                             className={`max-w-[85%] rounded-2xl p-3 text-sm ${msg.role === "user"
-                                    ? "bg-blue-600 text-white"
-                                    : "bg-slate-800 text-slate-200 border border-white/5"
+                                ? "bg-blue-600 text-white"
+                                : "bg-slate-800 text-slate-200 border border-white/5"
                                 }`}
                         >
                             {msg.role === "assistant" ? (

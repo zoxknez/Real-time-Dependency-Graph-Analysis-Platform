@@ -4,13 +4,12 @@ import { useState, useRef, useEffect } from "react";
 import { useLazyQuery } from "@apollo/client";
 import { ASK_GEMINI } from "@/lib/graphql/queries";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Sparkles, 
-  Bot, 
-  MessageSquare, 
-  Send, 
-  User, 
-  Copy, 
+import {
+  Sparkles,
+  Bot,
+  Send,
+  User,
+  Copy,
   Check,
   RefreshCcw,
   Terminal,
@@ -29,20 +28,20 @@ interface Message {
 }
 
 const QUICK_PROMPTS = [
-  { 
-    label: "Analyze Risks", 
-    icon: Shield, 
-    query: "What are the top security risks in the NPM ecosystem right now?" 
+  {
+    label: "Analyze Risks",
+    icon: Shield,
+    query: "What are the top security risks in the NPM ecosystem right now?"
   },
-  { 
-    label: "Dependency Path", 
-    icon: Terminal, 
-    query: "How can I find the shortest path between express and lodash?" 
+  {
+    label: "Dependency Path",
+    icon: Terminal,
+    query: "How can I find the shortest path between express and lodash?"
   },
-  { 
-    label: "Optimization", 
-    icon: Zap, 
-    query: "Suggest ways to optimize dependency bloat in a large React project." 
+  {
+    label: "Optimization",
+    icon: Zap,
+    query: "Suggest ways to optimize dependency bloat in a large React project."
   },
 ];
 
@@ -51,7 +50,7 @@ export default function AskPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  
+
   const [askGemini, { loading }] = useLazyQuery(ASK_GEMINI, {
     onCompleted: (data) => {
       if (data?.askGemini) {
@@ -74,7 +73,7 @@ export default function AskPage() {
   const handleAsk = (e?: React.FormEvent, customQuery?: string) => {
     e?.preventDefault();
     const queryToSubmit = customQuery || question;
-    
+
     if (!queryToSubmit.trim() || loading) return;
 
     const userMessage: Message = {
@@ -112,7 +111,7 @@ export default function AskPage() {
             <p className="text-xs theme-text-muted">Advanced Reasoning Model</p>
           </div>
         </div>
-        <button 
+        <button
           onClick={() => setMessages([])}
           className="p-2 rounded-lg theme-interactive text-xs flex items-center gap-2"
         >
@@ -123,7 +122,7 @@ export default function AskPage() {
 
       {/* Chat Area */}
       <div className="flex-1 glass-card overflow-hidden flex flex-col relative">
-        <div 
+        <div
           ref={scrollRef}
           className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scroll-smooth"
         >
@@ -177,11 +176,11 @@ export default function AskPage() {
                         <Bot className="w-4 h-4 text-white" />
                       )}
                     </div>
-                    
+
                     <div className={cn(
                       "relative max-w-[85%] px-4 py-3 rounded-2xl group-hover:shadow-lg transition-all",
-                      msg.type === "user" 
-                        ? "bg-primary-500/10 border border-primary-500/20 text-white" 
+                      msg.type === "user"
+                        ? "bg-primary-500/10 border border-primary-500/20 text-white"
                         : "theme-inner-card border theme-border"
                     )}>
                       <div className="prose prose-invert prose-sm max-w-none">
@@ -189,7 +188,7 @@ export default function AskPage() {
                           {msg.content}
                         </ReactMarkdown>
                       </div>
-                      
+
                       {msg.type === "ai" && (
                         <button
                           onClick={() => copyToClipboard(msg.content, msg.id)}
@@ -202,7 +201,7 @@ export default function AskPage() {
                           )}
                         </button>
                       )}
-                      
+
                       <span className="text-[10px] theme-text-faint absolute -bottom-5 right-0">
                         {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
@@ -236,7 +235,7 @@ export default function AskPage() {
 
         {/* Input Area */}
         <div className="p-4 border-t theme-border bg-black/5">
-          <form 
+          <form
             onSubmit={handleAsk}
             className="relative flex items-end gap-2"
           >
