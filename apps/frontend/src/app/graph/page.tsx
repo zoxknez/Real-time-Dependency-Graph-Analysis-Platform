@@ -93,13 +93,23 @@ function GraphPageContent() {
 
   const [getReverseDeps, { data: reverseDepsData, loading, error }] = useLazyQuery(GET_REVERSE_DEPENDENTS);
 
+  // Debounced depth for graph loading
+  const [debouncedMaxDepth, setDebouncedMaxDepth] = useState(maxDepth);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedMaxDepth(maxDepth);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [maxDepth]);
+
   // Connection status for real-time updates
   const connectionStatus = useConnectionStatus();
 
   // Subscribe to live dependency graph updates
   const { updates: liveUpdates } = useDependencyGraphUpdates({
     rootPackageId: packageId,
-    maxDepth,
+    maxDepth: debouncedMaxDepth,
     paused: !packageId || !showLiveUpdates,
     onUpdate: useCallback((update: DependencyGraphUpdate) => {
       // When we receive an update, refresh the graph
@@ -190,12 +200,12 @@ function GraphPageContent() {
       getReverseDeps({
         variables: {
           packageId: packageId.trim(),
-          maxDepth,
+          maxDepth: debouncedMaxDepth,
           first: 100,
         },
       });
     }
-  }, [packageId, maxDepth, getReverseDeps]);
+  }, [packageId, debouncedMaxDepth, getReverseDeps]);
 
   useEffect(() => {
     if (initialPkg) {
@@ -422,10 +432,15 @@ function GraphPageContent() {
               ctx.fillStyle = graphNode.color;
               ctx.fill();
 
-              // Glow effect for root
-              if (graphNode.depth === 0) {
+              // Glow effect for root and selected
+              if (graphNode.depth === 0 || selectedNode?.id === graphNode.id) {
                 ctx.shadowColor = graphNode.color;
                 ctx.shadowBlur = 15;
+                if (graphNode.depth === 0) {
+                  // Pulse root node
+                  const pulse = (Math.sin(Date.now() / 400) + 1) / 2;
+                  ctx.shadowBlur = 10 + pulse * 20;
+                }
                 ctx.fill();
                 ctx.shadowBlur = 0;
               }
@@ -633,83 +648,93 @@ function GraphPageContent() {
           </div>
         </div>
 
-        {/* Selected Node Panel */}
+        {/* Selected Node Panel - Premium Slide-over */}
         <AnimatePresence>
           {selectedNode && (
             <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              className="absolute top-4 left-4 glass-card p-4 w-72 z-40"
+              initial={{ opacity: 0, x: 100, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 100, scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="absolute top-4 right-4 glass-card p-6 w-80 z-40 shadow-2xl border-primary-500/30"
             >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-4 h-4 rounded-full"
-                    style={{ backgroundColor: selectedNode.color }}
-                  />
-                  <span className="text-xs font-medium px-2 py-0.5 rounded"
-                    style={{
-                      backgroundColor: `${selectedNode.color}20`,
-                      color: selectedNode.color,
-                    }}
-                  >
-                    {formatEcosystemName(selectedNode.ecosystem)}
-                  </span>
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full animate-pulse"
+                      style={{ backgroundColor: selectedNode.color }}
+                    />
+                    <span className="text-[10px] uppercase tracking-tighter font-bold px-2 py-0.5 rounded bg-white/5"
+                      style={{ color: selectedNode.color }}
+                    >
+                      {formatEcosystemName(selectedNode.ecosystem)}
+                    </span>
+                  </div>
                 </div>
                 <button
                   onClick={() => setSelectedNode(null)}
-                  className="theme-text-muted theme-hover-text transition-colors"
+                  className="p-1.5 rounded-lg theme-text-faint hover:theme-text-primary hover:bg-white/10 transition-all"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <h3 className="text-lg font-semibold theme-text-primary font-mono mb-2">
+              <h3 className="text-xl font-bold theme-text-primary font-mono mb-4 leading-tight break-all">
                 {selectedNode.name}
               </h3>
 
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="theme-text-muted">ID</span>
-                  <span className="theme-text-secondary font-mono text-xs truncate max-w-[150px]">
+              <div className="space-y-3 mb-6">
+                <div className="p-3 rounded-xl bg-black/20 border border-white/5">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-xs theme-text-faint uppercase font-semibold">Package ID</span>
+                    <button className="text-[10px] theme-text-accent hover:underline" onClick={() => navigator.clipboard.writeText(selectedNode.id)}>Copy</button>
+                  </div>
+                  <p className="theme-text-secondary font-mono text-xs break-all">
                     {selectedNode.id}
-                  </span>
+                  </p>
                 </div>
-                <div className="flex justify-between">
-                  <span className="theme-text-muted">Depth</span>
-                  <span className="theme-text-secondary">{selectedNode.depth}</span>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                    <span className="block text-[10px] theme-text-faint uppercase font-semibold mb-1">Depth</span>
+                    <span className="text-lg font-bold theme-text-primary">{selectedNode.depth}</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                    <span className="block text-[10px] theme-text-faint uppercase font-semibold mb-1">Impact</span>
+                    <span className="text-lg font-bold theme-text-primary">High</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-4 pt-3 border-t theme-border space-y-2">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => navigateToNode(selectedNode.id)}
-                    className="flex-1 btn-primary text-sm py-2 flex items-center justify-center gap-2"
-                  >
-                    <GitBranch className="w-4 h-4" />
-                    View Graph
-                  </button>
+              <div className="space-y-2">
+                <button
+                  onClick={() => navigateToNode(selectedNode.id)}
+                  className="w-full btn-primary py-3 rounded-xl flex items-center justify-center gap-2 font-semibold shadow-lg shadow-primary-500/20"
+                >
+                  <GitBranch className="w-4 h-4" />
+                  Redraw Graph
+                </button>
+                <div className="grid grid-cols-2 gap-2">
                   <a
                     href={`/explore?q=${encodeURIComponent(selectedNode.id)}`}
-                    className="flex-1 glass-card py-2 text-sm text-center theme-text-tertiary 
-                             theme-hover-text theme-inner-card-hover transition-colors 
-                             flex items-center justify-center gap-2"
+                    className="glass-card py-2.5 rounded-xl text-sm text-center theme-text-tertiary 
+                             theme-hover-text theme-inner-card-hover transition-all 
+                             flex items-center justify-center gap-2 border border-white/5"
                   >
                     <ExternalLink className="w-4 h-4" />
-                    Explore
+                    Details
+                  </a>
+                  <a
+                    href={`/impact?pkg=${encodeURIComponent(selectedNode.id)}`}
+                    className="glass-card py-2.5 rounded-xl text-sm text-center theme-text-tertiary 
+                             hover:text-danger hover:border-danger/30 transition-all 
+                             flex items-center justify-center gap-2 border border-white/5"
+                  >
+                    <Info className="w-4 h-4" />
+                    Impact
                   </a>
                 </div>
-                <a
-                  href={`/impact?pkg=${encodeURIComponent(selectedNode.id)}`}
-                  className="w-full glass-card py-2 text-sm text-center theme-text-tertiary 
-                           theme-hover-text hover:bg-danger/20 hover:text-danger transition-colors 
-                           flex items-center justify-center gap-2"
-                >
-                  <Info className="w-4 h-4" />
-                  Impact Analysis
-                </a>
               </div>
             </motion.div>
           )}

@@ -189,7 +189,7 @@ function ComparePageContent() {
     setPkg1Id(id);
     const { data: pkgData } = await getPackage1({ variables: { id } });
     const { data: depsData } = await getDeps1({ variables: { packageId: id, maxDepth: 1, first: 1 } });
-    
+
     if (pkgData?.package) {
       setPkg1Data({
         ...pkgData.package,
@@ -206,7 +206,7 @@ function ComparePageContent() {
     setPkg2Id(id);
     const { data: pkgData } = await getPackage2({ variables: { id } });
     const { data: depsData } = await getDeps2({ variables: { packageId: id, maxDepth: 1, first: 1 } });
-    
+
     if (pkgData?.package) {
       setPkg2Data({
         ...pkgData.package,
@@ -281,15 +281,18 @@ function ComparePageContent() {
         />
 
         {/* Swap Button */}
-        <div className="flex items-center justify-center lg:py-0 py-2">
-          <button
+        <div className="flex items-center justify-center lg:py-0 py-4">
+          <motion.button
             onClick={swapPackages}
             disabled={!pkg1Data && !pkg2Data}
-            className="p-3 rounded-xl theme-inner-card theme-inner-card-hover transition-colors disabled:opacity-50"
+            whileHover={{ scale: 1.1, rotate: 180 }}
+            whileTap={{ scale: 0.9 }}
+            className="p-4 rounded-2xl theme-inner-card theme-inner-card-hover border border-white/5 
+                     shadow-lg transition-colors disabled:opacity-30 flex items-center justify-center"
             title="Swap packages"
           >
-            <ArrowLeftRight className="w-5 h-5" />
-          </button>
+            <ArrowLeftRight className="w-6 h-6 text-primary-400" />
+          </motion.button>
         </div>
 
         <PackageSelector
@@ -320,64 +323,85 @@ function ComparePageContent() {
                 Comparison Summary
               </h3>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Dependents Comparison */}
-                <div className="p-4 rounded-xl theme-inner-card">
-                  <p className="text-xs theme-text-muted mb-2">Dependents Count</p>
-                  <div className="flex items-center justify-between">
+                <div className="p-5 rounded-2xl theme-inner-card border border-white/5 relative overflow-hidden group">
+                  <div className="absolute inset-0 bg-primary-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <p className="text-xs theme-text-muted mb-4 uppercase tracking-widest font-bold">Popularity</p>
+                  <div className="flex items-center justify-between relative z-10">
                     <div className="text-center">
-                      <p className="text-2xl font-bold theme-text-primary">
+                      <p className="text-3xl font-black theme-text-primary">
                         {formatNumber(pkg1Data.dependentsCount)}
                       </p>
-                      <p className="text-xs theme-text-faint">{pkg1Data.name}</p>
+                      <p className="text-[10px] theme-text-faint uppercase font-bold mt-1 max-w-[80px] truncate">{pkg1Data.name}</p>
                     </div>
-                    <div className="px-3">
+                    <div className="px-4 flex flex-col items-center gap-1">
                       {pkg1Data.dependentsCount > pkg2Data.dependentsCount ? (
-                        <CheckCircle className="w-6 h-6 text-success" />
+                        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}>
+                          <CheckCircle className="w-8 h-8 text-success drop-shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
+                        </motion.div>
                       ) : pkg1Data.dependentsCount < pkg2Data.dependentsCount ? (
-                        <XCircle className="w-6 h-6 text-danger" />
+                        <XCircle className="w-6 h-6 text-danger opacity-50" />
                       ) : (
-                        <span className="text-lg">=</span>
+                        <span className="text-xl font-bold theme-text-faint">=</span>
                       )}
+                      <div className="h-0.5 w-8 bg-white/10 rounded-full" />
                     </div>
                     <div className="text-center">
-                      <p className="text-2xl font-bold theme-text-primary">
+                      <p className="text-3xl font-black theme-text-primary">
                         {formatNumber(pkg2Data.dependentsCount)}
                       </p>
-                      <p className="text-xs theme-text-faint">{pkg2Data.name}</p>
+                      <p className="text-[10px] theme-text-faint uppercase font-bold mt-1 max-w-[80px] truncate">{pkg2Data.name}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Ecosystem */}
-                <div className="p-4 rounded-xl theme-inner-card">
-                  <p className="text-xs theme-text-muted mb-2">Ecosystem</p>
-                  <div className="flex items-center justify-between">
-                    <span className={cn("text-xs px-2 py-1 rounded-full", getEcosystemBadgeClass(pkg1Data.ecosystem))}>
+                <div className="p-5 rounded-2xl theme-inner-card border border-white/5 relative overflow-hidden group">
+                  <div className="absolute inset-0 bg-accent-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <p className="text-xs theme-text-muted mb-4 uppercase tracking-widest font-bold">Ecosystem</p>
+                  <div className="flex items-center justify-between relative z-10">
+                    <span
+                      className={cn("text-xs px-3 py-1.5 rounded-lg font-bold shadow-sm", getEcosystemBadgeClass(pkg1Data.ecosystem))}
+                      style={{ backgroundColor: `${getEcosystemColor(pkg1Data.ecosystem)}30` }}
+                    >
                       {formatEcosystemName(pkg1Data.ecosystem)}
                     </span>
-                    <span className="theme-text-faint">vs</span>
-                    <span className={cn("text-xs px-2 py-1 rounded-full", getEcosystemBadgeClass(pkg2Data.ecosystem))}>
+                    <div className="flex flex-col items-center">
+                      <ArrowLeftRight className="w-4 h-4 theme-text-faint" />
+                    </div>
+                    <span
+                      className={cn("text-xs px-3 py-1.5 rounded-lg font-bold shadow-sm", getEcosystemBadgeClass(pkg2Data.ecosystem))}
+                      style={{ backgroundColor: `${getEcosystemColor(pkg2Data.ecosystem)}30` }}
+                    >
                       {formatEcosystemName(pkg2Data.ecosystem)}
                     </span>
                   </div>
                   {pkg1Data.ecosystem === pkg2Data.ecosystem && (
-                    <p className="text-xs text-success mt-2 text-center">
-                      ✓ Same ecosystem
-                    </p>
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="text-[10px] text-success font-bold mt-3 text-center flex items-center justify-center gap-1"
+                    >
+                      <CheckCircle className="w-3 h-3" />
+                      Direct Competitors
+                    </motion.div>
                   )}
                 </div>
 
-                {/* Quick Actions */}
-                <div className="p-4 rounded-xl theme-inner-card">
-                  <p className="text-xs theme-text-muted mb-2">Find Path</p>
+                {/* Path Connection */}
+                <div className="p-5 rounded-2xl theme-inner-card border border-white/5 relative overflow-hidden group">
+                  <div className="absolute inset-0 bg-success/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <p className="text-xs theme-text-muted mb-4 uppercase tracking-widest font-bold">Connection</p>
                   <button
                     onClick={() => router.push(`/path?from=${encodeURIComponent(pkg1Data.id)}&to=${encodeURIComponent(pkg2Data.id)}`)}
-                    className="w-full btn-secondary flex items-center justify-center gap-2"
+                    className="w-full btn-primary py-3 flex items-center justify-center gap-2 text-sm font-bold shadow-lg 
+                             hover:scale-[1.02] transition-transform relative z-10"
                   >
                     <ArrowRight className="w-4 h-4" />
-                    Find Path Between
+                    Trace Path
                   </button>
+                  <p className="text-[10px] theme-text-faint mt-3 text-center font-medium">Find shortest dependency link</p>
                 </div>
               </div>
             </div>

@@ -36,11 +36,11 @@ export function ErrorDisplay({
       <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-danger/20 flex items-center justify-center">
         <AlertCircle className="w-8 h-8 text-danger" />
       </div>
-      
+
       <h3 className="text-xl font-semibold theme-text-primary mb-2">
         {title}
       </h3>
-      
+
       <p className="theme-text-muted text-sm mb-6">
         {message}
       </p>
@@ -55,7 +55,7 @@ export function ErrorDisplay({
             Go Back
           </button>
         )}
-        
+
         {onRetry && (
           <button
             onClick={onRetry}
@@ -65,7 +65,7 @@ export function ErrorDisplay({
             Try Again
           </button>
         )}
-        
+
         {showHomeButton && (
           <button
             onClick={() => router.push("/")}
@@ -88,7 +88,7 @@ interface QueryErrorProps {
 
 export function QueryError({ error, onRetry, minimal = false }: QueryErrorProps) {
   const message = error instanceof Error ? error.message : error.message;
-  
+
   // Parse common GraphQL errors for user-friendly messages
   const getUserFriendlyMessage = (msg: string): string => {
     if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
@@ -155,34 +155,38 @@ export function EmptyState({
 }: EmptyStateProps) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       className={cn(
-        "py-12 text-center",
+        "py-16 px-8 text-center glass-card border-dashed border-2 relative overflow-hidden group",
         className
       )}
     >
-      <div className="w-16 h-16 mx-auto mb-4 rounded-full theme-inner-card flex items-center justify-center">
-        <Icon className="w-8 h-8 theme-text-faint" />
+      <div className="absolute inset-0 bg-gradient-to-b from-primary-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+      <div className="w-24 h-24 mx-auto mb-8 rounded-3xl theme-inner-card flex items-center justify-center shadow-inner relative z-10">
+        <Icon className="w-12 h-12 theme-text-faint group-hover:text-primary-400 group-hover:scale-110 transition-all duration-500" />
       </div>
-      
-      <h3 className="text-lg font-semibold theme-text-secondary mb-2">
+
+      <h3 className="text-2xl font-black theme-text-primary mb-3 relative z-10 tracking-tight">
         {title}
       </h3>
-      
+
       {description && (
-        <p className="theme-text-muted text-sm mb-6 max-w-sm mx-auto">
+        <p className="theme-text-muted text-base mb-10 max-w-md mx-auto relative z-10 leading-relaxed">
           {description}
         </p>
       )}
 
       {action && (
-        <button
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={action.onClick}
-          className="btn-primary"
+          className="btn-primary px-8 py-3 text-sm font-bold shadow-xl relative z-10"
         >
           {action.label}
-        </button>
+        </motion.button>
       )}
     </motion.div>
   );

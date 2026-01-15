@@ -7,6 +7,7 @@ import { Header } from "@/components/layout/header";
 import { ToastProvider } from "@/components/ui/toast";
 import { CommandPalette } from "@/components/ui/command-palette";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
+import { PageTransition } from "@/components/layout/page-transition";
 
 export const metadata: Metadata = {
   title: "Inverse Dependency Platform",
@@ -39,9 +40,11 @@ export default function RootLayout({
                   <Header />
 
                   {/* Page Content with Error Boundary */}
-                  <main className="flex-1 overflow-y-auto p-6">
+                  <main className="flex-1 overflow-y-auto p-6 relative">
                     <ErrorBoundary>
-                      {children}
+                      <PageTransition>
+                        {children}
+                      </PageTransition>
                     </ErrorBoundary>
                   </main>
                 </div>

@@ -24,7 +24,7 @@ function ExplorePageContent() {
   const router = useRouter();
   const initialQuery = searchParams.get("q") || "";
   const initialEcosystem = searchParams.get("ecosystem")?.toUpperCase() || "ALL";
-  
+
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedEcosystem, setSelectedEcosystem] = useState(initialEcosystem);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
@@ -34,17 +34,17 @@ function ExplorePageContent() {
     (process.env.NEXT_PUBLIC_SEARCH_MODE || "").toLowerCase() === "semantic";
 
   // Direct package lookup (for exact ID matches)
-  const [getPackage, { data: packageData, loading: packageLoading, error: packageError }] = 
+  const [getPackage, { data: packageData, loading: packageLoading, error: packageError }] =
     useLazyQuery(GET_PACKAGE);
 
   // Fuzzy search for packages
-  const [searchPackagesByName, { data: nameSearchData, loading: nameSearchLoading, error: nameSearchError, fetchMore: fetchMoreNameSearch }] = 
+  const [searchPackagesByName, { data: nameSearchData, loading: nameSearchLoading, error: nameSearchError, fetchMore: fetchMoreNameSearch }] =
     useLazyQuery(SEARCH_PACKAGES);
 
-  const [searchPackagesSemantic, { data: semanticSearchData, loading: semanticSearchLoading, error: semanticSearchError, fetchMore: fetchMoreSemanticSearch }] = 
+  const [searchPackagesSemantic, { data: semanticSearchData, loading: semanticSearchLoading, error: semanticSearchError, fetchMore: fetchMoreSemanticSearch }] =
     useLazyQuery(SEMANTIC_SEARCH_PACKAGES);
 
-  const [getReverseDeps, { data: reverseDepsData, loading: reverseDepsLoading, fetchMore }] = 
+  const [getReverseDeps, { data: reverseDepsData, loading: reverseDepsLoading, fetchMore }] =
     useLazyQuery(GET_REVERSE_DEPENDENTS);
 
   const foundPackage = packageData?.package;
@@ -81,14 +81,19 @@ function ExplorePageContent() {
   }, [reverseDepsData, fetchMore]);
 
   // Search handler - uses fuzzy search or direct lookup
-  const handleSearch = useCallback((query: string) => {
+  const handleSearch = useCallback((query: string, options?: { replace?: boolean }) => {
     if (query.trim()) {
       // Update URL
-      router.push(`/explore?q=${encodeURIComponent(query.trim())}`);
-      
+      const url = `/explore?q=${encodeURIComponent(query.trim())}`;
+      if (options?.replace) {
+        router.replace(url);
+      } else {
+        router.push(url);
+      }
+
       // Check if it's an exact package ID format (ecosystem:name)
       const isExactId = query.includes(":");
-      
+
       if (isExactId) {
         // Direct package lookup
         getPackage({ variables: { id: query.trim() } });
@@ -109,6 +114,20 @@ function ExplorePageContent() {
       }
     }
   }, [router, getPackage, searchPackagesByName, searchPackagesSemantic, selectedEcosystem, useSemanticSearch]);
+
+  // Debounced search effect
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery === initialQuery) return;
+
+    const timer = setTimeout(() => {
+      // Only search fuzzy queries automatically, exact IDs require Enter/Click
+      if (!searchQuery.includes(":")) {
+        handleSearch(searchQuery, { replace: true });
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, handleSearch, initialQuery]);
 
   const handleLoadMoreSearch = useCallback(async () => {
     const endCursor = searchConnection?.pageInfo?.endCursor;
@@ -191,12 +210,12 @@ function ExplorePageContent() {
   // Load reverse deps when package is selected
   useEffect(() => {
     if (selectedPackageId) {
-      getReverseDeps({ 
-        variables: { 
-          packageId: selectedPackageId, 
-          maxDepth: 2, 
-          first: 20 
-        } 
+      getReverseDeps({
+        variables: {
+          packageId: selectedPackageId,
+          maxDepth: 2,
+          first: 20
+        }
       });
     }
   }, [selectedPackageId, getReverseDeps]);
@@ -284,24 +303,40 @@ function ExplorePageContent() {
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="glass-card p-8 text-center"
+              className="glass-card p-10 text-center border-dashed border-2 theme-border"
             >
-              <Package className="w-12 h-12 theme-text-faint mx-auto mb-4" />
-              <p className="theme-text-tertiary font-medium">No package found</p>
-              <p className="text-sm theme-text-faint mt-1">
-                Try searching with format: ecosystem:name
+              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-white/5 flex items-center justify-center">
+                <Package className="w-10 h-10 theme-text-faint" />
+              </div>
+              <p className="theme-text-primary text-xl font-bold mb-2">No packages found</p>
+              <p className="theme-text-muted mb-8 max-w-xs mx-auto">
+                We couldn't find any packages matching "{searchQuery}". Try a different term or ecosystem.
               </p>
-              <div className="mt-4 flex flex-wrap justify-center gap-2">
-                {["cargo:", "npm:", "pypi:"].map((prefix) => (
-                  <button
-                    key={prefix}
-                    onClick={() => setSearchQuery(prefix)}
-                    className="px-3 py-1.5 rounded-lg theme-pill
-                             theme-hover-text theme-inner-card-hover transition-colors"
-                  >
-                    {prefix}
-                  </button>
-                ))}
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    router.push("/explore");
+                  }}
+                  className="btn-secondary px-6"
+                >
+                  Clear search
+                </button>
+                <div className="flex gap-2">
+                  {["cargo:", "npm:", "pypi:"].map((prefix) => (
+                    <button
+                      key={prefix}
+                      onClick={() => {
+                        setSearchQuery(prefix);
+                        handleSearch(prefix);
+                      }}
+                      className="px-3 py-1.5 rounded-lg theme-pill
+                               theme-hover-text theme-inner-card-hover transition-colors text-xs font-mono"
+                    >
+                      {prefix}
+                    </button>
+                  ))}
+                </div>
               </div>
             </motion.div>
           )}
@@ -347,7 +382,7 @@ function ExplorePageContent() {
 
           {/* Example Searches */}
           {!searchQuery && (
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.3 }}

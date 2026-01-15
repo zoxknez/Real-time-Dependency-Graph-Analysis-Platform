@@ -233,7 +233,7 @@ function ImpactPageContent() {
               )}
               Analyze Impact
             </button>
-            
+
             {/* Quick Analysis Buttons */}
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs theme-text-faint flex items-center gap-1">
@@ -250,8 +250,8 @@ function ImpactPageContent() {
                            hover:border-primary-500/30 flex items-center gap-1.5"
                   style={{ borderColor: `${getEcosystemColor(pkg.ecosystem)}30` }}
                 >
-                  <span 
-                    className="w-2 h-2 rounded-full" 
+                  <span
+                    className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: getEcosystemColor(pkg.ecosystem) }}
                   />
                   {pkg.name}
@@ -315,37 +315,53 @@ function ImpactPageContent() {
             {/* Severity Banner */}
             {severity && (
               <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className={cn("glass-card p-4 flex items-center gap-4", severity.bgColor)}
+                initial={{ opacity: 0, scale: 0.98, filter: "blur(10px)" }}
+                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                className={cn(
+                  "glass-card p-5 flex items-center gap-5 border shadow-lg relative overflow-hidden",
+                  severity.bgColor
+                )}
               >
-                <severity.icon className={cn("w-8 h-8", severity.color)} />
-                <div className="flex-1">
+                {/* Background glow effect */}
+                <div
+                  className="absolute inset-0 opacity-10 pointer-events-none"
+                  style={{ background: `radial-gradient(circle at 20% 50%, ${severity.color.replace('text-', '')}, transparent 70%)` }}
+                />
+
+                <div className="relative z-10 p-3 rounded-2xl bg-white/10">
+                  <severity.icon className={cn("w-10 h-10", severity.color)} />
+                </div>
+
+                <div className="flex-1 relative z-10">
                   <div className="flex items-center gap-3">
-                    <span className={cn("text-lg font-bold", severity.color)}>
+                    <span className={cn("text-xl font-black tracking-tight", severity.color)}>
                       {severity.level} SEVERITY
                     </span>
-                    <span className="theme-text-muted">|</span>
-                    <span className="theme-text-tertiary">
-                      {impact.impactedPackages} packages potentially affected
+                    <div className="w-1 h-1 rounded-full bg-white/20" />
+                    <span className="theme-text-primary font-medium">
+                      {impact.impactedPackages} packages at risk
                     </span>
                   </div>
-                  <p className="text-sm theme-text-muted mt-1">
-                    A vulnerability in <span className="font-mono theme-text-primary">{packageId}</span> could cascade to dependent packages up to {impact.maxDepth} levels deep.
+                  <p className="text-sm theme-text-muted mt-1 leading-relaxed max-w-2xl">
+                    Potential security cascade in <span className="font-mono text-primary-400 font-bold">{packageId}</span>
+                    could affect dependencies up to {impact.maxDepth} levels deep.
                   </p>
                 </div>
+
                 {/* Action Buttons */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 relative z-10">
                   <button
                     onClick={() => navigateToGraph(packageId)}
-                    className="p-2 rounded-lg theme-inner-card theme-inner-card-hover transition-colors"
+                    className="p-2.5 rounded-xl theme-inner-card theme-inner-card-hover border border-white/5 
+                             hover:border-primary-500/30 transition-all hover:scale-105"
                     title="View in Graph"
                   >
                     <GitBranch className="w-5 h-5 text-primary-400" />
                   </button>
                   <button
                     onClick={copyShareLink}
-                    className="p-2 rounded-lg theme-inner-card theme-inner-card-hover transition-colors"
+                    className="p-2.5 rounded-xl theme-inner-card theme-inner-card-hover border border-white/5 
+                             hover:border-primary-500/30 transition-all hover:scale-105"
                     title="Copy share link"
                   >
                     {copied ? (
@@ -357,7 +373,8 @@ function ImpactPageContent() {
                   <div className="relative">
                     <button
                       onClick={() => setShowExportMenu(!showExportMenu)}
-                      className="p-2 rounded-lg theme-inner-card theme-inner-card-hover transition-colors"
+                      className="p-2.5 rounded-xl theme-inner-card theme-inner-card-hover border border-white/5 
+                               hover:border-primary-500/30 transition-all hover:scale-105"
                       title="Export report"
                     >
                       <Download className="w-5 h-5 theme-text-muted" />
@@ -368,15 +385,15 @@ function ImpactPageContent() {
                           initial={{ opacity: 0, scale: 0.95, y: -10 }}
                           animate={{ opacity: 1, scale: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.95, y: -10 }}
-                          className="absolute top-full right-0 mt-2 glass-card py-2 min-w-[160px] z-50"
+                          className="absolute top-full right-0 mt-2 glass-card py-2 min-w-[180px] z-50 shadow-2xl"
                         >
                           <button
                             onClick={exportAsJSON}
-                            className="w-full px-4 py-2 flex items-center gap-3 text-sm theme-text-tertiary 
-                                     theme-hover-text theme-inner-card-hover transition-colors"
+                            className="w-full px-4 py-3 flex items-center gap-3 text-sm theme-text-tertiary 
+                                     theme-hover-text theme-inner-card-hover transition-colors font-medium"
                           >
-                            <FileJson className="w-4 h-4" />
-                            Export as JSON
+                            <FileJson className="w-4 h-4 text-warning" />
+                            Export Report (JSON)
                           </button>
                         </motion.div>
                       )}
@@ -388,7 +405,7 @@ function ImpactPageContent() {
 
             {/* Impact Summary */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
@@ -406,7 +423,7 @@ function ImpactPageContent() {
                   </div>
                 </div>
               </motion.div>
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
@@ -424,7 +441,7 @@ function ImpactPageContent() {
                   </div>
                 </div>
               </motion.div>
-              <motion.div 
+              <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
@@ -454,12 +471,12 @@ function ImpactPageContent() {
               </h3>
               <div className="space-y-2">
                 {impact.topImpacted.map((item: ImpactNode, index: number) => {
-                  const depthColor = item.depth === 1 
-                    ? "text-red-400" 
-                    : item.depth === 2 
-                      ? "text-orange-400" 
+                  const depthColor = item.depth === 1
+                    ? "text-red-400"
+                    : item.depth === 2
+                      ? "text-orange-400"
                       : "text-yellow-400";
-                  
+
                   return (
                     <motion.div
                       key={item.package.id}
@@ -476,18 +493,18 @@ function ImpactPageContent() {
                             index === 0
                               ? "rgba(239, 68, 68, 0.2)"
                               : index === 1
-                              ? "rgba(245, 158, 11, 0.2)"
-                              : index === 2
-                              ? "rgba(234, 179, 8, 0.2)"
-                              : "rgba(100, 116, 139, 0.2)",
+                                ? "rgba(245, 158, 11, 0.2)"
+                                : index === 2
+                                  ? "rgba(234, 179, 8, 0.2)"
+                                  : "rgba(100, 116, 139, 0.2)",
                           color:
                             index === 0
                               ? "#ef4444"
                               : index === 1
-                              ? "#f59e0b"
-                              : index === 2
-                              ? "#eab308"
-                              : "#64748b",
+                                ? "#f59e0b"
+                                : index === 2
+                                  ? "#eab308"
+                                  : "#64748b",
                         }}
                       >
                         {index + 1}
@@ -556,33 +573,48 @@ function ImpactPageContent() {
               <div className="flex items-center justify-between gap-8">
                 {/* Rings */}
                 <div className="relative w-72 h-72 flex-shrink-0">
+                  {/* Rings with pulse effect */}
                   {[3, 2, 1, 0].map((ring) => {
                     const depthPackages = impact.topImpacted.filter((i: ImpactNode) => i.depth === ring + 1).length;
                     return (
                       <motion.div
                         key={ring}
                         initial={{ scale: 0, opacity: 0 }}
-                        animate={{ scale: 1, opacity: 1 }}
-                        transition={{ delay: (3 - ring) * 0.2, duration: 0.5 }}
+                        animate={{
+                          scale: 1,
+                          opacity: 1,
+                          boxShadow: ring === 0 ? [
+                            "0 0 0px rgba(239, 68, 68, 0)",
+                            "0 0 20px rgba(239, 68, 68, 0.4)",
+                            "0 0 0px rgba(239, 68, 68, 0)"
+                          ] : "none"
+                        }}
+                        transition={{
+                          delay: (3 - ring) * 0.2,
+                          duration: 0.6,
+                          boxShadow: { repeat: Infinity, duration: 2 }
+                        }}
                         className="absolute inset-0 rounded-full border-2 flex items-start justify-center pt-2"
                         style={{
                           borderColor:
                             ring === 0
-                              ? "rgba(239, 68, 68, 0.8)"
+                              ? "rgba(239, 68, 68, 0.9)"
                               : ring === 1
-                              ? "rgba(245, 158, 11, 0.5)"
-                              : ring === 2
-                              ? "rgba(99, 102, 241, 0.3)"
-                              : "rgba(100, 116, 139, 0.2)",
+                                ? "rgba(245, 158, 11, 0.6)"
+                                : ring === 2
+                                  ? "rgba(99, 102, 241, 0.4)"
+                                  : "rgba(148, 163, 184, 0.3)",
                           transform: `scale(${0.25 + ring * 0.25})`,
+                          backgroundColor: ring === 0 ? "rgba(239, 68, 68, 0.05)" : "transparent"
                         }}
                       >
                         {ring > 0 && depthPackages > 0 && (
-                          <span 
-                            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                          <span
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg"
                             style={{
-                              backgroundColor: ring === 1 ? "rgba(245, 158, 11, 0.3)" : ring === 2 ? "rgba(99, 102, 241, 0.3)" : "rgba(100, 116, 139, 0.3)",
-                              color: ring === 1 ? "#f59e0b" : ring === 2 ? "#818cf8" : "#94a3b8",
+                              backgroundColor: ring === 1 ? "#f59e0b" : ring === 2 ? "#6366f1" : "rgba(100, 116, 139, 0.5)",
+                              color: "#fff",
+                              transform: `scale(${1 / (0.25 + ring * 0.25)})`
                             }}
                           >
                             {depthPackages}
@@ -592,28 +624,39 @@ function ImpactPageContent() {
                     );
                   })}
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <Shield className="w-10 h-10 text-danger mx-auto mb-1" />
-                      <p className="text-xs font-medium theme-text-primary">Vulnerable</p>
-                      <p className="text-[10px] theme-text-muted max-w-[80px] truncate">{packageId}</p>
-                    </div>
+                    <motion.div
+                      className="text-center z-10"
+                      animate={{ scale: [1, 1.05, 1] }}
+                      transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                    >
+                      <div className="relative">
+                        <Shield className="w-12 h-12 text-danger mx-auto mb-2 relative z-10" />
+                        <motion.div
+                          className="absolute inset-0 bg-danger/40 blur-xl rounded-full"
+                          animate={{ opacity: [0.3, 0.6, 0.3] }}
+                          transition={{ duration: 2, repeat: Infinity }}
+                        />
+                      </div>
+                      <p className="text-xs font-bold theme-text-primary uppercase tracking-tighter">Vulnerable</p>
+                      <p className="text-[10px] theme-text-muted max-w-[90px] truncate font-mono">{packageId}</p>
+                    </motion.div>
                   </div>
                 </div>
-                
+
                 {/* Depth Breakdown Stats */}
                 <div className="flex-1 space-y-3">
                   <h4 className="text-sm font-medium theme-text-tertiary mb-4">Depth Breakdown</h4>
                   {[1, 2, 3].map((depth) => {
                     const count = impact.topImpacted.filter((i: ImpactNode) => i.depth === depth).length;
-                    const percentage = impact.topImpacted.length > 0 
-                      ? Math.round((count / impact.topImpacted.length) * 100) 
+                    const percentage = impact.topImpacted.length > 0
+                      ? Math.round((count / impact.topImpacted.length) * 100)
                       : 0;
-                    const colors = depth === 1 
+                    const colors = depth === 1
                       ? { bar: "#ef4444", bg: "rgba(239, 68, 68, 0.2)" }
-                      : depth === 2 
-                      ? { bar: "#f59e0b", bg: "rgba(245, 158, 11, 0.2)" }
-                      : { bar: "#818cf8", bg: "rgba(129, 140, 248, 0.2)" };
-                    
+                      : depth === 2
+                        ? { bar: "#f59e0b", bg: "rgba(245, 158, 11, 0.2)" }
+                        : { bar: "#818cf8", bg: "rgba(129, 140, 248, 0.2)" };
+
                     return (
                       <div key={depth} className="space-y-1">
                         <div className="flex items-center justify-between text-sm">
@@ -622,7 +665,7 @@ function ImpactPageContent() {
                             {count} packages ({percentage}%)
                           </span>
                         </div>
-                        <div 
+                        <div
                           className="h-2 rounded-full overflow-hidden"
                           style={{ backgroundColor: colors.bg }}
                         >
@@ -637,7 +680,7 @@ function ImpactPageContent() {
                       </div>
                     );
                   })}
-                  
+
                   {/* Total */}
                   <div className="pt-3 mt-3 border-t theme-border">
                     <div className="flex items-center justify-between">

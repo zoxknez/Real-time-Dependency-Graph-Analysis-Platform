@@ -349,8 +349,25 @@ function PathPageContent() {
 
                 {/* Path Steps */}
                 <div className="relative">
-                  {/* Connecting Line */}
-                  <div className="absolute left-6 top-8 bottom-8 w-0.5 bg-gradient-to-b from-success via-primary-500 to-accent-500" />
+                  {/* Connecting Line with Animated Flow */}
+                  <div className="absolute left-6 top-8 bottom-8 w-0.5 bg-white/5" />
+                  <motion.div
+                    className="absolute left-6 top-8 bottom-8 w-0.5"
+                    style={{
+                      background: "linear-gradient(to bottom, #10b981, #6366f1, #06b6d4)",
+                      backgroundSize: "100% 200%"
+                    }}
+                    animate={{ backgroundPosition: ["0% 0%", "0% 100%"] }}
+                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                  />
+
+                  {/* Pulse Effect along the line */}
+                  <motion.div
+                    className="absolute left-6 w-1 h-20 bg-gradient-to-b from-transparent via-white/40 to-transparent blur-sm z-10"
+                    animate={{ top: ["0%", "100%"] }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                    style={{ left: "22px" }}
+                  />
 
                   <div className="space-y-4">
                     {result.packages.map((pkg: PackageModel, index: number) => (
@@ -362,22 +379,40 @@ function PathPageContent() {
                         className="relative flex items-center gap-4"
                       >
                         {/* Step Indicator */}
-                        <div
-                          className="relative z-10 w-12 h-12 rounded-full flex items-center justify-center font-bold text-white"
-                          style={{
-                            backgroundColor:
-                              index === 0
-                                ? "#10b981"
-                                : index === result.packages.length - 1
-                                ? "#06b6d4"
-                                : "#6366f1",
-                          }}
-                        >
-                          {index + 1}
+                        <div className="relative">
+                          <motion.div
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ delay: index * 0.1, duration: 0.5 }}
+                            className="relative z-10 w-12 h-12 rounded-full flex items-center justify-center font-black text-white shadow-lg border-2 border-white/20"
+                            style={{
+                              backgroundColor:
+                                index === 0
+                                  ? "#10b981"
+                                  : index === result.packages.length - 1
+                                    ? "#06b6d4"
+                                    : "#6366f1",
+                              boxShadow: `0 0 15px ${index === 0
+                                  ? "rgba(16, 185, 129, 0.4)"
+                                  : index === result.packages.length - 1
+                                    ? "rgba(6, 182, 212, 0.4)"
+                                    : "rgba(99, 102, 241, 0.4)"
+                                }`
+                            }}
+                          >
+                            {index + 1}
+                          </motion.div>
+                          {index === 0 && (
+                            <motion.div
+                              className="absolute inset-0 bg-success/30 blur-xl rounded-full -z-10"
+                              animate={{ opacity: [0.3, 0.6, 0.3], scale: [1, 1.2, 1] }}
+                              transition={{ duration: 3, repeat: Infinity }}
+                            />
+                          )}
                         </div>
 
                         {/* Package Card */}
-                        <div 
+                        <div
                           className="flex-1 p-4 rounded-xl theme-inner-card theme-border 
                                    theme-inner-card-hover transition-all group"
                         >
@@ -456,8 +491,8 @@ function PathPageContent() {
                             transition={{ delay: index * 0.1 + 0.15 }}
                             className="absolute left-6 -bottom-2 transform -translate-x-1/2 z-20"
                           >
-                            <motion.div 
-                            className="flex items-center gap-1 text-xs theme-text-faint theme-bg-primary px-2 py-0.5 rounded-full theme-border"
+                            <motion.div
+                              className="flex items-center gap-1 text-xs theme-text-faint theme-bg-primary px-2 py-0.5 rounded-full theme-border"
                               animate={{ y: [0, 2, 0] }}
                               transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
                             >

@@ -30,59 +30,59 @@ export function GraphControls({
       className="absolute top-1/2 -translate-y-1/2 left-4 flex flex-col gap-2"
     >
       {/* Zoom Controls */}
-      <div className="glass-card p-1 flex flex-col gap-1">
+      <div className="glass-card p-1.5 flex flex-col gap-1.5 shadow-2xl border-white/10">
         <button
           onClick={onZoomIn}
-          className="p-2.5 rounded-lg theme-interactive transition-colors"
+          className="p-2 rounded-xl theme-interactive transition-all hover:bg-white/10 active:scale-95"
           title="Zoom In"
         >
-          <ZoomIn className="w-5 h-5" />
+          <ZoomIn className="w-5 h-5 theme-text-secondary group-hover:theme-text-primary" />
         </button>
         <button
           onClick={onZoomOut}
-          className="p-2.5 rounded-lg theme-interactive transition-colors"
+          className="p-2 rounded-xl theme-interactive transition-all hover:bg-white/10 active:scale-95"
           title="Zoom Out"
         >
-          <ZoomOut className="w-5 h-5" />
+          <ZoomOut className="w-5 h-5 theme-text-secondary group-hover:theme-text-primary" />
         </button>
         <button
           onClick={onCenter}
-          className="p-2.5 rounded-lg theme-interactive transition-colors"
+          className="p-2 rounded-xl theme-interactive transition-all hover:bg-white/10 active:scale-95"
           title="Fit to View"
         >
-          <Maximize2 className="w-5 h-5" />
+          <Maximize2 className="w-5 h-5 theme-text-secondary group-hover:theme-text-primary" />
         </button>
-        <div className="w-full h-px theme-border" />
+        <div className="mx-1 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
         <button
           onClick={onRefresh}
           disabled={loading}
-          className="p-2.5 rounded-lg theme-interactive transition-colors disabled:opacity-50"
+          className="p-2 rounded-xl theme-interactive transition-all hover:bg-white/10 active:scale-95 disabled:opacity-50"
           title="Refresh"
         >
           {loading ? (
-            <Loader2 className="w-5 h-5 animate-spin" />
+            <Loader2 className="w-5 h-5 animate-spin text-primary-400" />
           ) : (
-            <RefreshCw className="w-5 h-5" />
+            <RefreshCw className="w-5 h-5 theme-text-secondary group-hover:theme-text-primary" />
           )}
         </button>
       </div>
 
       {/* Depth Control */}
-      <div className="glass-card p-3">
-        <div className="flex items-center gap-2 mb-2">
-          <Settings2 className="w-4 h-4 theme-text-muted" />
-          <span className="text-xs theme-text-tertiary font-medium">Max Depth</span>
+      <div className="glass-card p-4 shadow-2xl border-white/10">
+        <div className="flex items-center gap-2 mb-3">
+          <Settings2 className="w-4 h-4 text-primary-400" />
+          <span className="text-[10px] theme-text-faint uppercase font-bold tracking-wider">Depth</span>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-col gap-2">
           {[1, 2, 3, 4].map((depth) => (
             <button
               key={depth}
               onClick={() => onMaxDepthChange(depth)}
               className={cn(
-                "w-8 h-8 rounded-lg text-sm font-medium transition-all",
+                "w-9 h-9 rounded-xl text-sm font-bold transition-all flex items-center justify-center border",
                 maxDepth === depth
-                  ? "bg-primary-500 text-white"
-                  : "theme-inner-card theme-text-muted theme-hover-text theme-inner-card-hover"
+                  ? "bg-primary-500 border-primary-400 text-white shadow-lg shadow-primary-500/20"
+                  : "theme-inner-card border-white/5 theme-text-muted hover:theme-text-primary hover:border-white/10"
               )}
             >
               {depth}

@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { Activity, Zap, Package, RefreshCw } from "lucide-react";
-import { cn, getEcosystemColor } from "@/lib/utils";
+import { cn, getEcosystemColor, formatEcosystemName } from "@/lib/utils";
 import type { DependencyGraphUpdate } from "@/lib/graphql/types";
 
 interface LiveUpdateIndicatorProps {
@@ -16,78 +16,112 @@ export function LiveUpdateIndicator({
   isConnected,
   className,
 }: LiveUpdateIndicatorProps) {
+  const latestUpdate = updates[0];
+
   return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={cn("glass-card p-3", className)}
-    >
-      {/* Connection Status */}
-      <div className="flex items-center gap-2 mb-2">
-        <span className="relative flex h-2 w-2">
-          {isConnected ? (
-            <>
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500" />
-            </>
-          ) : (
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-gray-500" />
-          )}
-        </span>
-        <span className={cn(
-          "text-xs font-medium",
-          isConnected ? "text-green-400" : "text-gray-400"
-        )}>
-          {isConnected ? "Live Updates" : "Disconnected"}
-        </span>
-      </div>
-      
-      {/* Recent Updates */}
-      <AnimatePresence mode="popLayout">
-        {updates.length > 0 ? (
+    <div className={cn("flex flex-col items-end gap-3", className)}>
+      {/* Toast Notification for Latest Update */}
+      <AnimatePresence>
+        {latestUpdate && (
           <motion.div
-            key="updates"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="space-y-2"
+            key={latestUpdate.affectedPackage.id + latestUpdate.timestamp}
+            initial={{ opacity: 0, x: 50, scale: 0.9 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 20, scale: 0.9 }}
+            className="glass-card p-4 shadow-2xl border-l-4 min-w-[240px]"
+            style={{ borderLeftColor: getEcosystemColor(latestUpdate.affectedPackage.ecosystem) }}
           >
-            <div className="text-xs theme-text-faint">Recent changes:</div>
-            {updates.slice(0, 3).map((update, i) => (
-              <motion.div
-                key={update.timestamp + i}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className="flex items-center gap-2 text-xs"
-              >
-                <UpdateTypeIcon type={update.type} />
-                <span 
-                  className="font-medium truncate max-w-[100px]"
-                  style={{ color: getEcosystemColor(update.affectedPackage.ecosystem) }}
-                >
-                  {update.affectedPackage.name}
-                </span>
-                {update.newVersion && (
-                  <span className="text-accent-400 font-mono">
-                    v{update.newVersion}
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-lg bg-white/5">
+                <UpdateTypeIcon type={latestUpdate.type} />
+              </div>
+              <div className="flex-1">
+                <div className="text-[10px] theme-text-faint uppercase font-bold tracking-wider mb-0.5">
+                  Package Updated
+                </div>
+                <div className="theme-text-primary font-bold text-sm">
+                  {latestUpdate.affectedPackage.name}
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] theme-text-tertiary">
+                    {formatEcosystemName(latestUpdate.affectedPackage.ecosystem)}
                   </span>
-                )}
-              </motion.div>
-            ))}
-          </motion.div>
-        ) : (
-          <motion.div
-            key="empty"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-xs theme-text-faint"
-          >
-            Watching for updates...
+                  {latestUpdate.newVersion && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent-500/20 text-accent-300 font-mono">
+                      v{latestUpdate.newVersion}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+
+      {/* Main Status Indicator Card */}
+      <motion.div
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass-card p-4 min-w-[200px] shadow-xl border-white/5"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2 w-2">
+              {isConnected ? (
+                <>
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+                </>
+              ) : (
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-danger-500 shadow-[0_0_8px_rgba(239,68,68,0.3)]" />
+              )}
+            </span>
+            <span className={cn(
+              "text-[10px] font-bold uppercase tracking-widest",
+              isConnected ? "text-green-400" : "text-danger-400"
+            )}>
+              {isConnected ? "Live Engine" : "Offline"}
+            </span>
+          </div>
+          {isConnected ? (
+            <Activity className="w-3 h-3 text-green-400/50 animate-pulse" />
+          ) : (
+            <button
+              onClick={() => window.location.reload()}
+              className="p-1 rounded hover:bg-white/10 transition-colors"
+              title="Reconnect"
+            >
+              <RefreshCw className="w-3 h-3 text-danger-400" />
+            </button>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          {updates.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {updates.slice(0, 2).map((update, i) => (
+                <motion.div
+                  key={update.timestamp + i}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className="flex items-center gap-2 text-xs group"
+                >
+                  <UpdateTypeIcon type={update.type} />
+                  <span className="theme-text-tertiary truncate group-hover:theme-text-primary transition-colors">
+                    {update.affectedPackage.name}
+                  </span>
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-[10px] theme-text-faint italic">
+              Awaiting real-time stream...
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
   );
 }
 

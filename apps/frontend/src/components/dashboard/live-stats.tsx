@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useEffect } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Activity, TrendingUp, TrendingDown, Minus, Users, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLiveStats, useConnectionStatus } from "@/lib/hooks";
@@ -49,8 +49,8 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
               <span className="text-2xl font-bold text-accent-400">
                 {stats.eventsPerMinute.toFixed(1)}
               </span>
-              <TrendIndicator 
-                current={stats.eventsPerMinute} 
+              <TrendIndicator
+                current={stats.eventsPerMinute}
                 history={history.map(h => h.eventsPerMinute)}
               />
             </div>
@@ -72,45 +72,53 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs theme-text-faint">Activity Trend (last hour)</span>
             </div>
-            <SparklineChart 
-              data={history.map(h => h.eventsPerMinute)} 
+            <SparklineChart
+              data={history.map(h => h.eventsPerMinute)}
               height={40}
             />
           </div>
 
-          {/* Ecosystem Stats */}
+          {/* Real-time Activity Feed */}
           <div className="pt-3 border-t theme-border">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-xs theme-text-faint">By Ecosystem</span>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {stats.topEcosystems?.slice(0, 3).map((eco) => (
-                <EcosystemMiniStatNew key={eco.ecosystem} stat={eco} />
-              ))}
-            </div>
-          </div>
-
-          {/* Platform Stats Summary */}
-          <div className="pt-3 border-t theme-border">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs theme-text-faint flex items-center gap-1">
-                <Package className="w-3 h-3" />
-                Platform Stats
-              </span>
-            </div>
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-sm">
-                <span className="theme-text-muted">Packages</span>
-                <span className="font-medium theme-text-primary">{stats.packagesIndexed?.toLocaleString() ?? 0}</span>
+              <span className="text-[10px] theme-text-faint uppercase font-bold tracking-wider">Recent Activity</span>
+              <div className="flex gap-1">
+                {[1, 2, 3].map(i => (
+                  <motion.div
+                    key={i}
+                    animate={{ opacity: [0.3, 1, 0.3] }}
+                    transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.2 }}
+                    className="w-1 h-1 rounded-full bg-accent-400"
+                  />
+                ))}
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="theme-text-muted">Versions</span>
-                <span className="font-medium theme-text-primary">{stats.versionsIndexed?.toLocaleString() ?? 0}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="theme-text-muted">Dependencies</span>
-                <span className="font-medium theme-text-primary">{stats.dependenciesTracked?.toLocaleString() ?? 0}</span>
-              </div>
+            </div>
+            <div className="space-y-2 max-h-[140px] overflow-hidden relative">
+              <AnimatePresence mode="popLayout">
+                {stats.topEcosystems?.slice(0, 4).map((eco, i) => (
+                  <motion.div
+                    key={eco.ecosystem + i}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 10 }}
+                    transition={{ delay: i * 0.1 }}
+                    className="flex justify-between items-center text-xs p-2 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 transition-colors group"
+                  >
+                    <div className="flex items-center gap-2">
+                      <div
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{ backgroundColor: eco.ecosystem === "NPM" ? "#cb3837" : "#f7a41d" }}
+                      />
+                      <span className="theme-text-secondary group-hover:theme-text-primary">
+                        {eco.ecosystem} indexing update
+                      </span>
+                    </div>
+                    <span className="theme-text-faint text-[10px]">just now</span>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+              {/* Fade Overlay */}
+              <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-900/50 to-transparent pointer-events-none" />
             </div>
           </div>
         </div>
@@ -186,7 +194,7 @@ function SparklineChart({ data, height = 40 }: { data: number[]; height?: number
 
     const dpr = window.devicePixelRatio || 1;
     const width = canvas.offsetWidth;
-    
+
     canvas.width = width * dpr;
     canvas.height = height * dpr;
     ctx.scale(dpr, dpr);
@@ -210,7 +218,7 @@ function SparklineChart({ data, height = 40 }: { data: number[]; height?: number
     data.forEach((value, i) => {
       const x = (i / (data.length - 1)) * width;
       const y = height - padding - ((value - min) / range) * (height - padding * 2);
-      
+
       if (i === 0) {
         ctx.moveTo(x, y);
       } else {
@@ -235,7 +243,7 @@ function SparklineChart({ data, height = 40 }: { data: number[]; height?: number
 
   if (data.length < 2) {
     return (
-      <div 
+      <div
         className="flex items-center justify-center theme-text-faint text-xs"
         style={{ height }}
       >
@@ -245,9 +253,9 @@ function SparklineChart({ data, height = 40 }: { data: number[]; height?: number
   }
 
   return (
-    <canvas 
-      ref={canvasRef} 
-      className="w-full" 
+    <canvas
+      ref={canvasRef}
+      className="w-full"
       style={{ height }}
     />
   );
@@ -269,11 +277,11 @@ function EcosystemMiniStatNew({ stat }: { stat: EcosystemActivity }) {
   const isPositive = change > 0;
 
   return (
-    <div 
+    <div
       className="p-2 rounded-lg text-center"
       style={{ backgroundColor: `${color}15` }}
     >
-      <div 
+      <div
         className="text-xs font-medium mb-0.5"
         style={{ color }}
       >

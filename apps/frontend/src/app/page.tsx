@@ -57,7 +57,29 @@ export default function DashboardPage() {
       {/* Hero Section */}
       <motion.div variants={itemVariants} className="relative overflow-hidden rounded-3xl">
         <div className="absolute inset-0 gradient-primary opacity-90" />
-        <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-10" />
+        <div className="absolute inset-0 opacity-10">
+          <svg className="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <pattern id="hero-pattern" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M0 40L40 0M-10 10L10 -10M30 50L50 30" stroke="white" strokeWidth="1" fill="none" />
+              </pattern>
+            </defs>
+            <motion.rect
+              width="100%"
+              height="100%"
+              fill="url(#hero-pattern)"
+              animate={{
+                x: [0, -40],
+                y: [0, -40]
+              }}
+              transition={{
+                duration: 20,
+                repeat: Infinity,
+                ease: "linear"
+              }}
+            />
+          </svg>
+        </div>
         <div className="relative px-8 py-10 flex items-center justify-between">
           <div className="max-w-2xl">
             <motion.div
@@ -66,41 +88,41 @@ export default function DashboardPage() {
               transition={{ delay: 0.2 }}
               className="flex items-center gap-2 mb-4"
             >
-              <Zap className="w-5 h-5 text-accent-300" />
+              <Zap className="w-5 h-5 text-accent-300 animate-pulse" />
               <span className="text-sm font-medium text-white/80">Enterprise-Grade Platform</span>
             </motion.div>
-            <h1 className="text-4xl font-bold text-white mb-3">
+            <h1 className="text-4xl font-bold text-white mb-3 tracking-tight">
               Inverse Dependency Platform
             </h1>
-            <p className="text-lg text-white/70 mb-6">
+            <p className="text-lg text-white/70 mb-6 leading-relaxed">
               Explore, analyze, and visualize package dependencies across multiple ecosystems.
               Track vulnerability impact and discover hidden connections in your dependency graph.
             </p>
-            <div className="flex gap-4">
-              <Link href="/explore" className="btn-secondary flex items-center gap-2">
+            <div className="flex flex-wrap gap-4">
+              <Link href="/explore" className="btn-secondary flex items-center gap-2 hover:scale-105 transition-transform">
                 <Search className="w-4 h-4" />
                 Explore Packages
               </Link>
-              <Link href="/graph" className="flex items-center gap-2 text-white hover:text-accent-300 transition-colors font-medium">
+              <Link href="/graph" className="flex items-center gap-2 text-white hover:text-accent-300 transition-all font-medium group">
                 View Graph
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </Link>
-              <Link href="/ask" className="flex items-center gap-2 text-white hover:text-accent-300 transition-colors font-medium">
+              <Link href="/ask" className="flex items-center gap-2 text-white hover:text-accent-300 transition-all font-medium group">
                 Ask AI
-                <Sparkles className="w-4 h-4" />
+                <Sparkles className="w-4 h-4 group-hover:scale-125 transition-transform text-accent-300" />
               </Link>
             </div>
           </div>
           <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.4 }}
+            initial={{ opacity: 0, scale: 0.8, rotate: -10 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            transition={{ delay: 0.4, type: "spring" }}
             className="hidden lg:block"
           >
             <div className="w-48 h-48 relative">
               <div className="absolute inset-0 rounded-full bg-white/10 animate-pulse-slow" />
               <div className="absolute inset-4 rounded-full bg-white/20 animate-pulse-slow animation-delay-200" />
-              <div className="absolute inset-8 rounded-full bg-white/30 flex items-center justify-center">
+              <div className="absolute inset-8 rounded-full bg-white/30 flex items-center justify-center backdrop-blur-sm border border-white/20 shadow-2xl">
                 <GitBranch className="w-16 h-16 text-white" />
               </div>
             </div>

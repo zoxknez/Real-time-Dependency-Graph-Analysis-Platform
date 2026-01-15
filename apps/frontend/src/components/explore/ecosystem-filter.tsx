@@ -19,32 +19,51 @@ export function EcosystemFilter({ selected, onSelect }: EcosystemFilterProps) {
         const color = getEcosystemColor(eco);
         const label = eco === "ALL" ? "All" : formatEcosystemName(eco);
         return (
-          <button
+          <motion.button
             key={eco}
             onClick={() => onSelect(eco)}
             className={cn(
-              "relative px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200",
+              "relative px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 group",
               isSelected
                 ? "theme-text-primary"
-                : "theme-text-muted theme-hover-text theme-inner-card-hover"
+                : "theme-text-muted hover:theme-text-secondary theme-inner-card-hover"
             )}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
           >
             {isSelected && (
               <motion.div
                 layoutId="ecosystem-filter-bg"
-                className="absolute inset-0 rounded-xl"
-                style={{ backgroundColor: `${color}30`, border: `1px solid ${color}50` }}
+                className="absolute inset-0 rounded-xl overflow-hidden"
+                style={{ backgroundColor: `${color}25`, border: `1px solid ${color}40` }}
                 transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-              />
+              >
+                <motion.div
+                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent w-1/2 -skew-x-12"
+                  animate={{
+                    left: ["-100%", "200%"],
+                  }}
+                  transition={{
+                    duration: 2,
+                    repeat: Infinity,
+                    ease: "linear",
+                  }}
+                />
+              </motion.div>
             )}
             <span className="relative flex items-center gap-2">
-              <span
-                className="w-2 h-2 rounded-full"
+              <motion.span
+                className="w-2 h-2 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.1)]"
                 style={{ backgroundColor: color }}
+                animate={isSelected ? {
+                  scale: [1, 1.4, 1],
+                  boxShadow: [`0 0 0px ${color}`, `0 0 10px ${color}`, `0 0 0px ${color}`]
+                } : {}}
+                transition={{ duration: 2, repeat: Infinity }}
               />
               {label}
             </span>
-          </button>
+          </motion.button>
         );
       })}
     </div>

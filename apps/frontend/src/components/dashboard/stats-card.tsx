@@ -72,13 +72,13 @@ export function StatsCard({
 
   if (loading) {
     return (
-      <div className="stat-card flex flex-col">
+      <div className="stat-card flex flex-col min-h-[160px]">
         <div className="flex items-start justify-between mb-4">
-          <Skeleton className="w-12 h-12 rounded-xl" />
-          <Skeleton className="w-14 h-6 rounded-lg" />
+          <Skeleton className="w-12 h-12 rounded-xl animate-pulse" />
+          <Skeleton className="w-14 h-6 rounded-lg animate-pulse" />
         </div>
-        <Skeleton className="w-24 h-8 mb-2" />
-        <Skeleton className="w-32 h-4" />
+        <Skeleton className="w-32 h-8 mb-2 animate-pulse" />
+        <Skeleton className="w-24 h-4 animate-pulse opacity-60" />
       </div>
     );
   }
@@ -88,19 +88,19 @@ export function StatsCard({
   const cardContent = (
     <>
       <div className="flex items-start justify-between mb-4">
-        <motion.div 
-          className={cn("p-3 rounded-xl transition-transform", colors.bg)}
+        <motion.div
+          className={cn("p-3 rounded-xl transition-all duration-300", colors.bg, "group-hover:scale-110 group-hover:shadow-glow")}
           whileHover={{ rotate: [0, -10, 10, 0] }}
           transition={{ duration: 0.5 }}
         >
-          <Icon className={cn("w-6 h-6", colors.icon)} />
+          <Icon className={cn("w-6 h-6 transition-colors", colors.icon)} />
         </motion.div>
         {trend && (
           <motion.div
             initial={{ opacity: 0, x: 10 }}
             animate={{ opacity: 1, x: 0 }}
             className={cn(
-              "flex items-center gap-1 text-sm font-medium px-2 py-1 rounded-lg",
+              "flex items-center gap-1 text-sm font-medium px-2 py-1 rounded-lg transition-transform group-hover:scale-105",
               trendUp
                 ? "text-success bg-success/10"
                 : "text-danger bg-danger/10"
@@ -115,25 +115,28 @@ export function StatsCard({
           </motion.div>
         )}
       </div>
-      <h3 className="text-3xl font-bold theme-text-primary mb-1">
-        {typeof value === "number" ? (
-          <AnimatedCounter value={numericValue} formatFn={formatCompactNumber} />
-        ) : (
-          value
+      <div className="mt-auto">
+        <h3 className="text-3xl font-bold theme-text-primary mb-1 tracking-tight group-hover:text-primary-400 transition-colors">
+          {typeof value === "number" ? (
+            <AnimatedCounter value={numericValue} formatFn={formatCompactNumber} />
+          ) : (
+            value
+          )}
+        </h3>
+        <p className="text-sm font-medium theme-text-tertiary transition-colors group-hover:theme-text-secondary">{title}</p>
+        {description && (
+          <p className="text-xs theme-text-faint mt-1 group-hover:theme-text-muted transition-colors line-clamp-1">
+            {description}
+          </p>
         )}
-      </h3>
-      <p className="text-sm font-medium theme-text-tertiary">{title}</p>
-      {description && (
-        <p className="text-xs theme-text-faint mt-1 group-hover:theme-text-muted transition-colors">
-          {description}
-        </p>
-      )}
+      </div>
     </>
   );
 
   const cardClassName = cn(
-    "stat-card flex flex-col group cursor-pointer",
-    "hover:ring-2 transition-all duration-300",
+    "stat-card flex flex-col group cursor-pointer relative overflow-hidden",
+    "hover:ring-1 hover:ring-white/10 transition-all duration-500",
+    "before:absolute before:inset-0 before:bg-gradient-to-br before:from-white/5 before:to-transparent before:opacity-0 before:transition-opacity hover:before:opacity-100",
     colors.ring
   );
 
