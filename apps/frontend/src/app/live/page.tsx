@@ -26,10 +26,10 @@ import { cn, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass } fr
 import { EcosystemFilter } from "@/components/explore/ecosystem-filter";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { ConnectionIndicator } from "@/components/ui/connection-indicator";
-import { 
-  useLivePackageActivity, 
-  useBreakingChanges, 
-  useConnectionStatus 
+import {
+  useLivePackageActivity,
+  useBreakingChanges,
+  useConnectionStatus
 } from "@/lib/hooks";
 import type { Ecosystem, EventType, LivePackageEvent } from "@/lib/graphql/types";
 
@@ -76,7 +76,7 @@ function mapEventType(type: EventType | string): "publish" | "update" | "yank" {
   switch (type) {
     case "PUBLISH": return "publish";
     case "UPDATE": return "update";
-    case "YANK": 
+    case "YANK":
     case "DEPRECATE": return "yank";
     default: return "publish";
   }
@@ -99,14 +99,14 @@ const generateVersion = (ecosystem: string): string => {
   const major = Math.floor(Math.random() * 5);
   const minor = Math.floor(Math.random() * 30);
   const patch = Math.floor(Math.random() * 20);
-  
+
   if (ecosystem === "NPM" && Math.random() > 0.9) {
     return `${major}.${minor}.${patch}-beta.${Math.floor(Math.random() * 5)}`;
   }
   if (ecosystem === "CARGO" && Math.random() > 0.95) {
     return `${major}.${minor}.${patch}-rc.${Math.floor(Math.random() * 3) + 1}`;
   }
-  
+
   return `${major}.${minor}.${patch}`;
 };
 
@@ -118,24 +118,24 @@ export default function LivePage() {
   const [selectedEventType, setSelectedEventType] = useState("ALL");
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
-  
+
   // Simulated events state (fallback mode)
   const [simulatedEvents, setSimulatedEvents] = useState<SimulatedEvent[]>([]);
   const eventIdRef = useRef(10);
   const startTimeRef = useRef(Date.now());
 
   // Convert filter values to subscription variables
-  const ecosystemFilter = selectedEcosystem === "ALL" 
-    ? undefined 
+  const ecosystemFilter = selectedEcosystem === "ALL"
+    ? undefined
     : [selectedEcosystem as Ecosystem];
   const eventTypeFilter = selectedEventType === "ALL"
     ? undefined
     : [selectedEventType.toUpperCase() as EventType];
 
   // Real-time subscription hook
-  const { 
-    events: liveEvents, 
-    stats: liveStats, 
+  const {
+    events: liveEvents,
+    stats: liveStats,
     loading: _liveLoading,
     error: liveError,
     clearEvents: clearLiveEvents,
@@ -152,7 +152,7 @@ export default function LivePage() {
   });
 
   // Breaking changes subscription
-  const { 
+  const {
     breakingChanges: _breakingChanges,
     unreadCount: breakingChangesCount,
   } = useBreakingChanges({
@@ -175,7 +175,7 @@ export default function LivePage() {
     const packageName = packages[Math.floor(Math.random() * packages.length)]!;
     const typeIndex = Math.floor(Math.random() * EVENT_TYPES.length);
     const type = EVENT_TYPES[typeIndex]!;
-    
+
     return {
       id: String(eventIdRef.current++),
       package: packageName,
@@ -214,17 +214,17 @@ export default function LivePage() {
       acc[e.ecosystem] = (acc[e.ecosystem] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
-    
+
     const byType = events.reduce((acc, e) => {
       acc[e.type] = (acc[e.type] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
-    
+
     const elapsedMinutes = Math.max(1, (Date.now() - startTimeRef.current) / 60000);
-    const eventsPerMinute = useFallback 
+    const eventsPerMinute = useFallback
       ? Math.round((events.length / elapsedMinutes) * 10) / 10
       : liveStats.eventsPerMinute;
-    
+
     return { byEcosystem, byType, total: events.length, eventsPerMinute };
   }, [displayEvents, useFallback, liveStats]);
 
@@ -274,209 +274,227 @@ export default function LivePage() {
     return date.toLocaleTimeString();
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
-      >
-        <div>
-          <h1 className="text-3xl font-bold theme-text-primary flex items-center gap-3">
-            <Activity className="w-8 h-8 text-accent-400" />
-            Live Feed
-            <ConnectionIndicator 
-              status={useFallback ? "disconnected" : connectionStatus} 
-              size="sm"
-            />
-          </h1>
-          <p className="theme-text-muted mt-1">
-            {useFallback 
-              ? "Demo mode - simulated events" 
-              : "Real-time package version updates across ecosystems"
-            }
-          </p>
+  // Header - Mission Control Style
+  const Header = () => (
+    <motion.div
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="relative mb-8"
+    >
+      <div className="absolute top-1/2 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent -z-10" />
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+        <div className="flex items-center gap-4 bg-slate-950 px-6 py-2 relative z-10">
+          <div className="relative">
+            <div className="absolute inset-0 bg-accent-500/20 blur-xl rounded-full animate-pulse" />
+            <Activity className="w-8 h-8 text-accent-400 relative z-10" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-black theme-text-primary tracking-tight leading-none">
+              MISSION <span className="text-gradient-accent">CONTROL</span>
+            </h1>
+            <div className="flex items-center gap-2 mt-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent-500 animate-pulse" />
+              <p className="text-[10px] uppercase font-bold tracking-[0.2em] theme-text-muted">
+                Global Dependency Feed
+              </p>
+            </div>
+          </div>
         </div>
 
-        {/* Controls */}
-        <div className="flex items-center gap-3">
-          {/* Breaking Changes Badge */}
+        {/* Controls Console */}
+        <div className="flex items-center gap-2 bg-slate-900/80 backdrop-blur-md p-2 rounded-xl border border-white/10 shadow-lg">
           {breakingChangesCount > 0 && (
-            <motion.button
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="relative btn-secondary flex items-center gap-2 border-danger/50 text-danger"
+            <button
               onClick={() => router.push("/breaking-changes")}
+              className="relative px-3 py-2 rounded-lg bg-danger/10 hover:bg-danger/20 border border-danger/20 text-danger text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all group"
             >
-              <AlertTriangle className="w-4 h-4" />
-              <span className="hidden sm:inline">Breaking Changes</span>
-              <span className="absolute -top-2 -right-2 bg-danger text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Alerts</span>
+              <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-danger text-[9px] text-white">
                 {breakingChangesCount}
               </span>
-            </motion.button>
+            </button>
           )}
-          
+
+          <div className="w-px h-6 bg-white/10 mx-1" />
+
           <button
             onClick={() => setIsPaused(!isPaused)}
             className={cn(
-              "btn-secondary flex items-center gap-2",
-              isPaused && "border-warning/50 text-warning"
+              "p-2 rounded-lg border transition-all relative group",
+              isPaused
+                ? "bg-amber-500/10 border-amber-500/20 text-amber-500"
+                : "bg-white/5 border-white/5 text-slate-400 hover:text-white hover:bg-white/10"
             )}
+            title={isPaused ? "Resume Feed" : "Pause Feed"}
           >
-            {isPaused ? (
-              <>
-                <Play className="w-4 h-4" />
-                Resume
-              </>
-            ) : (
-              <>
-                <Pause className="w-4 h-4" />
-                Pause
-              </>
-            )}
+            {isPaused ? <Play className="w-4 h-4" /> : <Pause className="w-4 h-4" />}
           </button>
+
           <button
             onClick={clearEvents}
-            className="btn-secondary flex items-center gap-2"
+            className="p-2 rounded-lg bg-white/5 border border-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-all"
+            title="Clear Buffer"
           >
             <Trash2 className="w-4 h-4" />
-            Clear
           </button>
+
           <button
             onClick={() => setSoundEnabled(!soundEnabled)}
             className={cn(
-              "btn-secondary flex items-center gap-2",
-              soundEnabled && "border-accent-500/50 text-accent-400"
+              "p-2 rounded-lg border transition-all",
+              soundEnabled
+                ? "bg-accent-500/10 border-accent-500/20 text-accent-400"
+                : "bg-white/5 border-white/5 text-slate-400 hover:text-white hover:bg-white/10"
             )}
-            title={soundEnabled ? "Disable notifications" : "Enable notifications"}
+            title="Toggle Sound"
           >
             {soundEnabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
           </button>
-          {/* Toggle between live and demo mode */}
+
+          <div className="w-px h-6 bg-white/10 mx-1" />
+
           <button
             onClick={toggleFallback}
             className={cn(
-              "btn-secondary flex items-center gap-2",
-              !useFallback && "border-success/50 text-success"
+              "px-3 py-2 rounded-lg border text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2",
+              useFallback
+                ? "bg-white/5 border-white/5 text-slate-400 hover:bg-white/10"
+                : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
             )}
-            title={useFallback ? "Switch to live mode" : "Switch to demo mode"}
           >
-            <RefreshCw className={cn("w-4 h-4", !useFallback && "animate-spin-slow")} />
-            <span className="hidden sm:inline">{useFallback ? "Go Live" : "Demo"}</span>
+            <RefreshCw className={cn("w-3.5 h-3.5", !useFallback && "animate-spin-slow")} />
+            <span className="hidden sm:inline">{useFallback ? "SIMULATING" : "LIVE SYNC"}</span>
           </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+
+  // Stats Modules
+  const StatsModules = () => (
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+      {/* Total Events */}
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="relative group p-4 rounded-xl bg-slate-900/50 border border-white/5 backdrop-blur-sm overflow-hidden"
+      >
+        <div className="absolute inset-0 bg-primary-500/5 translate-y-full group-hover:translate-y-0 transition-transform duration-500" />
+        <div className="relative z-10">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Total Signals</p>
+          <div className="flex items-baseline gap-1">
+            <span className="text-2xl font-black text-white tracking-tight">
+              <AnimatedCounter value={stats.total} />
+            </span>
+          </div>
+        </div>
+        <div className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/5 text-primary-400">
+          <Activity className="w-3.5 h-3.5" />
         </div>
       </motion.div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="glass-card p-4"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary-500/20">
-              <Activity className="w-5 h-5 text-primary-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold theme-text-primary">
-                <AnimatedCounter value={stats.total} />
-              </p>
-              <p className="text-xs theme-text-muted">Total Events</p>
-            </div>
-          </div>
-        </motion.div>
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.12 }}
-          className="glass-card p-4"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-accent-500/20">
-              <BarChart3 className="w-5 h-5 text-accent-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold theme-text-primary">
-                {stats.eventsPerMinute}
-              </p>
-              <p className="text-xs theme-text-muted">Events/min</p>
-            </div>
-          </div>
-        </motion.div>
-        {ALL_ECOSYSTEMS.map((eco, idx) => (
-          <motion.div
-            key={eco}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15 + idx * 0.05 }}
-            className="glass-card p-4 cursor-pointer hover:border-primary-500/30 transition-colors"
-            onClick={() => setSelectedEcosystem(selectedEcosystem === eco ? "ALL" : eco)}
-          >
-            <div className="flex items-center gap-3">
-              <div 
-                className="p-2 rounded-lg"
-                style={{ backgroundColor: `${getEcosystemColor(eco)}20` }}
-              >
-                <Package className="w-5 h-5" style={{ color: getEcosystemColor(eco) }} />
-              </div>
-              <div>
-                <p className="text-2xl font-bold theme-text-primary">
-                  <AnimatedCounter value={stats.byEcosystem[eco] || 0} />
-                </p>
-                <p className="text-xs theme-text-muted">{formatEcosystemName(eco)}</p>
-              </div>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-
-      {/* Status Bar */}
+      {/* OPS/MIN */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="glass-card p-4"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 0.05 }}
+        className="relative group p-4 rounded-xl bg-slate-900/50 border border-white/5 backdrop-blur-sm overflow-hidden"
       >
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Radio
-                className={cn(
-                  "w-5 h-5",
-                  isPaused ? "text-warning" : "text-success animate-pulse"
-                )}
-              />
-              <span
-                className={cn(
-                  "text-sm font-medium",
-                  isPaused ? "text-warning" : "text-success"
-                )}
-              >
-                {isPaused ? "Paused" : "Connected"}
+        <div className="absolute inset-0 bg-emerald-500/5 translate-y-full group-hover:translate-y-0 transition-transform duration-500" />
+        <div className="relative z-10">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Throughput</p>
+          <div className="flex items-baseline gap-1">
+            <span className="text-2xl font-black text-emerald-400 tracking-tight">
+              {stats.eventsPerMinute}
+            </span>
+            <span className="text-[10px] font-mono text-emerald-500/70">ops/m</span>
+          </div>
+        </div>
+        <div className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/5 text-emerald-400">
+          <BarChart3 className="w-3.5 h-3.5" />
+        </div>
+      </motion.div>
+
+      {/* Ecosystem Stats */}
+      {ALL_ECOSYSTEMS.map((eco, idx) => (
+        <motion.div
+          key={eco}
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.1 + idx * 0.05 }}
+          onClick={() => setSelectedEcosystem(selectedEcosystem === eco ? "ALL" : eco)}
+          className={cn(
+            "relative group p-4 rounded-xl border backdrop-blur-sm overflow-hidden cursor-pointer transition-all",
+            selectedEcosystem === eco
+              ? "bg-slate-800/80 border-white/20 shadow-lg ring-1 ring-white/10"
+              : "bg-slate-900/50 border-white/5 hover:border-white/10"
+          )}
+        >
+          <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ backgroundColor: `${getEcosystemColor(eco)}10` }} />
+
+          <div className="relative z-10">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1" style={{ color: selectedEcosystem === eco ? getEcosystemColor(eco) : undefined }}>
+              {formatEcosystemName(eco)}
+            </p>
+            <div className="flex items-baseline gap-1">
+              <span className="text-2xl font-black text-white tracking-tight">
+                <AnimatedCounter value={stats.byEcosystem[eco] || 0} />
               </span>
             </div>
-            <div className="w-px h-6 theme-border" />
-            <span className="text-sm theme-text-muted">
-              {filteredEvents.length} of {displayEvents.length} events
-            </span>
+          </div>
+          <div className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/5 opacity-50 group-hover:opacity-100 transition-opacity" style={{ color: getEcosystemColor(eco) }}>
+            <Package className="w-3.5 h-3.5" />
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="relative min-h-[calc(100vh-4rem)] -mt-6 -mx-4 md:-mx-8 px-4 md:px-8 py-8 overflow-hidden">
+      {/* Background Layer */}
+      <div className="absolute inset-0 bg-surface-950 -z-20" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(18,18,27,0.8)_2px,transparent_2px),linear-gradient(90deg,rgba(18,18,27,0.8)_2px,transparent_2px)] bg-[size:40px_40px] opacity-20 -z-10" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(99,102,241,0.15),transparent_70%)] -z-10" />
+
+      <div className="max-w-7xl mx-auto relative">
+        <Header />
+        <StatsModules />
+
+        {/* Status Bar & Filters */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="flex flex-col lg:flex-row gap-4 mb-4"
+        >
+          {/* Status Indicator */}
+          <div className="glass-card px-4 py-3 flex items-center gap-4 min-w-[240px]">
+            <div className="relative">
+              <div className={cn("w-3 h-3 rounded-full", isPaused ? "bg-amber-500" : "bg-emerald-500")} />
+              {!isPaused && <div className="absolute inset-0 w-3 h-3 rounded-full bg-emerald-500 animate-ping opacity-50" />}
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500">System Status</span>
+              <span className={cn("text-xs font-mono font-bold", isPaused ? "text-amber-500" : "text-emerald-400 uppercase")}>
+                {isPaused ? "PAUSED - BUFFERING" : "ONLINE - RECEIVING"}
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4">
-            {/* Event Type Filter */}
+          {/* Filter Bar */}
+          <div className="glass-card p-2 flex-1 flex items-center justify-between gap-4 overflow-x-auto scrollbar-hide">
             <div className="flex items-center gap-1">
-              <Filter className="w-4 h-4 theme-text-faint mr-1" />
               {EVENT_TYPE_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
                   onClick={() => setSelectedEventType(opt.value)}
                   className={cn(
-                    "px-3 py-1.5 text-xs rounded-lg transition-colors flex items-center gap-1.5",
+                    "px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center gap-2 border",
                     selectedEventType === opt.value
-                      ? "theme-panel theme-text-primary"
-                      : "theme-text-muted theme-hover-text theme-inner-card-hover"
+                      ? "bg-slate-800 border-white/20 text-white shadow-lg"
+                      : "border-transparent text-slate-500 hover:text-slate-300 hover:bg-white/5"
                   )}
                 >
                   <opt.icon className={cn("w-3 h-3", opt.color)} />
@@ -484,154 +502,125 @@ export default function LivePage() {
                 </button>
               ))}
             </div>
+            <div className="pl-4 border-l border-white/10">
+              <EcosystemFilter selected={selectedEcosystem} onSelect={setSelectedEcosystem} />
+            </div>
+          </div>
+        </motion.div>
 
-            <div className="w-px h-6 theme-border hidden lg:block" />
+        {/* Data Stream */}
+        <div className="glass-card border-white/10 overflow-hidden relative min-h-[500px]">
+          {/* Header Row */}
+          <div className="grid grid-cols-[auto_1fr_auto_auto] gap-4 px-6 py-3 bg-slate-950/50 border-b border-white/10 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+            <div className="w-8 text-center">Sys</div>
+            <div>Package Identity</div>
+            <div className="text-center w-24 hidden md:block">Event</div>
+            <div className="text-right w-32">Version</div>
+          </div>
 
-            <EcosystemFilter
-              selected={selectedEcosystem}
-              onSelect={setSelectedEcosystem}
-            />
+          <div className="relative h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+            <AnimatePresence initial={false}>
+              {filteredEvents.length === 0 ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-12 text-center opacity-50">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                    className="w-24 h-24 rounded-full border-2 border-dashed border-slate-700 mb-8"
+                  />
+                  <h3 className="text-xl font-bold theme-text-primary mb-2">Scanning Global Frequencies</h3>
+                  <p className="text-sm font-mono text-slate-500">Awaiting incoming data packets...</p>
+                </div>
+              ) : (
+                filteredEvents.map((event) => (
+                  <motion.div
+                    key={event.id}
+                    initial={{ opacity: 0, x: -20, height: 0 }}
+                    animate={{ opacity: 1, x: 0, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="group border-b border-white/5 hover:bg-white/[0.02] transition-colors relative"
+                  >
+                    <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-accent-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+
+                    <div className="grid grid-cols-[auto_1fr_auto_auto] gap-4 px-6 py-4 items-center">
+                      {/* Ecosystem Icon */}
+                      <div className="w-8 flex justify-center">
+                        <div
+                          className="w-6 h-6 rounded flex items-center justify-center"
+                          style={{ backgroundColor: `${getEcosystemColor(event.ecosystem)}15` }}
+                        >
+                          <Package className="w-3.5 h-3.5" style={{ color: getEcosystemColor(event.ecosystem) }} />
+                        </div>
+                      </div>
+
+                      {/* Package Details */}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm font-bold text-white font-mono group-hover:text-accent-400 transition-colors truncate">
+                            {event.package}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {formatTime(event.time)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Event Type */}
+                      <div className="hidden md:flex justify-center w-24">
+                        <div className={cn(
+                          "text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5",
+                          event.type === "publish" ? "text-emerald-400" :
+                            event.type === "update" ? "text-primary-400" : "text-red-400"
+                        )}>
+                          {event.type === "publish" && <Zap className="w-3 h-3" />}
+                          {event.type === "update" && <TrendingUp className="w-3 h-3" />}
+                          {event.type === "yank" && <Trash2 className="w-3 h-3" />}
+                          {event.type}
+                        </div>
+                      </div>
+
+                      {/* Version & Actions */}
+                      <div className="w-32 flex justify-end items-center gap-4 relative">
+                        <span className={cn(
+                          "font-mono text-xs px-2 py-1 rounded bg-white/5 border border-white/10 group-hover:border-white/20 transition-colors",
+                          event.type === "yank" && "line-through opacity-50"
+                        )}>
+                          v{event.version}
+                        </span>
+
+                        {/* Hover Actions */}
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all bg-slate-900/90 shadow-xl rounded-lg p-1 border border-white/10 backdrop-blur-md translate-x-4 group-hover:translate-x-0 z-10">
+                          <button
+                            onClick={(e) => { e.preventDefault(); navigateToGraph(event.ecosystem, event.package); }}
+                            className="p-1.5 rounded hover:bg-primary-500/20 text-slate-400 hover:text-primary-400 transition-colors"
+                            title="Graph"
+                          >
+                            <GitBranch className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => { e.preventDefault(); navigateToImpact(event.ecosystem, event.package); }}
+                            className="p-1.5 rounded hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors"
+                            title="Impact"
+                          >
+                            <Shield className="w-3.5 h-3.5" />
+                          </button>
+                          <a
+                            href={`/explore?q=${event.ecosystem.toLowerCase()}:${event.package}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))
+              )}
+            </AnimatePresence>
           </div>
         </div>
-      </motion.div>
-
-      {/* Events List */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
-        className="glass-card overflow-hidden"
-      >
-        <div className="p-4 theme-border border-b">
-          <h3 className="text-sm font-semibold theme-text-tertiary">
-            Version Events
-          </h3>
-        </div>
-
-        <div className="max-h-[60vh] overflow-y-auto">
-          <AnimatePresence initial={false}>
-            {filteredEvents.length === 0 ? (
-              <div className="p-12 text-center theme-text-faint">
-                <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>No events yet...</p>
-              </div>
-            ) : (
-              filteredEvents.map((event) => (
-                <motion.div
-                  key={event.id}
-                  initial={{ opacity: 0, height: 0, x: -20 }}
-                  animate={{ opacity: 1, height: "auto", x: 0 }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="block border-b theme-border last:border-0 group"
-                >
-                  <div className="flex items-center gap-4 p-4 theme-inner-card-hover transition-colors">
-                    {/* Pulse Indicator */}
-                    <div className="relative">
-                      <div
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: getEcosystemColor(event.ecosystem) }}
-                      />
-                      <div
-                        className="absolute inset-0 w-3 h-3 rounded-full animate-ping opacity-75"
-                        style={{ backgroundColor: getEcosystemColor(event.ecosystem) }}
-                      />
-                    </div>
-
-                    {/* Package Info */}
-                    <div className="p-2 rounded-lg theme-inner-card group-hover:theme-inner-card-hover transition-colors">
-                      <Package className="w-5 h-5 theme-text-muted" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium theme-text-primary group-hover:text-primary-400 transition-colors">
-                          {event.package}
-                        </span>
-                        <span
-                          className={cn(
-                            "text-xs px-2 py-0.5 rounded-full font-medium",
-                            getEcosystemBadgeClass(event.ecosystem)
-                          )}
-                        >
-                          {formatEcosystemName(event.ecosystem)}
-                        </span>
-                      </div>
-                      <p className="text-sm theme-text-muted mt-0.5 flex items-center gap-2">
-                        {event.type === "publish" && (
-                          <>
-                            <Zap className="w-3 h-3 text-success" />
-                            <span className="text-success">New version published</span>
-                          </>
-                        )}
-                        {event.type === "update" && (
-                          <>
-                            <TrendingUp className="w-3 h-3 text-primary-400" />
-                            <span className="text-primary-400">Version updated</span>
-                          </>
-                        )}
-                        {event.type === "yank" && (
-                          <>
-                            <Trash2 className="w-3 h-3 text-warning" />
-                            <span className="text-warning">Version yanked</span>
-                          </>
-                        )}
-                      </p>
-                    </div>
-
-                    {/* Version */}
-                    <div className="text-right">
-                      <span className={cn(
-                        "font-mono text-sm px-2 py-1 rounded",
-                        event.type === "yank" 
-                          ? "text-warning bg-warning/10 line-through" 
-                          : "text-accent-400 bg-accent-500/10"
-                      )}>
-                        v{event.version}
-                      </span>
-                    </div>
-
-                    {/* Time */}
-                    <div className="text-sm theme-text-faint min-w-[70px] text-right">
-                      {formatTime(event.time)}
-                    </div>
-                    
-                    {/* Action Buttons */}
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          navigateToGraph(event.ecosystem, event.package);
-                        }}
-                        className="p-1.5 rounded-lg theme-inner-card-hover transition-colors"
-                        title="View in Graph"
-                      >
-                        <GitBranch className="w-4 h-4 text-primary-400" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.preventDefault();
-                          navigateToImpact(event.ecosystem, event.package);
-                        }}
-                        className="p-1.5 rounded-lg theme-inner-card-hover transition-colors"
-                        title="Impact Analysis"
-                      >
-                        <Shield className="w-4 h-4 text-danger" />
-                      </button>
-                      <a
-                        href={`/explore?q=${event.ecosystem.toLowerCase()}:${event.package}`}
-                        className="p-1.5 rounded-lg theme-inner-card-hover transition-colors"
-                        title="View Details"
-                      >
-                        <ExternalLink className="w-4 h-4 theme-text-muted" />
-                      </a>
-                    </div>
-                  </div>
-                </motion.div>
-              ))
-            )}
-          </AnimatePresence>
-        </div>
-      </motion.div>
+      </div>
     </div>
   );
 }

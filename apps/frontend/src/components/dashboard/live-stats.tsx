@@ -22,7 +22,7 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className={cn("glass-card p-6", className)}
+      className={cn("glass-card p-6 border border-white/10 shadow-xl group hover:shadow-accent-500/10 transition-shadow", className)}
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
@@ -38,19 +38,28 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
         <ConnectionDot connected={isConnected} />
       </div>
 
+      {/* Main Stats fallback if not connected */}
+      {!isConnected && (
+        <div className="absolute inset-x-0 bottom-0 top-16 bg-surface-900/40 backdrop-blur-[2px] z-20 flex flex-col items-center justify-center p-6 text-center">
+          <Activity className="w-8 h-8 text-accent-500/50 mb-2 animate-pulse" />
+          <p className="text-sm font-semibold theme-text-primary">Simulated Feed</p>
+          <p className="text-xs theme-text-muted max-w-[200px]">Live connection pending. Displaying simulated activity for preview.</p>
+        </div>
+      )}
+
       {/* Main Stats */}
-      {stats ? (
+      {true ? ( // Always show stats (either real or placeholder)
         <div className="space-y-4">
           {/* Events Per Minute */}
           <div className="flex items-center justify-between">
             <span className="text-sm theme-text-muted">Events/min</span>
             <div className="flex items-center gap-2">
               <span className="text-2xl font-bold text-accent-400">
-                {stats.eventsPerMinute.toFixed(1)}
+                {(stats?.eventsPerMinute || 4.2).toFixed(1)}
               </span>
               <TrendIndicator
-                current={stats.eventsPerMinute}
-                history={history.map(h => h.eventsPerMinute)}
+                current={stats?.eventsPerMinute || 4.2}
+                history={(history || []).map(h => h.eventsPerMinute)}
               />
             </div>
           </div>
@@ -62,7 +71,7 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
               Active Users
             </span>
             <span className="text-lg font-semibold theme-text-primary">
-              {stats.activeConnections}
+              {stats?.activeConnections || 12}
             </span>
           </div>
 
@@ -72,7 +81,7 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
               <span className="text-xs theme-text-faint">Activity Trend (last hour)</span>
             </div>
             <SparklineChart
-              data={history.map(h => h.eventsPerMinute)}
+              data={history?.length > 0 ? history.map(h => h.eventsPerMinute) : [3.8, 4.1, 4.0, 4.2, 4.5, 4.3, 4.2]}
               height={40}
             />
           </div>
@@ -94,7 +103,12 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
             </div>
             <div className="space-y-2 max-h-[140px] overflow-hidden relative">
               <AnimatePresence mode="popLayout">
-                {stats.topEcosystems?.slice(0, 4).map((eco, i) => (
+                {(stats?.topEcosystems || [
+                  { ecosystem: "CARGO", count: 12 },
+                  { ecosystem: "PYPI", count: 8 },
+                  { ecosystem: "NPM", count: 15 },
+                  { ecosystem: "MAVEN", count: 5 }
+                ]).slice(0, 4).map((eco, i) => (
                   <motion.div
                     key={eco.ecosystem + i}
                     initial={{ opacity: 0, x: -10 }}
@@ -106,7 +120,7 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
                     <div className="flex items-center gap-2">
                       <div
                         className="w-1.5 h-1.5 rounded-full"
-                        style={{ backgroundColor: eco.ecosystem === "NPM" ? "#cb3837" : "#f7a41d" }}
+                        style={{ backgroundColor: eco.ecosystem === "NPM" ? "#cb3837" : (eco.ecosystem === "CARGO" ? "#f7a41d" : "#3776ab") }}
                       />
                       <span className="theme-text-secondary group-hover:theme-text-primary">
                         {eco.ecosystem} indexing update
@@ -139,8 +153,9 @@ function ConnectionDot({ connected }: { connected: boolean }) {
       <span className="relative flex h-2.5 w-2.5">
         {connected ? (
           <>
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-75" />
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-500 opacity-20 duration-1000" />
+            <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-green-500/40 duration-2000" />
+            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500 shadow-[0_0_10px_#22c55e]" />
           </>
         ) : (
           <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-gray-500" />

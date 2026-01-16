@@ -73,7 +73,7 @@ export function Sidebar() {
       initial={false}
       animate={{ width: isCollapsed ? 80 : 280 }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
-      className="relative flex flex-col h-full glass-card rounded-none border-l-0 border-t-0 border-b-0 transition-colors duration-300"
+      className="relative z-50 flex flex-col h-full glass-card rounded-none border-l-0 border-t-0 border-b-0 transition-colors duration-300"
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-6 border-b theme-border">

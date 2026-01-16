@@ -24,20 +24,24 @@ import { GET_REVERSE_DEPENDENTS } from "@/lib/graphql/queries";
 import { getEcosystemColor, parsePackageId, formatEcosystemName } from "@/lib/utils";
 import { GraphControls } from "@/components/graph/graph-controls";
 import { NodeTooltip } from "@/components/graph/node-tooltip";
-import { GraphMinimap } from "@/components/graph/graph-minimap";
 import { LiveUpdateIndicator } from "@/components/graph/live-update-indicator";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { QueryError, EmptyState } from "@/components/ui/error-display";
 import { useDependencyGraphUpdates, useConnectionStatus } from "@/lib/hooks";
 import type { DependencyGraphUpdate, PackageEdge } from "@/lib/graphql/types";
-import type { NodeObject, LinkObject, ForceGraph2DMethods } from "react-force-graph-2d";
+import * as THREE from "three";
+import SpriteText from "three-spritetext";
+import type { NodeObject, LinkObject, ForceGraphMethods } from "react-force-graph-3d";
 
-// Dynamic import for SSR compatibility
-const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
+// Dynamic import for 3D Graph
+const ForceGraph3D = dynamic(() => import("react-force-graph-3d"), {
   ssr: false,
   loading: () => (
     <div className="w-full h-full flex items-center justify-center">
-      <Loader2 className="w-8 h-8 text-primary-400 animate-spin" />
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="w-12 h-12 text-primary-400 animate-spin" />
+        <p className="theme-text-muted animate-pulse">Initializing 3D Engine...</p>
+      </div>
     </div>
   ),
 });
@@ -65,15 +69,7 @@ function GraphPageContent() {
   const searchParams = useSearchParams();
   const initialPkg = searchParams.get("pkg") || "";
 
-  type ForceGraphApiCompat = {
-    zoom(): number;
-    zoom(zoom: number, ms?: number): void;
-    centerAt(): { x: number; y: number };
-    centerAt(x: number, y: number, ms?: number): void;
-    zoomToFit(ms?: number, padding?: number): void;
-  };
-
-  const graphRef = useRef<ForceGraph2DMethods | null>(null);
+  const graphRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [packageId, setPackageId] = useState(initialPkg);
   const [inputValue, setInputValue] = useState(initialPkg);
@@ -86,8 +82,9 @@ function GraphPageContent() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [autoRotate, setAutoRotate] = useState(true);
+  const [isPaused, setIsPaused] = useState(false);
   const showLiveUpdates = true;
-  const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: 0, height: 0 });
 
   const [getReverseDeps, { data: reverseDepsData, loading, error }] = useLazyQuery(GET_REVERSE_DEPENDENTS);
 
@@ -233,54 +230,48 @@ function GraphPageContent() {
 
   const handleZoomIn = () => {
     if (!graphRef.current) return;
-    const fg = graphRef.current as unknown as ForceGraphApiCompat;
-    const currentZoom = fg.zoom();
-    fg.zoom(currentZoom * 1.3, 300);
+    const currentPos = (graphRef.current as any).cameraPosition();
+    const newZ = currentPos.z * 0.7;
+    graphRef.current.cameraPosition({ z: newZ }, undefined, 400);
   };
   const handleZoomOut = () => {
     if (!graphRef.current) return;
-    const fg = graphRef.current as unknown as ForceGraphApiCompat;
-    const currentZoom = fg.zoom();
-    fg.zoom(currentZoom / 1.3, 300);
+    const currentPos = (graphRef.current as any).cameraPosition();
+    const newZ = currentPos.z / 0.7;
+    graphRef.current.cameraPosition({ z: newZ }, undefined, 400);
   };
   const handleCenter = () => {
     if (!graphRef.current) return;
-    const fg = graphRef.current as unknown as ForceGraphApiCompat;
-    fg.zoomToFit(400);
+    graphRef.current.zoomToFit(400);
   };
   const handleRefresh = () => loadGraph();
 
-  // Navigate to position from minimap
-  const navigateToPosition = useCallback((x: number, y: number) => {
-    if (graphRef.current) {
-      graphRef.current.centerAt(x, y, 300);
-    }
-  }, []);
-
-  // Update viewport state when graph moves (for minimap)
-  const updateViewBox = useCallback(() => {
-    if (!graphRef.current || !containerRef.current) return;
-
-    const { width, height } = containerRef.current.getBoundingClientRect();
-    const fg = graphRef.current as unknown as ForceGraphApiCompat;
-    const zoom = fg.zoom();
-    const center = fg.centerAt();
-
-    if (center) {
-      setViewBox({
-        x: center.x - (width / 2 / zoom),
-        y: center.y - (height / 2 / zoom),
-        width: width / zoom,
-        height: height / zoom,
-      });
-    }
-  }, []);
-
+  // Camera auto-orbit effect
   useEffect(() => {
-    if (graphData.nodes.length > 0) {
-      updateViewBox();
+    if (!graphRef.current) return;
+    if (!autoRotate) return;
+
+    let angle = 0;
+    const distance = 400;
+    const interval = setInterval(() => {
+      if (graphRef.current && !hoveredNode && !selectedNode && autoRotate) {
+        angle += 0.002;
+        graphRef.current.cameraPosition({
+          x: distance * Math.sin(angle),
+          z: distance * Math.cos(angle)
+        });
+      }
+    }, 20);
+
+    return () => clearInterval(interval);
+  }, [hoveredNode, selectedNode, autoRotate]);
+
+  // Initial camera transition
+  useEffect(() => {
+    if (graphData.nodes.length > 0 && graphRef.current) {
+      graphRef.current.zoomToFit(1000);
     }
-  }, [graphData.nodes.length, updateViewBox]);
+  }, [graphData.nodes.length]);
 
   // Export functions
   const exportAsJSON = useCallback(() => {
@@ -330,7 +321,24 @@ function GraphPageContent() {
   }, [packageId]);
 
   const handleNodeClick = useCallback((node: NodeObject) => {
-    setSelectedNode(node as GraphNode);
+    const graphNode = node as GraphNode;
+    setSelectedNode(graphNode);
+
+    // Aim at node from outside it
+    if (graphRef.current) {
+      const distance = 150;
+      const distRatio = 1 + distance / Math.hypot(graphNode.x || 0, graphNode.y || 0, graphNode.z || 0);
+
+      graphRef.current.cameraPosition(
+        {
+          x: (graphNode.x || 0) * distRatio,
+          y: (graphNode.y || 0) * distRatio,
+          z: (graphNode.z || 0) * distRatio
+        }, // new position
+        node as any, // lookAt component
+        2000  // transition ms
+      );
+    }
   }, []);
 
   const navigateToNode = useCallback((nodeId: string) => {
@@ -384,7 +392,7 @@ function GraphPageContent() {
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="Enter package ID..."
-            className="input-search max-w-xs"
+            className="input-search max-w-xs !pl-4 focus:ring-primary-500/50 shadow-lg"
           />
           <button type="submit" className="btn-primary whitespace-nowrap">
             Load Graph
@@ -401,59 +409,100 @@ function GraphPageContent() {
         onMouseMove={handleMouseMove}
         className={`flex-1 relative graph-container ${isFullscreen ? 'theme-graph-bg' : ''}`}
       >
-        {/* Graph Canvas */}
+        {/* 3D Graph Canvas */}
         {graphData.nodes.length > 0 ? (
-          <ForceGraph2D
+          <ForceGraph3D
             ref={graphRef}
             graphData={graphData}
+            backgroundColor="rgba(0,0,0,0)"
+            showNavInfo={false}
+
+            // Node Styling
             nodeLabel={() => ""}
             nodeColor={(node) => (node as GraphNode).color}
             nodeVal={(node) => (node as GraphNode).val}
-            nodeRelSize={4}
-            linkColor={() => "rgba(100, 116, 139, 0.3)"}
-            linkWidth={1.5}
-            linkDirectionalArrowLength={4}
-            linkDirectionalArrowRelPos={1}
-            backgroundColor="transparent"
+            nodeResolution={32}
+
+            // Custom Node Object (Glowing Spheres)
+            nodeThreeObject={(node) => {
+              const graphNode = node as GraphNode;
+              const isRoot = graphNode.depth === 0;
+              const isSelected = selectedNode?.id === graphNode.id;
+              const isHovered = hoveredNode?.id === graphNode.id;
+
+              // Base geometry
+              const size = isRoot ? 12 : Math.max(4, 10 - graphNode.depth * 2);
+              const geometry = new THREE.SphereGeometry(size, 32, 32);
+
+              // Emissive material for "glow"
+              const pulse = 1 + Math.sin(Date.now() / 500) * 0.2;
+              const material = new THREE.MeshStandardMaterial({
+                color: graphNode.color,
+                emissive: graphNode.color,
+                emissiveIntensity: isHovered || isSelected ? 3 : (isRoot ? 2 * pulse : 1),
+                roughness: 0.1,
+                metalness: 0.9,
+                transparent: true,
+                opacity: 0.95,
+              });
+
+              const sphere = new THREE.Mesh(geometry, material);
+
+              // Add a "glow" mesh (slightly larger, transparent)
+              const glowGeometry = new THREE.SphereGeometry(size * 1.4, 32, 32);
+              const glowMaterial = new THREE.MeshBasicMaterial({
+                color: graphNode.color,
+                transparent: true,
+                opacity: isHovered || isSelected ? 0.3 : 0.1,
+                blending: THREE.AdditiveBlending,
+              });
+              const glowSphere = new THREE.Mesh(glowGeometry, glowMaterial);
+
+              const group = new THREE.Group();
+              group.add(sphere);
+              group.add(glowSphere);
+
+              // Add text label sprite
+              if (isRoot || isSelected || isHovered) {
+                const label = new SpriteText(graphNode.name);
+                label.color = "#ffffff";
+                label.textHeight = 8;
+                label.fontWeight = "bold";
+                label.backgroundColor = "rgba(0,0,0,0.6)";
+                label.padding = 2;
+                label.borderRadius = 4;
+                (label as unknown as THREE.Object3D).position.set(0, size + 12, 0);
+                group.add(label as unknown as THREE.Object3D);
+              }
+
+              return group;
+            }}
+
+            // Link Styling
+            linkColor={() => "rgba(148, 163, 184, 0.2)"}
+            linkWidth={1}
+            linkDirectionalParticles={2}
+            linkDirectionalParticleSpeed={0.005}
+            linkDirectionalParticleWidth={1.5}
+            linkDirectionalParticleColor={(link) => {
+              // Particles flow towards the dependency (the target)
+              return "rgba(99, 102, 241, 0.6)";
+            }}
+
+            // Interaction
             onNodeHover={handleNodeHover}
             onNodeClick={handleNodeClick}
-            onZoomEnd={updateViewBox}
-            nodeCanvasObject={(node, ctx: CanvasRenderingContext2D, globalScale: number) => {
-              const graphNode = node as GraphNode;
-              const label = graphNode.name;
-              const fontSize = Math.min(14 / globalScale, 12);
-              ctx.font = `${fontSize}px Inter, sans-serif`;
 
-              // Node circle
-              ctx.beginPath();
-              ctx.arc(graphNode.x ?? 0, graphNode.y ?? 0, graphNode.val / 2, 0, 2 * Math.PI);
-              ctx.fillStyle = graphNode.color;
-              ctx.fill();
-
-              // Glow effect for root and selected
-              if (graphNode.depth === 0 || selectedNode?.id === graphNode.id) {
-                ctx.shadowColor = graphNode.color;
-                ctx.shadowBlur = 15;
-                if (graphNode.depth === 0) {
-                  // Pulse root node
-                  const pulse = (Math.sin(Date.now() / 400) + 1) / 2;
-                  ctx.shadowBlur = 10 + pulse * 20;
-                }
-                ctx.fill();
-                ctx.shadowBlur = 0;
-              }
-
-              // Label
-              ctx.textAlign = "center";
-              ctx.textBaseline = "middle";
-              ctx.fillStyle = "#fff";
-              if (globalScale > 0.8) {
-                ctx.fillText(label, graphNode.x ?? 0, (graphNode.y ?? 0) + graphNode.val / 2 + fontSize + 2);
+            // Force settings for 3D space
+            d3AlphaDecay={0.01}
+            d3VelocityDecay={0.3}
+            onEngineStop={() => {
+              if (graphRef.current) {
+                // Initial camera positioning
+                // graphRef.current.zoomToFit(1000);
               }
             }}
-            cooldownTicks={100}
-            d3AlphaDecay={0.02}
-            d3VelocityDecay={0.3}
+            cooldownTicks={isPaused ? 0 : Infinity}
           />
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center theme-text-muted">
@@ -487,24 +536,14 @@ function GraphPageContent() {
           onRefresh={handleRefresh}
           maxDepth={maxDepth}
           onMaxDepthChange={setMaxDepth}
-          loading={loading}
+          loading={loading || false}
+          autoRotate={autoRotate}
+          onAutoRotateToggle={() => setAutoRotate(!autoRotate)}
+          isPaused={isPaused}
+          onPlayPauseToggle={() => setIsPaused(!isPaused)}
         />
 
-        {/* Minimap */}
-        {graphData.nodes.length > 0 && (
-          <GraphMinimap
-            nodes={graphData.nodes.map(n => ({
-              id: n.id,
-              x: n.x ?? 0,
-              y: n.y ?? 0,
-              color: n.color,
-              depth: n.depth,
-            }))}
-            viewBox={viewBox}
-            onNavigate={navigateToPosition}
-            className="absolute top-4 right-4"
-          />
-        )}
+        {/* Minimap - Disabled for 3D */}
 
         {/* Live Updates Indicator */}
         {packageId && showLiveUpdates && (

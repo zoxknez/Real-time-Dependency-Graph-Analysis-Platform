@@ -19,6 +19,24 @@ import { SearchInput } from "@/components/ui/search-input";
 import { SkeletonCard } from "@/components/ui/skeleton";
 import { QueryError } from "@/components/ui/error-display";
 
+import { cn } from "@/lib/utils";
+
+export default function ExplorePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="h-screen w-full flex items-center justify-center bg-surface-950">
+          <Loader2 className="w-10 h-10 text-primary-400 animate-spin" />
+        </div>
+      }
+    >
+      <ExplorePageContent />
+    </Suspense>
+  );
+}
+
+
+
 function ExplorePageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -221,257 +239,247 @@ function ExplorePageContent() {
   }, [selectedPackageId, getReverseDeps]);
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4"
-      >
-        <div>
-          <h1 className="text-3xl font-bold theme-text-primary flex items-center gap-3">
-            <Package className="w-8 h-8 text-primary-400" />
-            Explore Packages
-          </h1>
-          <p className="theme-text-muted mt-1">
-            Search and explore packages across all ecosystems
-          </p>
-        </div>
-      </motion.div>
+    <div className="min-h-screen bg-surface-950 text-white selection:bg-primary-500/30 font-sans">
+      {/* Deep Blue Background */}
+      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-surface-950 to-black z-0 pointer-events-none" />
+      <div className="fixed inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] opacity-20 z-0 pointer-events-none" />
 
-      {/* Search & Filters */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="glass-card p-6"
-      >
-        <div className="space-y-4">
-          {/* Search Input with Autocomplete */}
-          <SearchInput
-            value={searchQuery}
-            onChange={setSearchQuery}
-            onSearch={handleSearch}
-            placeholder="Enter package ID (e.g., npm:express, pypi:requests, cargo:tokio)"
-            isLoading={packageLoading}
-          />
+      <div className="relative z-10 w-full max-w-7xl mx-auto px-4 py-8 flex flex-col min-h-screen pt-24">
 
-          {/* Ecosystem Filter */}
-          <EcosystemFilter
-            selected={selectedEcosystem}
-            onSelect={(ecosystem) => {
-              setSelectedEcosystem(ecosystem);
-              // Re-search if we have a query
-              if (searchQuery.trim() && !searchQuery.includes(":")) {
-                handleSearch(searchQuery);
-              }
-            }}
-          />
-        </div>
-      </motion.div>
-
-      {/* Results */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Search Results */}
-        <motion.div
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.2 }}
-          className="space-y-4"
-        >
-          <h2 className="text-lg font-semibold theme-text-primary flex items-center gap-2">
-            <Search className="w-5 h-5 text-primary-400" />
-            Search Results
-          </h2>
-
-          {/* Loading State */}
-          {isLoading && (
-            <SkeletonCard />
-          )}
-
-          {/* Error State */}
-          {error && (
-            <QueryError
-              error={error}
-              onRetry={() => searchQuery && handleSearch(searchQuery)}
-              minimal
-            />
-          )}
-
-          {/* No Results */}
-          {!isLoading && !foundPackage && searchResults.length === 0 && searchQuery && !error && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="glass-card p-10 text-center border-dashed border-2 theme-border"
-            >
-              <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-white/5 flex items-center justify-center">
-                <Package className="w-10 h-10 theme-text-faint" />
+        {/* Header & Search Section */}
+        <div className="flex flex-col gap-6 mb-12">
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-white/5 pb-8"
+          >
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-500/10 border border-primary-500/20 text-[10px] font-bold text-primary-400 uppercase tracking-widest backdrop-blur-sm">
+                <Sparkles className="w-3 h-3 animate-pulse" />
+                Global Registry Search
               </div>
-              <p className="theme-text-primary text-xl font-bold mb-2">No packages found</p>
-              <p className="theme-text-muted mb-8 max-w-xs mx-auto">
-                We couldn't find any packages matching "{searchQuery}". Try a different term or ecosystem.
-              </p>
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
-                <button
-                  onClick={() => {
-                    setSearchQuery("");
-                    router.push("/explore");
-                  }}
-                  className="btn-secondary px-6"
-                >
-                  Clear search
-                </button>
-                <div className="flex gap-2">
-                  {["cargo:", "npm:", "pypi:"].map((prefix) => (
-                    <button
-                      key={prefix}
-                      onClick={() => {
-                        setSearchQuery(prefix);
-                        handleSearch(prefix);
-                      }}
-                      className="px-3 py-1.5 rounded-lg theme-pill
-                               theme-hover-text theme-inner-card-hover transition-colors text-xs font-mono"
-                    >
-                      {prefix}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Found Package (exact match) */}
-          {foundPackage && (
-            <PackageCard
-              package={foundPackage}
-              onClick={() => setSelectedPackageId(foundPackage.id)}
-              isSelected={selectedPackageId === foundPackage.id}
-            />
-          )}
-
-          {/* Search Results (fuzzy search) */}
-          {searchResults.length > 0 && (
-            <div className="space-y-3">
-              <p className="text-sm theme-text-tertiary">
-                Found {searchConnection?.totalCount || searchResults.length} packages
-              </p>
-              {searchResults.map(({ node, score }) => (
-                <PackageCard
-                  key={node.id}
-                  package={{ ...node, ecosystem: node.ecosystem as "NPM" | "PY_PI" | "CARGO" | "MAVEN" | "NU_GET" | "GO" }}
-                  onClick={() => setSelectedPackageId(node.id)}
-                  isSelected={selectedPackageId === node.id}
-                  score={useSemanticSearch ? score : undefined}
-                />
-              ))}
-
-              {searchConnection?.pageInfo?.hasNextPage && (
-                <div className="pt-2">
-                  <button
-                    onClick={handleLoadMoreSearch}
-                    disabled={isLoadingMoreSearch || isLoading}
-                    className="w-full px-4 py-2 rounded-lg theme-inner-card theme-hover-text theme-inner-card-hover transition-colors"
-                  >
-                    {isLoadingMoreSearch ? "Loading..." : "Load more"}
-                  </button>
-                </div>
-              )}
+              <h1 className="text-4xl font-extrabold text-white tracking-tight flex items-center gap-3">
+                Dependency <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-accent-500">Observatory</span>
+              </h1>
             </div>
-          )}
 
-          {/* Example Searches */}
-          {!searchQuery && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.3 }}
-              className="glass-card p-6"
-            >
-              <h3 className="text-sm font-medium theme-text-tertiary mb-4 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-accent-400" />
-                Try searching for:
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {["cargo:tokio", "pypi:requests", "npm:express", "cargo:serde", "pypi:flask", "cargo:clap"].map(
-                  (example, index) => (
-                    <motion.button
-                      key={example}
+            <div className="flex items-center gap-3">
+              <EcosystemFilter
+                selected={selectedEcosystem}
+                onSelect={(ecosystem) => {
+                  setSelectedEcosystem(ecosystem);
+                  if (searchQuery.trim() && !searchQuery.includes(":")) {
+                    handleSearch(searchQuery);
+                  }
+                }}
+              />
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="w-full relative z-20 group"
+          >
+            {/* Glow Effect */}
+            <div className="absolute -inset-1 bg-gradient-to-r from-primary-600 via-accent-600 to-primary-600 rounded-2xl opacity-20 group-focus-within:opacity-50 blur-lg transition-all duration-500" />
+
+            <div className="relative">
+              <SearchInput
+                value={searchQuery}
+                onChange={setSearchQuery}
+                onSearch={handleSearch}
+                placeholder="Search packages (e.g., npm:express, cargo:tokio)..."
+                isLoading={packageLoading}
+                className="w-full bg-surface-900/80 backdrop-blur-xl border border-white/10 rounded-2xl p-4 pl-12 shadow-2xl text-lg text-white placeholder:text-white/30 focus:ring-0 focus:border-primary-500/50 transition-all font-medium"
+              />
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Content Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+
+          {/* Results Column */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.2 }}
+            className={cn(
+              "lg:col-span-7 space-y-6",
+              selectedPackageId ? "lg:block" : "lg:col-span-12"
+            )}
+          >
+            {/* Loading State */}
+            {isLoading && (
+              <div className="space-y-4">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="h-24 rounded-2xl bg-white/5 border border-white/5 animate-pulse" />
+                ))}
+              </div>
+            )}
+
+            {/* Error State */}
+            {error && (
+              <QueryError
+                error={error}
+                onRetry={() => searchQuery && handleSearch(searchQuery)}
+                minimal
+              />
+            )}
+
+            {/* No Results & Empty State */}
+            {!isLoading && !foundPackage && searchResults.length === 0 && (
+              <div className="min-h-[400px] flex items-center justify-center">
+                {!searchQuery ? (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: 0.3 }}
+                    className="text-center space-y-8 max-w-2xl mx-auto"
+                  >
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {["cargo:tokio", "pypi:requests", "npm:express", "cargo:serde", "pypi:flask", "cargo:clap"].map(
+                        (example, index) => (
+                          <motion.button
+                            key={example}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.4 + index * 0.05 }}
+                            onClick={() => {
+                              setSearchQuery(example);
+                              handleSearch(example);
+                            }}
+                            className="px-4 py-3 rounded-xl bg-white/5 border border-white/5 hover:border-primary-500/30 hover:bg-white/10 text-sm theme-text-tertiary hover:theme-text-primary transition-all font-mono text-left group"
+                          >
+                            <span className="opacity-50 group-hover:opacity-100 transition-opacity mr-2">$</span>
+                            {example}
+                          </motion.button>
+                        )
+                      )}
+                    </div>
+                    <p className="text-sm theme-text-muted">
+                      Enter a package ID to explore its dependency graph and impact analysis.
+                    </p>
+                  </motion.div>
+                ) : (
+                  !error && (
+                    <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.4 + index * 0.05 }}
-                      onClick={() => {
-                        setSearchQuery(example);
-                        handleSearch(example);
-                      }}
-                      className="px-3 py-2 rounded-lg theme-inner-card text-sm theme-text-tertiary 
-                               theme-hover-text hover:bg-primary-600/20 hover:border-primary-500/30
-                               border border-transparent transition-all font-mono text-left"
+                      className="text-center p-12 bg-white/5 border border-white/10 rounded-3xl backdrop-blur-md max-w-lg"
                     >
-                      {example}
-                    </motion.button>
+                      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-white/10 flex items-center justify-center">
+                        <Search className="w-8 h-8 text-white/50" />
+                      </div>
+                      <h3 className="text-xl font-bold text-white mb-2">No matching signals</h3>
+                      <p className="text-white/50 mb-8">
+                        No packages found for "{searchQuery}". Check the ID or try a fuzzy search.
+                      </p>
+                      <button
+                        onClick={() => {
+                          setSearchQuery("");
+                          router.push("/explore");
+                        }}
+                        className="px-6 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium transition-colors"
+                      >
+                        Reset Search
+                      </button>
+                    </motion.div>
                   )
                 )}
               </div>
-            </motion.div>
-          )}
-        </motion.div>
+            )}
 
-        {/* Package Detail */}
-        <motion.div
-          initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.3 }}
-          className="space-y-4"
-        >
-          <h2 className="text-lg font-semibold theme-text-primary flex items-center gap-2">
-            <SlidersHorizontal className="w-5 h-5 text-accent-400" />
-            Package Details
-          </h2>
-
-          <AnimatePresence mode="wait">
-            {selectedPackageId ? (
-              <PackageDetail
-                key={selectedPackageId}
-                packageId={selectedPackageId}
-                reverseDeps={reverseDepsData?.reverseDependents}
-                loading={reverseDepsLoading}
-                onClose={() => setSelectedPackageId(null)}
-                onSelectPackage={handleSelectPackage}
-                onLoadMore={handleLoadMore}
-              />
-            ) : (
+            {/* Found Package (exact match) */}
+            {foundPackage && (
               <motion.div
-                key="placeholder"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="glass-card p-8 text-center"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
               >
-                <SlidersHorizontal className="w-12 h-12 theme-text-faint mx-auto mb-4" />
-                <p className="theme-text-tertiary font-medium">Select a package</p>
-                <p className="text-sm theme-text-faint mt-1">
-                  Click on a package to view details and dependencies
-                </p>
+                <PackageCard
+                  package={foundPackage}
+                  onClick={() => setSelectedPackageId(foundPackage.id)}
+                  isSelected={selectedPackageId === foundPackage.id}
+                />
+              </motion.div>
+            )}
+
+            {/* Search Results (fuzzy search) */}
+            {searchResults.length > 0 && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between px-2">
+                  <h2 className="text-sm font-semibold text-white/70 uppercase tracking-wider">
+                    Search Results ({searchConnection?.totalCount || searchResults.length})
+                  </h2>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3">
+                  {searchResults.map(({ node, score }, index) => (
+                    <motion.div
+                      key={node.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                    >
+                      <PackageCard
+                        package={{ ...node, ecosystem: node.ecosystem as "NPM" | "PY_PI" | "CARGO" | "MAVEN" | "NU_GET" | "GO" }}
+                        onClick={() => setSelectedPackageId(node.id)}
+                        isSelected={selectedPackageId === node.id}
+                        score={useSemanticSearch ? score : undefined}
+                      />
+                    </motion.div>
+                  ))}
+                </div>
+
+                {searchConnection?.pageInfo?.hasNextPage && (
+                  <div className="pt-4 text-center">
+                    <button
+                      onClick={handleLoadMoreSearch}
+                      disabled={isLoadingMoreSearch || isLoading}
+                      className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 text-white font-medium transition-all"
+                    >
+                      {isLoadingMoreSearch ? (
+                        <span className="flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" /> Loading
+                        </span>
+                      ) : (
+                        "Load More Results"
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </motion.div>
+
+          {/* Details Column */}
+          <AnimatePresence>
+            {selectedPackageId && (
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ type: "spring", damping: 30, stiffness: 300 }}
+                className="lg:col-span-5 relative"
+              >
+                <div className="sticky top-24">
+                  <PackageDetail
+                    key={selectedPackageId}
+                    packageId={selectedPackageId}
+                    reverseDeps={reverseDepsData?.reverseDependents}
+                    loading={reverseDepsLoading}
+                    onClose={() => setSelectedPackageId(null)}
+                    onSelectPackage={handleSelectPackage}
+                    onLoadMore={handleLoadMore}
+                  />
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
-        </motion.div>
-      </div>
-    </div>
-  );
-}
-
-export default function ExplorePage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="h-[calc(100vh-8rem)] flex items-center justify-center">
-          <Loader2 className="w-8 h-8 text-primary-400 animate-spin" />
         </div>
-      }
-    >
-      <ExplorePageContent />
-    </Suspense>
+      </div>
+    </div >
   );
 }

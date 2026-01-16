@@ -8,15 +8,12 @@ use qdrant_client::qdrant::{
     CreateCollectionBuilder, Distance, PointStruct, 
     SearchPointsBuilder, UpsertPointsBuilder, VectorParamsBuilder,
     DeletePointsBuilder, PointId, Value as QdrantValue,
-    Filter, Condition, FieldCondition, Match,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{error, info, instrument, warn};
-use crate::resilience::IsRetryable;
-use uuid::Uuid;
+use tracing::{error, info, instrument};
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -141,7 +138,7 @@ impl QdrantClient {
         // Create indexes for tenant_id and package_id
         qdrant.create_indexes().await?;
 
-        info!("Successfully connected to Qdrant");
+        info!(url = %qdrant.config.url, "Successfully connected to Qdrant");
         Ok(qdrant)
     }
 
@@ -306,7 +303,7 @@ impl QdrantClient {
     /// Delete points by IDs
     #[instrument(skip(self, ids), fields(count = ids.len()))]
     pub async fn delete(&self, tenant_id: &str, ids: Vec<String>) -> Result<()> {
-        use qdrant_client::qdrant::{Filter, Condition, PointId};
+        use qdrant_client::qdrant::PointId;
 
         // We must map Logic IDs to Namespaced IDs for deletion
         let point_ids: Vec<PointId> = ids

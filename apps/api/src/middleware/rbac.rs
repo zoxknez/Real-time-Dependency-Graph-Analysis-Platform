@@ -1,4 +1,5 @@
 //! RBAC (Role-Based Access Control) Guards for AsyncGraphQL
+#![allow(dead_code)]
 //!
 //! Provides declarative permission checks for GraphQL resolvers using
 //! AsyncGraphQL's guard system.

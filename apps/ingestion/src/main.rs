@@ -57,15 +57,6 @@ enum Registry {
     All,
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum Mode {
-    /// Live polling from registries
-    Live,
-    /// Seed mode - fetch specific packages then exit
-    Seed,
-    /// Publish mode - run outbox publisher only (push events to Kafka)
-    Publish,
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -108,6 +99,88 @@ async fn main() -> Result<()> {
         Mode::Seed => run_seed_mode(&cli, pool).await,
         Mode::Publish => run_publish_mode(config, pool).await,
         Mode::Live => run_live_mode(&cli, config, pool).await,
+        Mode::Simulation => run_simulation_mode(config).await,
+    }
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum Mode {
+    /// Live polling from registries
+    Live,
+    /// Seed mode - fetch specific packages then exit
+    Seed,
+    /// Publish mode - run outbox publisher only (push events to Kafka)
+    Publish,
+    /// Simulation mode - generate fake events for demo
+    Simulation,
+}
+
+/// Run simulation mode - generate fake events
+/// Run simulation mode - generate fake events
+async fn run_simulation_mode(config: AppConfig) -> Result<()> {
+    info!("Running in SIMULATION mode - generating fake events...");
+    use rand::Rng;
+    use prost::Message;
+
+    let producer = producer::EventProducer::new(&config.kafka.brokers, "domain.package.events.v1")?;
+    let mut rng = rand::thread_rng();
+
+    info!("Starting event simulation ticker (2s interval)...");
+    
+    // List of popular packages to simulate activity for
+    let popular_packages = vec![
+        ("react", "npm"),
+        ("lodash", "npm"),
+        ("express", "npm"),
+        ("tokio", "cargo"),
+        ("serde", "cargo"),
+        ("requests", "pypi"),
+        ("flask", "pypi"),
+    ];
+    
+    loop {
+        let (name, ecosystem) = popular_packages[rng.gen_range(0..popular_packages.len())];
+        let major = rng.gen_range(1..20);
+        let minor = rng.gen_range(0..50);
+        let patch = rng.gen_range(0..100);
+        let version = format!("{}.{}.{}", major, minor, patch);
+        
+        let now = std::time::SystemTime::now(); 
+        
+        // Use fully qualified path to ensure correct struct
+        let event = crate::proto_gen::domain::package::v1::VersionUpserted {
+            meta: Some(crate::proto_gen::shared::event::v1::EventMeta {
+                event_id: uuid::Uuid::new_v4().to_string(),
+                source: "ingestion-simulation".to_string(),
+                traceparent: String::new(),
+                occurred_at: Some(prost_types::Timestamp::from(now)),
+                schema_version: "v1".to_string(),
+            }),
+            ecosystem: ecosystem.to_string(),
+            package_name: name.to_string(),
+            version: version.clone(),
+            yanked: false,
+            tarball_url: format!("https://registry.example.com/{}/-/{}-{}.tgz", name, name, version),
+            integrity: "sha512-mock".to_string(),
+            size_bytes: rng.gen_range(1000..5000000),
+            published_at: Some(prost_types::Timestamp::from(now)),
+            dependencies: vec![],
+            dev_dependencies: vec![],
+            optional_dependencies: vec![],
+        };
+
+        let topic = "domain.version.upsert.v1";
+        let key = format!("{}:{}:{}", ecosystem, name, version);
+        
+        let payload = event.encode_to_vec();
+        
+        info!("Simulating: {} -> {} ({} bytes)", key, topic, payload.len());
+        
+        if let Err(e) = producer.publish_raw(topic, &key, &payload).await {
+            error!("Failed to publish simulated event: {}", e);
+        }
+        
+        tokio::time::sleep(Duration::from_millis(rng.gen_range(2000..5000))).await;
     }
 }
 
@@ -399,7 +472,7 @@ fn spawn_cargo_ingestion(_pool: sqlx::PgPool) {
         loop {
             // Create a simple producer for the watcher
             let producer: Result<FutureProducer, _> = ClientConfig::new()
-                .set("bootstrap.servers", "localhost:9092")
+                .set("bootstrap.servers", std::env::var("KAFKA_BROKERS").unwrap_or_else(|_| "localhost:19092".to_string()))
                 .set("message.timeout.ms", "5000")
                 .create();
                 

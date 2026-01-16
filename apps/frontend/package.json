@@ -32,9 +32,12 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-force-graph-2d": "^1.26.1",
+    "react-force-graph-3d": "^1.29.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwind-merge": "^2.6.0",
+    "three": "^0.182.0",
+    "three-spritetext": "^1.10.0",
     "zustand": "^5.0.9"
   },
   "devDependencies": {
@@ -51,6 +54,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.182.0",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.17.0",
     "eslint-plugin-react": "^7.37.2",

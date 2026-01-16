@@ -91,8 +91,8 @@ export function TopPackages() {
   }
 
   return (
-    <div className="glass-card p-6 h-full">
-      <div className="flex items-center justify-between mb-6">
+    <div className="glass-card p-6 h-full border border-white/10 shadow-xl group hover:shadow-primary-500/10 transition-shadow">
+      <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-primary-400" />
           <h3 className="text-lg font-semibold theme-text-primary">Top Packages</h3>
@@ -139,7 +139,7 @@ export function TopPackages() {
                 className="group flex items-center gap-4 p-3 rounded-xl theme-inner-card-hover transition-colors"
               >
                 {/* Rank */}
-                <div className="w-8 h-8 rounded-lg theme-inner-card flex items-center justify-center text-sm font-bold theme-text-muted group-hover:text-primary-400 transition-colors">
+                <div className="w-10 h-10 rounded-xl theme-inner-card flex items-center justify-center text-sm font-extrabold theme-text-muted group-hover:text-primary-400 group-hover:bg-primary-500/10 transition-all border border-transparent group-hover:border-primary-500/20">
                   {index + 1}
                 </div>
 

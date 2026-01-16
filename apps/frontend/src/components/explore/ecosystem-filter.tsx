@@ -35,16 +35,20 @@ export function EcosystemFilter({ selected, onSelect }: EcosystemFilterProps) {
               <motion.div
                 layoutId="ecosystem-filter-bg"
                 className="absolute inset-0 rounded-xl overflow-hidden"
-                style={{ backgroundColor: `${color}25`, border: `1px solid ${color}40` }}
+                style={{
+                  backgroundColor: `${color}15`,
+                  border: `1px solid ${color}60`,
+                  boxShadow: `0 0 15px ${color}30`
+                }}
                 transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
               >
                 <motion.div
-                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent w-1/2 -skew-x-12"
+                  className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent w-1/3 -skew-x-12"
                   animate={{
                     left: ["-100%", "200%"],
                   }}
                   transition={{
-                    duration: 2,
+                    duration: 3,
                     repeat: Infinity,
                     ease: "linear",
                   }}

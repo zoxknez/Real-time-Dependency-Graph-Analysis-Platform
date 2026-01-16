@@ -101,13 +101,13 @@ export function SearchInput({
       switch (e.key) {
         case "ArrowDown":
           e.preventDefault();
-          setSelectedIndex((prev) => 
+          setSelectedIndex((prev) =>
             prev < dropdownItems.length - 1 ? prev + 1 : 0
           );
           break;
         case "ArrowUp":
           e.preventDefault();
-          setSelectedIndex((prev) => 
+          setSelectedIndex((prev) =>
             prev > 0 ? prev - 1 : dropdownItems.length - 1
           );
           break;
@@ -175,9 +175,21 @@ export function SearchInput({
   const showDropdown = isFocused && dropdownItems.length > 0;
 
   return (
-    <form onSubmit={handleSubmit} className={cn("relative", className)}>
-      <div className="relative">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 theme-text-muted" />
+    <form onSubmit={handleSubmit} className={cn("relative z-50", className)}>
+      <div className={cn(
+        "relative transition-all duration-300",
+        isFocused && "shadow-[0_0_20px_rgba(99,102,241,0.2)] rounded-2xl"
+      )}>
+        <motion.div
+          animate={isFocused ? {
+            scale: [1, 1.2, 1],
+            opacity: [0.5, 1, 0.5]
+          } : { scale: 1, opacity: 0.5 }}
+          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+          className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
+        >
+          <Search className="w-5 h-5 text-primary-400" />
+        </motion.div>
         <input
           ref={inputRef}
           type="text"
@@ -187,7 +199,8 @@ export function SearchInput({
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           className={cn(
-            "input-search pl-12 pr-20",
+            "input-search !pl-16 pr-20 transition-all duration-300",
+            isFocused ? "ring-2 ring-primary-500/30 border-primary-500/50" : "",
             showDropdown && "rounded-b-none border-b-0"
           )}
         />

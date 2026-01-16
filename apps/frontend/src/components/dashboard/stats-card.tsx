@@ -89,9 +89,9 @@ export function StatsCard({
     <>
       <div className="flex items-start justify-between mb-4">
         <motion.div
-          className={cn("p-3 rounded-xl transition-all duration-300", colors.bg, "group-hover:scale-110 group-hover:shadow-glow")}
-          whileHover={{ rotate: [0, -10, 10, 0] }}
-          transition={{ duration: 0.5 }}
+          className={cn("p-3 rounded-xl transition-all duration-300", colors.bg, "group-hover:shadow-[0_0_20px_rgba(99,102,241,0.3)]")}
+          whileHover={{ y: -5, scale: 1.05 }}
+          transition={{ type: "spring", stiffness: 300, damping: 15 }}
         >
           <Icon className={cn("w-6 h-6 transition-colors", colors.icon)} />
         </motion.div>

@@ -39,6 +39,7 @@ semver = "1.0"
 quick-xml = "0.31"
 tokio-stream = "0.1"
 clap = { version = "4", features = ["derive"] }
+rand = "0.8"
 
 models = { path = "../../packages/models" }
 storage = { path = "../../packages/storage" }

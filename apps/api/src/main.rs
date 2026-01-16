@@ -206,9 +206,7 @@ async fn graphql_handler(
     req: GraphQLRequest,
 ) -> GraphQLResponse {
     let mut request = req.into_inner();
-    if let Some(ctx) = tenant_context {
-        request = request.data(ctx);
-    }
+    request = request.data(tenant_context);
     state.schema.execute(request).await.into()
 }
 

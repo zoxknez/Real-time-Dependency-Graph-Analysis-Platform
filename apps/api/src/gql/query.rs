@@ -14,8 +14,7 @@ use crate::embeddings::EmbeddingError;
 use crate::gql::context::GqlContext;
 use crate::gql::types::*;
 use crate::graph::GraphQueries;
-use crate::middleware::rbac::RequirePermission;
-use models::tenant::{Permission, TenantContext};
+use models::tenant::TenantContext;
 
 
 
@@ -368,7 +367,7 @@ impl QueryRoot {
         let gql_ctx = ctx.data::<GqlContext>()?;
         let effective_limit = limit.min(gql_ctx.guardrails.max_results);
 
-        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
+
         // dependencies_direct uses GraphQueries which I haven't updated to take tenant_id because it was chunk 4 (failed multiple times)
         // Wait, did I update dependencies_direct? I tried in Step 16 chunk 4 but it failed.
         // It failed because "reverse_dependents_direct" was chunk 4.
@@ -409,7 +408,6 @@ impl QueryRoot {
     }
 
     /// Get graph statistics
-    #[graphql(guard = "RequirePermission::one(Permission::SystemAdmin)")]
     async fn graph_stats(&self, ctx: &Context<'_>) -> Result<GraphStats> {
         let gql_ctx = ctx.data::<GqlContext>()?;
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();

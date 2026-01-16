@@ -13,7 +13,7 @@ use tokio_stream::StreamExt;
 use tracing::{debug, info};
 use std::sync::Arc;
 
-use crate::gql::context::{GqlContext, EventChannels};
+use crate::gql::context::GqlContext;
 use crate::gql::types::{
     Ecosystem, VersionEvent, BreakingChangeEvent, LiveStatsEvent, 
     DependencyImpactEvent, BreakingSeverity,

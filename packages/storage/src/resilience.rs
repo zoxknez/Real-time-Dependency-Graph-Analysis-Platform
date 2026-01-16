@@ -139,7 +139,7 @@ where
     E: IsRetryable + std::fmt::Display,
 {
     let mut attempt = 0;
-    let mut last_error: Option<String> = None;
+    let mut _last_error: Option<String> = None;
 
     loop {
         attempt += 1;
@@ -159,7 +159,7 @@ where
         match result {
             // Timeout
             Ok(Err(e)) if e.classify() == ErrorClass::Retryable && attempt <= config.max_retries => {
-                last_error = Some(e.to_string());
+                _last_error = Some(e.to_string());
                 
                 counter!(
                     "resilience_retry_total",
@@ -219,7 +219,7 @@ where
             Err(_timeout_err) => {
                 // Timeout occurred
                 if attempt <= config.max_retries {
-                    last_error = Some("timeout".to_string());
+                    _last_error = Some("timeout".to_string());
                     
                     counter!(
                         "resilience_timeout_total",

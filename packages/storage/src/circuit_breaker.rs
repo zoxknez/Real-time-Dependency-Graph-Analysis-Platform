@@ -9,7 +9,7 @@
 
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use metrics::{counter, gauge, histogram};

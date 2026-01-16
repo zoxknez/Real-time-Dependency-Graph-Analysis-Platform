@@ -1,6 +1,6 @@
 //! Memgraph client for GraphQL resolvers
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use neo4rs::{Row};
 use std::sync::Arc;
 use tracing::{info, instrument};

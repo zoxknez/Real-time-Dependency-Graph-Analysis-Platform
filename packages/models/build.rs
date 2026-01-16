@@ -4,7 +4,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_server(false)
         .build_client(false)
         .out_dir("src/generated")
-        .compile(
+        .compile_protos(
             &["../../proto/domain/tenant/v1/tenant.proto"],
             &["../../proto"],
         )?;

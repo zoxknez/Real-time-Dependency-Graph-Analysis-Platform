@@ -12,8 +12,7 @@ use neo4rs::{query, Graph, Query};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{error, info, instrument, warn};
-use crate::resilience::IsRetryable;
+use tracing::{error, info, instrument};
 use models::tenant::TenantContext;
 
 // ═══════════════════════════════════════════════════════════════
@@ -92,7 +91,7 @@ impl MemgraphConfig {
 /// Memgraph client with connection pooling and retry logic
 pub struct MemgraphClient {
     graph: Graph,
-    config: MemgraphConfig,
+    _config: MemgraphConfig,
     /// Connection health status
     healthy: Arc<RwLock<bool>>,
     /// Circuit breaker for fault tolerance
@@ -109,6 +108,7 @@ impl MemgraphClient {
 
         let mut graph_config = neo4rs::ConfigBuilder::new()
             .uri(&config.uri)
+            .db("memgraph")
             .fetch_size(500)
             .max_connections(config.max_connections);
 
@@ -143,7 +143,7 @@ impl MemgraphClient {
 
         Ok(Self {
             graph,
-            config,
+            _config: config,
             healthy: Arc::new(RwLock::new(true)),
             circuit_breaker,
             resilience_config,

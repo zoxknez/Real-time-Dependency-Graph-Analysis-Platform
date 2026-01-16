@@ -27,17 +27,25 @@ export function EcosystemChart() {
     const breakdown = data?.graphStats?.ecosystemBreakdown;
     const totalVersions = data?.graphStats?.totalVersions || 0;
     const totalPackages = data?.graphStats?.totalPackages || 1;
-    
+
     // Use real data from API if available
     if (breakdown && breakdown.length > 0) {
-      return breakdown.map((item: { ecosystem: string; count: number }) => ({
+      const dataMap = breakdown.map((item: { ecosystem: string; count: number }) => ({
         ecosystem: item.ecosystem,
         count: item.count,
         versions: Math.round((item.count / totalPackages) * totalVersions),
         color: getEcosystemColor(item.ecosystem),
       }));
+
+      // Ensure NPM is shown even if 0 for demo/completeness
+      const hasNpm = dataMap.some((d: EcosystemData) => d.ecosystem === "NPM");
+      if (!hasNpm) {
+        dataMap.push({ ecosystem: "NPM", count: 0, versions: 0, color: getEcosystemColor("NPM") });
+      }
+
+      return dataMap.sort((a: EcosystemData, b: EcosystemData) => b.count - a.count);
     }
-    
+
     // Fallback if no data
     return [
       { ecosystem: "CARGO", count: 0, versions: 0, color: getEcosystemColor("CARGO") },
@@ -73,11 +81,11 @@ export function EcosystemChart() {
   }
 
   return (
-    <div className="glass-card p-6 h-full">
-      <div className="flex items-center justify-between mb-6">
+    <div className="glass-card p-6 h-full border border-white/10 shadow-xl group hover:shadow-primary-500/10 transition-shadow">
+      <div className="flex items-center justify-between mb-8">
         <div>
-          <h3 className="text-lg font-semibold theme-text-primary">Ecosystem Distribution</h3>
-          <p className="text-sm theme-text-muted">Packages by registry</p>
+          <h3 className="text-xl font-bold theme-text-primary tracking-tight">Ecosystem Distribution</h3>
+          <p className="text-sm theme-text-muted">Global registry analytics</p>
         </div>
         <div className="flex items-center gap-4">
           <button
@@ -184,16 +192,26 @@ export function EcosystemChart() {
                     strokeDasharray={`${strokeDasharray} ${circumference}`}
                     strokeDashoffset={strokeDashoffset}
                     initial={{ pathLength: 0, opacity: 0 }}
-                    animate={{ pathLength: 1, opacity: 1 }}
-                    transition={{ duration: 1, delay: 0.3 + index * 0.2 }}
-                    className="transition-all duration-300 hover:stroke-[16]"
-                    style={{ cursor: "pointer" }}
+                    animate={{
+                      pathLength: 1,
+                      opacity: 1,
+                      scale: [1, 1.02, 1],
+                      strokeWidth: [14, 15, 14]
+                    }}
+                    transition={{
+                      pathLength: { duration: 1, delay: 0.3 + index * 0.2 },
+                      opacity: { duration: 1, delay: 0.3 + index * 0.2 },
+                      scale: { duration: 4, repeat: Infinity, ease: "easeInOut", delay: index * 0.5 },
+                      strokeWidth: { duration: 4, repeat: Infinity, ease: "easeInOut", delay: index * 0.5 }
+                    }}
+                    className="transition-all duration-300 hover:opacity-80"
+                    style={{ cursor: "pointer", transformOrigin: "center" }}
                   />
                 );
               });
             })()}
           </svg>
-          <motion.div 
+          <motion.div
             className="absolute inset-0 flex flex-col items-center justify-center"
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}

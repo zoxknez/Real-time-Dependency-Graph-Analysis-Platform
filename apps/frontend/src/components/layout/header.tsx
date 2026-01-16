@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Search,
@@ -28,6 +28,8 @@ export function Header() {
   const router = useRouter();
   const { addToHistory } = useHistoryStore();
 
+  const pathname = usePathname();
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchQuery.trim()) {
@@ -41,48 +43,55 @@ export function Header() {
     }
   };
 
+  const isExplorePage = pathname === "/explore";
+
   return (
     <header className="h-16 px-6 flex items-center justify-between border-b theme-border glass-card rounded-none border-l-0 border-t-0 border-r-0 relative z-50 transition-colors duration-300">
-      {/* Search Bar */}
-      <form onSubmit={handleSearch} className="relative flex-1 max-w-xl">
-        <div
-          className={cn(
-            "relative flex items-center transition-all duration-300",
-            isSearchFocused && "scale-[1.02]"
-          )}
-        >
-          <Search className="absolute left-4 w-5 h-5 theme-text-muted" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onFocus={() => setIsSearchFocused(true)}
-            onBlur={() => setIsSearchFocused(false)}
-            placeholder="Search packages... (e.g., npm:express, pypi:flask)"
+      {/* Search Bar - Hidden on Explore page to avoid duplication */}
+      <div className="flex-1 max-w-xl">
+        <form onSubmit={handleSearch} className="relative w-full">
+          <div
             className={cn(
-              "w-full pl-12 pr-24 py-3 rounded-xl theme-inner-card border transition-all duration-300",
-              "theme-text-primary placeholder:theme-text-muted text-sm",
-              "focus:outline-none focus:ring-2 focus:ring-primary-500/50",
-              isSearchFocused
-                ? "border-primary-500/50 shadow-glow"
-                : "theme-border"
+              "relative flex items-center transition-all duration-300",
+              isSearchFocused && "scale-[1.01]"
             )}
-          />
-          <div className="absolute right-3 flex items-center gap-1 text-xs theme-text-faint">
-            <kbd className="px-2 py-1 rounded-md theme-inner-card theme-border border font-mono">
-              <Command className="w-3 h-3 inline-block" />
-            </kbd>
-            <kbd className="px-2 py-1 rounded-md theme-inner-card theme-border border font-mono">
-              K
-            </kbd>
+          >
+            <Search className={cn(
+              "absolute left-4 w-5 h-5 transition-colors duration-300",
+              isSearchFocused ? "text-primary-400" : "theme-text-muted"
+            )} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setIsSearchFocused(false)}
+              placeholder="Search packages... (e.g., npm:express, pypi:flask)"
+              className={cn(
+                "w-full pl-12 pr-24 py-2.5 rounded-xl transition-all duration-300",
+                "bg-surface-900/40 backdrop-blur-md border",
+                "theme-text-primary placeholder:theme-text-muted text-sm",
+                isSearchFocused
+                  ? "border-primary-500/50 shadow-[0_0_20px_rgba(99,102,241,0.2)] bg-surface-900/60"
+                  : "theme-border hover:border-white/20"
+              )}
+            />
+            <div className="absolute right-3 flex items-center gap-1.5 text-[10px] theme-text-faint">
+              <kbd className="px-1.5 py-0.5 rounded-md bg-white/5 border theme-border font-mono shadow-sm">
+                <Command className="w-2.5 h-2.5 inline-block -mt-0.5" />
+              </kbd>
+              <kbd className="px-1.5 py-0.5 rounded-md bg-white/5 border theme-border font-mono shadow-sm">
+                K
+              </kbd>
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
+      </div>
 
       {/* Right Actions */}
       <div className="flex items-center gap-2 ml-6">
         {/* Favorites */}
-        <button 
+        <button
           onClick={() => setShowFavorites(true)}
           className="relative p-2.5 rounded-xl theme-interactive transition-all duration-200"
           title="Favorites & Recent"
@@ -151,7 +160,7 @@ export function Header() {
                 transition={{ duration: 0.15 }}
                 className="absolute right-0 top-full mt-2 w-48 py-2 rounded-xl theme-panel shadow-xl z-50"
               >
-                <button 
+                <button
                   onClick={() => {
                     setShowUserMenu(false);
                     router.push('/settings');

@@ -48,7 +48,7 @@ const PACKAGE_INFO: Record<string, { name: string; ecosystem: string; id: string
 
 function formatTimeAgo(dateString: string | null): string {
   if (!dateString) return "recently";
-  
+
   const date = new Date(dateString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -65,7 +65,7 @@ function formatTimeAgo(dateString: string | null): string {
 
 export function RecentActivity() {
   const [isLive, setIsLive] = useState(true);
-  
+
   const { data, loading, error } = useQuery(GET_RECENT_VERSIONS, {
     pollInterval: isLive ? 30000 : 0, // Poll every 30 seconds if live
     errorPolicy: "all",
@@ -75,7 +75,7 @@ export function RecentActivity() {
     if (!data) return [];
 
     const items: ActivityItem[] = [];
-    
+
     Object.entries(PACKAGE_INFO).forEach(([key, info]) => {
       const versions = data[key] || [];
       versions.forEach((v: { id: string; version: string; publishedAt: string | null }) => {
@@ -121,8 +121,8 @@ export function RecentActivity() {
   }
 
   return (
-    <div className="glass-card p-6 h-full">
-      <div className="flex items-center justify-between mb-6">
+    <div className="glass-card p-6 h-full border border-white/10 shadow-xl group hover:shadow-primary-500/10 transition-shadow">
+      <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-2">
           <Activity className="w-5 h-5 text-accent-400" />
           <h3 className="text-lg font-semibold theme-text-primary">Recent Activity</h3>
@@ -131,8 +131,8 @@ export function RecentActivity() {
           onClick={() => setIsLive(!isLive)}
           className={cn(
             "flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs transition-colors",
-            isLive 
-              ? "text-success bg-success/10" 
+            isLive
+              ? "text-success bg-success/10"
               : "theme-text-muted theme-inner-card"
           )}
         >
