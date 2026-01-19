@@ -1,3 +1,24 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// SCHEMA: domain.package.v1
+// VERSION: 1.0.0
+// LAST MODIFIED: 2026-01-19
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// CHANGELOG:
+// - 1.0.0 (2026-01-19): Initial schema definition
+//   - PackageId, Package, PackageVersion, Dependency messages
+//   - Ecosystem, ChangeType, DependencyType enums
+//   - PackagePublished, BreakingChangeDetected events
+//   - API request/response messages
+//
+// BREAKING CHANGES:
+// - None (initial version)
+//
+// DEPRECATIONS:
+// - None
+//
+// ═══════════════════════════════════════════════════════════════════════════
+
 syntax = "proto3";
 
 package domain.package.v1;

@@ -15,6 +15,8 @@ use std::time::Duration;
 use tokio::sync::watch;
 use tracing::{debug, error, info, instrument, warn};
 
+use crate::dlq::DlqPublisher;
+
 /// Event received from analysis service
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type")]
@@ -44,13 +46,14 @@ pub struct SymbolEmbedding {
 pub struct EventConsumer {
     consumer: StreamConsumer,
     writer: Arc<VectorWriter>,
+    dlq: DlqPublisher,
     batch_size: usize,
 }
 
 impl EventConsumer {
     /// Create new consumer
-    #[instrument(skip(config, writer), fields(brokers = %config.brokers))]
-    pub async fn new(config: &KafkaConfig, writer: Arc<VectorWriter>) -> Result<Self> {
+    #[instrument(skip(config, writer, dlq), fields(brokers = %config.brokers))]
+    pub async fn new(config: &KafkaConfig, writer: Arc<VectorWriter>, dlq: DlqPublisher) -> Result<Self> {
         info!("Creating Kafka consumer");
 
         let consumer: StreamConsumer = ClientConfig::new()
@@ -71,6 +74,7 @@ impl EventConsumer {
         Ok(Self {
             consumer,
             writer,
+            dlq,
             batch_size: 100,
         })
     }
@@ -197,8 +201,40 @@ impl EventConsumer {
 
         let points: Vec<VectorPoint> = batch.drain(..).collect();
 
-        if let Err(e) = self.writer.upsert_batch(points).await {
-            error!(error = %e, "Failed to upsert batch");
+        if let Err(e) = self.writer.upsert_batch(points.clone()).await {
+            error!(error = %e, "Failed to upsert batch, sending to DLQ");
+            
+            // Send failed points to DLQ
+            for point in points {
+                let package_id = point.payload
+                    .get("package_id")
+                    .and_then(|v| match v {
+                        PayloadValue::String(s) => Some(s.as_str()),
+                        _ => None,
+                    })
+                    .unwrap_or("unknown");
+                
+                let version = point.payload
+                    .get("version")
+                    .and_then(|v| match v {
+                        PayloadValue::String(s) => Some(s.as_str()),
+                        _ => None,
+                    })
+                    .unwrap_or("unknown");
+
+                let original_payload = serde_json::to_vec(&point).unwrap_or_default();
+                
+                if let Err(dlq_err) = self.dlq.publish(
+                    package_id,
+                    version,
+                    "qdrant_upsert_error",
+                    &e.to_string(),
+                    &original_payload,
+                    1,
+                ).await {
+                    error!(error = %dlq_err, "Failed to send to DLQ - event lost");
+                }
+            }
         }
     }
 }

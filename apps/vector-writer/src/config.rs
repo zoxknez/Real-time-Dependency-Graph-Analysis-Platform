@@ -29,7 +29,6 @@ pub struct KafkaConfig {
     pub brokers: String,
     pub group_id: String,
     pub topic: String,
-    #[allow(dead_code)]
     pub dlq_topic: String,
 }
 

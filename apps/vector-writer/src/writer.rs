@@ -14,6 +14,7 @@ use qdrant_client::qdrant::{
     CreateFieldIndexCollectionBuilder, FieldType,
 };
 use qdrant_client::Qdrant;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -70,7 +71,7 @@ impl Default for VectorWriterConfig {
 // ═══════════════════════════════════════════════════════════════
 
 /// A vector point with metadata
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct VectorPoint {
     /// Unique stable ID (e.g., "npm:express:1.0.0:functionName")
     pub id: String,
@@ -81,7 +82,7 @@ pub struct VectorPoint {
 }
 
 /// Supported payload value types
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub enum PayloadValue {
     String(String),
     Integer(i64),

@@ -19,9 +19,11 @@ uuid.workspace = true
 config.workspace = true
 dotenvy.workspace = true
 qdrant-client.workspace = true
+metrics.workspace = true
 
 models = { path = "../../packages/models" }
 storage = { path = "../../packages/storage" }
 
 # Retry/backoff
 backoff = { version = "0.4", features = ["tokio"] }
+

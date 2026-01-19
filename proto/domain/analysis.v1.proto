@@ -1,3 +1,24 @@
+// ═══════════════════════════════════════════════════════════════════════════
+// SCHEMA: domain.analysis.v1
+// VERSION: 1.0.0
+// LAST MODIFIED: 2026-01-19
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// CHANGELOG:
+// - 1.0.0 (2026-01-19): Initial schema definition
+//   - Symbol, SourceLocation, Parameter messages
+//   - PublicAPI, APIDiff, SymbolChange, DiffSummary messages
+//   - AnalysisJob, AnalysisResult, AnalysisMetrics messages
+//   - EmbeddingRequest, EmbeddingResult messages
+//
+// BREAKING CHANGES:
+// - None (initial version)
+//
+// DEPRECATIONS:
+// - None
+//
+// ═══════════════════════════════════════════════════════════════════════════
+
 syntax = "proto3";
 
 package domain.analysis.v1;

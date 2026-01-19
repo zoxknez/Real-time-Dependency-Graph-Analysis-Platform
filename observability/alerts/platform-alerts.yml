@@ -1,0 +1,152 @@
+# Prometheus Alert Rules for Real-time Dependency Graph Platform
+# See observability/README.md for SLO definitions
+
+groups:
+  - name: platform.critical
+    interval: 30s
+    rules:
+      # High Kafka Consumer Lag
+      - alert: HighKafkaLag
+        expr: kafka_consumer_group_lag{group=~"graph-writer|vector-writer|ingestion"} > 10000
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High Kafka consumer lag on {{ $labels.group }}"
+          description: "Consumer group {{ $labels.group }} has lag of {{ $value }} messages on topic {{ $labels.topic }}. This may cause data delays."
+          runbook_url: "https://docs.example.com/runbooks/kafka-lag"
+
+      # High Error Rate (5xx)
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(api_http_requests_total{status=~"5.."}[5m]))
+          /
+          sum(rate(api_http_requests_total[5m]))
+          > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High API error rate (>1%)"
+          description: "API error rate is {{ $value | humanizePercentage }} over the last 5 minutes."
+          runbook_url: "https://docs.example.com/runbooks/api-errors"
+
+      # P95 Latency High
+      - alert: P95LatencyHigh
+        expr: |
+          histogram_quantile(0.95, rate(api_http_request_duration_seconds_bucket[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 latency exceeds 500ms"
+          description: "API p95 latency is {{ $value | humanizeDuration }}."
+          runbook_url: "https://docs.example.com/runbooks/latency"
+
+      # Storage Pressure (Disk Usage)
+      - alert: StoragePressure
+        expr: |
+          100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk usage exceeds 80%"
+          description: "Node {{ $labels.instance }} disk usage is at {{ $value | humanizePercentage }}."
+          runbook_url: "https://docs.example.com/runbooks/disk"
+
+  - name: platform.writers
+    interval: 30s
+    rules:
+      # Graph Writer DLQ Growing
+      - alert: GraphWriterDLQGrowing
+        expr: |
+          rate(graph_writer_dlq_published_total[15m]) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Graph Writer DLQ is receiving events"
+          description: "Graph Writer is sending {{ $value | humanize }} events/sec to DLQ. Investigate Memgraph connectivity."
+          runbook_url: "https://docs.example.com/runbooks/dlq"
+
+      # Vector Writer DLQ Growing
+      - alert: VectorWriterDLQGrowing
+        expr: |
+          rate(vector_writer_dlq_published_total[15m]) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Vector Writer DLQ is receiving events"
+          description: "Vector Writer is sending {{ $value | humanize }} events/sec to DLQ. Investigate Qdrant connectivity."
+          runbook_url: "https://docs.example.com/runbooks/dlq"
+
+      # Service Down
+      - alert: ServiceDown
+        expr: up{job=~"api|ingestion|graph-writer|vector-writer"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} on {{ $labels.instance }} has been down for more than 2 minutes."
+          runbook_url: "https://docs.example.com/runbooks/service-down"
+
+  - name: platform.databases
+    interval: 60s
+    rules:
+      # Memgraph Connection Pool Exhausted
+      - alert: MemgraphConnectionsExhausted
+        expr: |
+          graph_writer_memgraph_connections_active
+          /
+          (graph_writer_memgraph_connections_active + graph_writer_memgraph_connections_idle)
+          > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memgraph connection pool near exhaustion"
+          description: "{{ $value | humanizePercentage }} of Memgraph connections are in use."
+
+      # Qdrant High Latency
+      - alert: QdrantHighLatency
+        expr: |
+          histogram_quantile(0.95, rate(vector_writer_upsert_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Qdrant upsert latency is high"
+          description: "Qdrant p95 upsert latency is {{ $value | humanizeDuration }}."
+
+  - name: platform.slo
+    interval: 5m
+    rules:
+      # SLO: API Availability < 99.9%
+      - alert: SLOAvailabilityBreach
+        expr: |
+          avg_over_time(up{job="api"}[1h]) < 0.999
+        for: 0m
+        labels:
+          severity: critical
+          slo: availability
+        annotations:
+          summary: "SLO Breach: API availability below 99.9%"
+          description: "API availability over the last hour is {{ $value | humanizePercentage }}. SLO target is 99.9%."
+
+      # SLO: Event Processing Delay > 5s
+      - alert: SLOEventProcessingDelay
+        expr: |
+          max(kafka_consumer_group_lag{group=~"graph-writer|vector-writer"})
+          /
+          sum(rate(ingestion_events_published_total[5m]))
+          > 5
+        for: 10m
+        labels:
+          severity: warning
+          slo: latency
+        annotations:
+          summary: "SLO Breach: Event processing delay exceeds 5 seconds"
+          description: "Estimated event processing delay is {{ $value | humanizeDuration }}."

@@ -8,6 +8,7 @@
 
 mod config;
 mod consumer;
+mod dlq;
 mod writer;
 
 use anyhow::{Context, Result};
@@ -18,6 +19,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 use crate::config::Config;
 use crate::consumer::EventConsumer;
+use crate::dlq::DlqPublisher;
 use crate::writer::{VectorWriter, VectorWriterConfig};
 
 #[tokio::main]
@@ -59,8 +61,13 @@ async fn main() -> Result<()> {
             .context("Failed to initialize Vector Writer")?,
     );
 
+    // Initialize DLQ publisher
+    let dlq = DlqPublisher::new(&config.kafka)
+        .context("Failed to create DLQ publisher")?;
+    info!("📥 DLQ publisher initialized for topic: {}", config.kafka.dlq_topic);
+
     // Initialize Kafka consumer
-    let consumer = EventConsumer::new(&config.kafka, writer.clone())
+    let consumer = EventConsumer::new(&config.kafka, writer.clone(), dlq)
         .await
         .context("Failed to create Kafka consumer")?;
 
