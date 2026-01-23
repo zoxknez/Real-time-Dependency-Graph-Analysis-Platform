@@ -16,7 +16,7 @@ pub mod resilience;
 pub mod bulkhead;
 
 // Re-exports for convenience
-pub use memgraph::{MemgraphClient, MemgraphConfig, QueryBuilder, GraphStats};
+pub use memgraph::{MemgraphClient, MemgraphConfig, QueryBuilder, GraphStats, MemoryStats};
 pub use qdrant::{QdrantClient, QdrantConfig, VectorPoint, SearchResult, FilterBuilder};
 pub use risingwave::{RisingWaveClient, RisingWaveConfig, EcosystemStats, DependencyCount};
 pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerRegistry, CircuitState};

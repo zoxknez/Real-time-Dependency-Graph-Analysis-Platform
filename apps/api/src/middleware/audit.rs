@@ -6,6 +6,7 @@
 //! - Authorization failures
 //! - Rate limit violations
 //! - GraphQL operation tracking
+//! - PostgreSQL persistence for retention and compliance
 
 #![allow(dead_code)]
 
@@ -16,8 +17,10 @@ use axum::{
     response::Response,
 };
 use serde::Serialize;
+use sqlx::PgPool;
 use std::time::Instant;
-use tracing::{info, warn, Span};
+use tokio::sync::mpsc;
+use tracing::{debug, error, info, warn, Span};
 use uuid::Uuid;
 
 /// Audit event types
@@ -37,7 +40,7 @@ pub enum AuditEventType {
 }
 
 /// Audit log entry
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AuditLogEntry {
     /// Unique event ID
     pub event_id: String,
@@ -350,5 +353,230 @@ mod tests {
         assert_eq!(entry.method, "GET");
         assert_eq!(entry.status_code, Some(200));
         assert_eq!(entry.duration_ms, Some(15));
+    }
+}
+
+// ============================================================================
+// PostgreSQL Persistence Layer
+// ============================================================================
+
+/// Audit persistence service for storing logs in PostgreSQL
+/// 
+/// Uses an async channel to batch writes and avoid blocking request handlers.
+#[derive(Clone)]
+pub struct AuditPersistence {
+    sender: mpsc::Sender<AuditLogEntry>,
+}
+
+impl AuditPersistence {
+    /// Create new audit persistence with background writer task
+    /// 
+    /// # Arguments
+    /// * `pool` - PostgreSQL connection pool
+    /// * `buffer_size` - Size of async channel buffer (default: 1000)
+    /// * `batch_size` - Number of entries to batch before writing (default: 50)
+    /// * `flush_interval_ms` - Max time before flushing partial batch (default: 1000)
+    pub fn new(pool: PgPool, buffer_size: usize, batch_size: usize, flush_interval_ms: u64) -> Self {
+        let (sender, receiver) = mpsc::channel(buffer_size);
+        
+        // Spawn background writer task
+        tokio::spawn(Self::writer_task(pool, receiver, batch_size, flush_interval_ms));
+        
+        Self { sender }
+    }
+
+    /// Create with defaults (1000 buffer, 50 batch, 1s flush)
+    pub fn with_defaults(pool: PgPool) -> Self {
+        Self::new(pool, 1000, 50, 1000)
+    }
+
+    /// Queue an audit entry for persistence
+    /// 
+    /// This is non-blocking and will drop entries if the channel is full.
+    pub fn queue(&self, entry: AuditLogEntry) {
+        if let Err(e) = self.sender.try_send(entry) {
+            warn!(error = %e, "Audit persistence queue full, dropping entry");
+            metrics::counter!("audit_persistence_dropped").increment(1);
+        }
+    }
+
+    /// Background task that batches and writes audit entries
+    async fn writer_task(
+        pool: PgPool,
+        mut receiver: mpsc::Receiver<AuditLogEntry>,
+        batch_size: usize,
+        flush_interval_ms: u64,
+    ) {
+        let mut batch: Vec<AuditLogEntry> = Vec::with_capacity(batch_size);
+        let mut flush_interval = tokio::time::interval(
+            tokio::time::Duration::from_millis(flush_interval_ms)
+        );
+
+        loop {
+            tokio::select! {
+                // Receive new entry
+                Some(entry) = receiver.recv() => {
+                    batch.push(entry);
+                    
+                    // Flush if batch is full
+                    if batch.len() >= batch_size {
+                        Self::flush_batch(&pool, &mut batch).await;
+                    }
+                }
+                
+                // Periodic flush for partial batches
+                _ = flush_interval.tick() => {
+                    if !batch.is_empty() {
+                        Self::flush_batch(&pool, &mut batch).await;
+                    }
+                }
+                
+                // Channel closed
+                else => {
+                    // Final flush on shutdown
+                    if !batch.is_empty() {
+                        Self::flush_batch(&pool, &mut batch).await;
+                    }
+                    info!("Audit persistence writer shutting down");
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Write a batch of entries to PostgreSQL
+    async fn flush_batch(pool: &PgPool, batch: &mut Vec<AuditLogEntry>) {
+        if batch.is_empty() {
+            return;
+        }
+
+        let batch_len = batch.len();
+        debug!(count = batch_len, "Flushing audit log batch");
+
+        // Build bulk insert query
+        let mut query = String::from(
+            "INSERT INTO audit_log (
+                tenant_id, user_id, action, resource_type, resource_id,
+                metadata, ip_address, user_agent, request_id, 
+                duration_ms, status_code, created_at
+            ) VALUES "
+        );
+
+        let mut values = Vec::new();
+        for (i, entry) in batch.iter().enumerate() {
+            if i > 0 {
+                query.push_str(", ");
+            }
+            let offset = i * 12;
+            query.push_str(&format!(
+                "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
+                offset + 1, offset + 2, offset + 3, offset + 4, offset + 5, offset + 6,
+                offset + 7, offset + 8, offset + 9, offset + 10, offset + 11, offset + 12
+            ));
+
+            // Extract tenant_id and user_id from context if available
+            let tenant_id: Option<Uuid> = entry.context
+                .as_ref()
+                .and_then(|c| c.get("tenant_id"))
+                .and_then(|v| v.as_str())
+                .and_then(|s| Uuid::parse_str(s).ok());
+            
+            let user_uuid: Option<Uuid> = entry.user_id
+                .as_ref()
+                .and_then(|s| Uuid::parse_str(s).ok());
+
+            values.push((
+                tenant_id,
+                user_uuid,
+                Self::event_type_to_action(&entry.event_type),
+                "http_request".to_string(),
+                entry.path.clone(),
+                entry.context.clone().unwrap_or(serde_json::json!({})),
+                entry.client_ip.clone(),
+                entry.user_agent.clone(),
+                Uuid::parse_str(&entry.correlation_id).ok(),
+                entry.duration_ms.map(|d| d as i32),
+                entry.status_code.map(|s| s as i16),
+                entry.timestamp.clone(),
+            ));
+        }
+
+        // Execute bulk insert
+        let mut sqlx_query = sqlx::query(&query);
+        for v in &values {
+            sqlx_query = sqlx_query
+                .bind(v.0)     // tenant_id
+                .bind(v.1)    // user_id
+                .bind(&v.2)    // action
+                .bind(&v.3)    // resource_type
+                .bind(&v.4)    // resource_id
+                .bind(&v.5)    // metadata
+                .bind(&v.6)    // ip_address
+                .bind(&v.7)    // user_agent
+                .bind(v.8)    // request_id
+                .bind(v.9)    // duration_ms
+                .bind(v.10)   // status_code
+                .bind(&v.11);  // created_at
+        }
+
+        match sqlx_query.execute(pool).await {
+            Ok(result) => {
+                metrics::counter!("audit_persistence_written").increment(result.rows_affected());
+                debug!(
+                    count = result.rows_affected(),
+                    "Audit batch written to PostgreSQL"
+                );
+            }
+            Err(e) => {
+                error!(error = %e, count = batch_len, "Failed to write audit batch");
+                metrics::counter!("audit_persistence_errors").increment(batch_len as u64);
+            }
+        }
+
+        batch.clear();
+    }
+
+    /// Convert event type to action string
+    fn event_type_to_action(event_type: &AuditEventType) -> String {
+        match event_type {
+            AuditEventType::ApiRequest => "api.request",
+            AuditEventType::AuthSuccess => "auth.success",
+            AuditEventType::AuthFailure => "auth.failure",
+            AuditEventType::AuthorizationDenied => "auth.denied",
+            AuditEventType::RateLimitExceeded => "rate_limit.exceeded",
+            AuditEventType::QueryExecuted => "graphql.query",
+            AuditEventType::SubscriptionStarted => "subscription.started",
+            AuditEventType::SubscriptionEnded => "subscription.ended",
+            AuditEventType::InvalidInput => "validation.failed",
+            AuditEventType::SecurityViolation => "security.violation",
+        }.to_string()
+    }
+}
+
+/// Global audit persistence instance (set during startup)
+static AUDIT_PERSISTENCE: std::sync::OnceLock<AuditPersistence> = std::sync::OnceLock::new();
+
+/// Initialize global audit persistence
+pub fn init_audit_persistence(pool: PgPool) {
+    let persistence = AuditPersistence::with_defaults(pool);
+    if AUDIT_PERSISTENCE.set(persistence).is_err() {
+        warn!("Audit persistence already initialized");
+    }
+}
+
+/// Queue entry to global audit persistence (if initialized)
+pub fn persist_audit_entry(entry: &AuditLogEntry) {
+    if let Some(persistence) = AUDIT_PERSISTENCE.get() {
+        persistence.queue(entry.clone());
+    }
+}
+
+impl AuditLogEntry {
+    /// Log this entry (both to tracing and optional persistence)
+    pub fn log_and_persist(&self) {
+        // Log to tracing
+        self.log();
+        // Persist to PostgreSQL
+        persist_audit_entry(self);
     }
 }

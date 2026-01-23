@@ -61,3 +61,6 @@ jsonwebtoken = "9.2"
 metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 
+# PostgreSQL for audit logging
+sqlx = { workspace = true, features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
+

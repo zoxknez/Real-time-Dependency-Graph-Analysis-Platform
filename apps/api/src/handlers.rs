@@ -60,3 +60,47 @@ pub async fn readiness_check(
         redis: redis_ok,
     })
 }
+
+/// Memgraph memory statistics response
+#[derive(Serialize)]
+pub struct MemgraphMemoryResponse {
+    pub memory_used_bytes: u64,
+    pub peak_memory_bytes: u64,
+    pub memory_limit_bytes: u64,
+    pub usage_percent: f64,
+    pub under_pressure: bool,
+    pub critical: bool,
+    pub status: &'static str,
+}
+
+/// Memgraph memory monitoring endpoint for OOM prevention
+#[allow(dead_code)]
+pub async fn memgraph_memory_handler(
+    State(state): State<AppState>,
+) -> Result<Json<MemgraphMemoryResponse>, axum::http::StatusCode> {
+    match state.graph.get_memory_stats().await {
+        Ok(stats) => {
+            let status = if stats.critical {
+                "critical"
+            } else if stats.under_pressure {
+                "warning"
+            } else {
+                "healthy"
+            };
+
+            Ok(Json(MemgraphMemoryResponse {
+                memory_used_bytes: stats.memory_used_bytes,
+                peak_memory_bytes: stats.peak_memory_bytes,
+                memory_limit_bytes: stats.memory_limit_bytes,
+                usage_percent: stats.usage_percent,
+                under_pressure: stats.under_pressure,
+                critical: stats.critical,
+                status,
+            }))
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to get Memgraph memory stats");
+            Err(axum::http::StatusCode::SERVICE_UNAVAILABLE)
+        }
+    }
+}

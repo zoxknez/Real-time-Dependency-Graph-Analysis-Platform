@@ -221,7 +221,9 @@ mod tests {
             ("npm".to_string(), "body-parser".to_string(), "^1.0.0".to_string()),
         ];
         let queries = GraphQueries::version_upserted("npm", "express", "4.18.2", None, &deps);
-        assert_eq!(queries.len(), 3); // Package + Version + Dependencies
+        // Package + Version + Delete old deps + (DEPENDS_ON + DEPENDS_ON_PKG) per dependency
+        // 1 + 1 + 1 + 2*1 = 5
+        assert_eq!(queries.len(), 5);
     }
 
     #[test]

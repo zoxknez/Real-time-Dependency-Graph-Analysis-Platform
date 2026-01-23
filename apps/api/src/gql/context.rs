@@ -6,13 +6,16 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use async_graphql::dataloader::DataLoader;
+
 use crate::cache::CacheClient;
 use crate::config::GuardrailsConfig;
 use crate::graph::GraphClient;
 use crate::embeddings::EmbeddingGenerator;
-use crate::gql::loaders::PackageLoader;
+use crate::gql::loaders::{PackageLoader, PackageBatchLoader, VersionBatchLoader, DependenciesLoader};
 use crate::gql::types::{VersionEvent, BreakingChangeEvent, LiveStatsEvent, DependencyImpactEvent};
 use crate::services::gemini::GeminiService;
+use crate::services::CachedGraphService;
 
 use storage::qdrant::QdrantClient;
 
@@ -77,7 +80,7 @@ pub struct GqlContext {
     /// Redis cache client (optional - graceful degradation)
     #[allow(dead_code)]
     pub cache: Option<Arc<CacheClient>>,
-    /// DataLoader for batch package fetching
+    /// DataLoader for batch package fetching (legacy)
     pub package_loader: PackageLoader,
     /// Guardrails configuration
     pub guardrails: GuardrailsConfig,
@@ -90,6 +93,24 @@ pub struct GqlContext {
     pub semantic_search: Option<SemanticSearchContext>,
     /// Gemini AI service (for thinking/generation)
     pub gemini: Option<Arc<GeminiService>>,
+    
+    // ═══════════════════════════════════════════════════════════════
+    // async-graphql DataLoaders for N+1 prevention
+    // ═══════════════════════════════════════════════════════════════
+    
+    /// DataLoader for batch loading packages by ID
+    pub packages: DataLoader<PackageBatchLoader>,
+    /// DataLoader for batch loading versions by ID
+    pub versions: DataLoader<VersionBatchLoader>,
+    /// DataLoader for batch loading package dependencies
+    pub dependencies: DataLoader<DependenciesLoader>,
+    
+    // ═══════════════════════════════════════════════════════════════
+    // Cached Graph Service with Singleflight (cache stampede protection)
+    // ═══════════════════════════════════════════════════════════════
+    
+    /// Graph queries with caching and singleflight for stampede protection
+    pub cached_graph: Option<Arc<CachedGraphService>>,
 }
 
 impl GqlContext {
@@ -102,15 +123,48 @@ impl GqlContext {
         let package_loader = PackageLoader::new(graph.clone());
         let channels = EventChannels::new(1024);
         
+        // Create async-graphql DataLoaders with tenant_id = None (public tenant)
+        // These will batch requests within a 10ms window (default)
+        let packages = DataLoader::new(
+            PackageBatchLoader::new(graph.clone(), None),
+            tokio::spawn,
+        )
+        .max_batch_size(100);
+        
+        let versions = DataLoader::new(
+            VersionBatchLoader::new(graph.clone(), None),
+            tokio::spawn,
+        )
+        .max_batch_size(100);
+        
+        let dependencies = DataLoader::new(
+            DependenciesLoader::new(graph.clone(), None),
+            tokio::spawn,
+        )
+        .max_batch_size(50);
+        
+        // Create CachedGraphService if cache is available
+        let cache_arc = cache.map(Arc::new);
+        let cached_graph = cache_arc.as_ref().map(|c| {
+            Arc::new(CachedGraphService::with_defaults(
+                Arc::new(graph.clone()),
+                c.clone(),
+            ))
+        });
+        
         Self {
             graph,
-            cache: cache.map(Arc::new),
+            cache: cache_arc,
             package_loader,
             guardrails,
             event_tx: Arc::new(event_tx),
             channels: Arc::new(channels),
             semantic_search: None,
             gemini: None,
+            packages,
+            versions,
+            dependencies,
+            cached_graph,
         }
     }
     
@@ -126,15 +180,47 @@ impl GqlContext {
         // Create version_tx from channels for backwards compatibility
         let event_tx = channels.version_tx.clone();
         
+        // Create async-graphql DataLoaders with tenant_id = None (public tenant)
+        let packages = DataLoader::new(
+            PackageBatchLoader::new(graph.clone(), None),
+            tokio::spawn,
+        )
+        .max_batch_size(100);
+        
+        let versions = DataLoader::new(
+            VersionBatchLoader::new(graph.clone(), None),
+            tokio::spawn,
+        )
+        .max_batch_size(100);
+        
+        let dependencies = DataLoader::new(
+            DependenciesLoader::new(graph.clone(), None),
+            tokio::spawn,
+        )
+        .max_batch_size(50);
+        
+        // Create CachedGraphService if cache is available
+        let cache_arc = cache.map(Arc::new);
+        let cached_graph = cache_arc.as_ref().map(|c| {
+            Arc::new(CachedGraphService::with_defaults(
+                Arc::new(graph.clone()),
+                c.clone(),
+            ))
+        });
+        
         Self {
             graph,
-            cache: cache.map(Arc::new),
+            cache: cache_arc,
             package_loader,
             guardrails,
             event_tx: Arc::new(event_tx),
             channels,
             semantic_search,
             gemini,
+            packages,
+            versions,
+            dependencies,
+            cached_graph,
         }
     }
 }

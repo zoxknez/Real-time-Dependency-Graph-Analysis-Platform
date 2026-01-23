@@ -11,10 +11,16 @@
 
 use crate::config::EmbeddingConfig;
 use anyhow::{Context, Result};
+use ndarray::{Array, ArrayView3, Axis};
+use ort::session::builder::GraphOptimizationLevel;
+use ort::session::Session;
+use ort::value::Value;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
+use tokenizers::Tokenizer;
+use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, info, instrument, warn};
 
 // ═══════════════════════════════════════════════════════════════
@@ -206,60 +212,129 @@ impl EmbeddingGenerator {
 
 /// Local embedding using ONNX Runtime
 struct LocalEmbedder {
+    session: Mutex<Session>,
+    tokenizer: Tokenizer,
     dimension: usize,
-    // session: ort::Session,
-    // tokenizer: tokenizers::Tokenizer,
 }
 
 impl LocalEmbedder {
-    async fn new(_model_path: &Option<String>, dimension: usize) -> Result<Self> {
-        info!("Initializing local ONNX embedder");
-        
-        // TODO: Initialize ONNX session and tokenizer
-        // let session = ort::Session::builder()?
-        //     .with_optimization_level(ort::GraphOptimizationLevel::Level3)?
-        //     .commit_from_file(model_path)?;
-        // let tokenizer = tokenizers::Tokenizer::from_file(tokenizer_path)?;
+    async fn new(model_path_str: &Option<String>, dimension: usize) -> Result<Self> {
+        let model_path = model_path_str
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Model path required for local embedder"))?;
 
-        Ok(Self { dimension })
+        info!(path = %model_path, "Initializing local ONNX embedder");
+
+        let onnx_path = Path::new(model_path).join("model.onnx");
+        let tokenizer_path = Path::new(model_path).join("tokenizer.json");
+
+        if !onnx_path.exists() {
+            return Err(anyhow::anyhow!("Model file not found at {:?}", onnx_path));
+        }
+        if !tokenizer_path.exists() {
+            return Err(anyhow::anyhow!("Tokenizer file not found at {:?}", tokenizer_path));
+        }
+
+        // Initialize ONNX session
+        let session = Session::builder()?
+            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_intra_threads(4)?
+            .commit_from_file(onnx_path)?;
+
+        // Initialize Tokenizer
+        let tokenizer = Tokenizer::from_file(tokenizer_path)
+            .map_err(|e| anyhow::anyhow!("Failed to load tokenizer: {}", e))?;
+
+        Ok(Self {
+            session: Mutex::new(session),
+            tokenizer,
+            dimension,
+        })
     }
 
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
-        // TODO: Actual ONNX inference
-        // For now, return deterministic placeholder based on text
-        Ok(self.generate_placeholder_embedding(text))
+        let embeddings = self.embed_batch(&[text]).await?;
+        embeddings
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No embedding returned"))
     }
 
     async fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
-        // TODO: Batch ONNX inference
-        Ok(texts.iter().map(|t| self.generate_placeholder_embedding(t)).collect())
-    }
-
-    fn generate_placeholder_embedding(&self, text: &str) -> Vec<f32> {
-        // Generate deterministic embedding based on text hash
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        
-        let mut hasher = DefaultHasher::new();
-        text.hash(&mut hasher);
-        let seed = hasher.finish();
-        
-        let mut embedding = vec![0.0f32; self.dimension];
-        for (i, val) in embedding.iter_mut().enumerate() {
-            // Deterministic pseudo-random based on seed and index
-            let x = ((seed.wrapping_add(i as u64)).wrapping_mul(0x5DEECE66D) as f64) / (u64::MAX as f64);
-            *val = (x * 2.0 - 1.0) as f32;
+        if texts.is_empty() {
+            return Ok(vec![]);
         }
-        
-        // Normalize to unit vector
-        let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
-        if norm > 0.0 {
-            for val in &mut embedding {
-                *val /= norm;
+
+        // Tokenize
+        let encodings = self.tokenizer.encode_batch(texts.to_vec(), true)
+            .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
+
+        let batch_size = texts.len();
+        let max_len = encodings[0].get_ids().len();
+
+        let mut input_ids = Array::zeros((batch_size, max_len));
+        let mut attention_mask = Array::zeros((batch_size, max_len));
+        let mut token_type_ids = Array::zeros((batch_size, max_len));
+
+        for (i, encoding) in encodings.iter().enumerate() {
+            for (j, &id) in encoding.get_ids().iter().enumerate() {
+                input_ids[[i, j]] = id as i64;
+            }
+            for (j, &mask) in encoding.get_attention_mask().iter().enumerate() {
+                attention_mask[[i, j]] = mask as i64;
+            }
+            for (j, &type_id) in encoding.get_type_ids().iter().enumerate() {
+                token_type_ids[[i, j]] = type_id as i64;
             }
         }
+
+        // Run inference
+        let mut session_guard = self.session.lock().await;
+        let outputs = session_guard.run(vec![
+            ("input_ids", Value::from_array(input_ids)?),
+            ("attention_mask", Value::from_array(attention_mask.clone())?),
+            ("token_type_ids", Value::from_array(token_type_ids)?),
+        ])?;
+
+        let (shape, data) = outputs["last_hidden_state"]
+            .try_extract_tensor::<f32>()?;
         
-        embedding
+        // Convert to ArrayView3
+        let last_hidden_state = ArrayView3::from_shape(
+            (shape[0] as usize, shape[1] as usize, shape[2] as usize),
+            data
+        ).map_err(|e| anyhow::anyhow!("Failed to create ArrayView: {}", e))?;
+
+        // Mean Pooling
+        let mut embeddings = Vec::with_capacity(batch_size);
+        for i in 0..batch_size {
+            let mut sum_vec = Array::zeros(self.dimension);
+            let mut count = 0.0f32;
+
+            for j in 0..max_len {
+                if attention_mask[[i, j]] == 1 {
+                    let token_vec = last_hidden_state.slice(ndarray::s![i, j, ..]);
+                    sum_vec += &token_vec;
+                    count += 1.0;
+                }
+            }
+
+            let mut final_vec = if count > 0.0 {
+                sum_vec / count
+            } else {
+                sum_vec
+            };
+
+            // L2 Normalization
+            let norm = final_vec.mapv(|x: f32| x * x).sum().sqrt();
+            if norm > 1e-6 {
+                final_vec /= norm;
+            }
+
+            embeddings.push(final_vec.into_raw_vec_and_offset().0);
+        }
+
+        Ok(embeddings)
     }
 }
 

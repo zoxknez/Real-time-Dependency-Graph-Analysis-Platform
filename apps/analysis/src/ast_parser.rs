@@ -1611,6 +1611,8 @@ impl ParserPool {
             .collect::<Vec<_>>()
             .join(" ")
             .replace(" (", "(")
+            .replace("( ", "(")
+            .replace(" )", ")")
             .replace(" )", ")")
             .replace(" ,", ",")
             .replace(", ", ",")

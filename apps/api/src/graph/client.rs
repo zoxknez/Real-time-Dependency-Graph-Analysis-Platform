@@ -4,27 +4,39 @@ use anyhow::Result;
 use neo4rs::{Row};
 use std::sync::Arc;
 use tracing::{info, instrument};
-use storage::memgraph::{MemgraphClient, MemgraphConfig};
+use storage::memgraph::{MemgraphClient, MemgraphConfig, MemoryStats};
 use models::tenant::TenantContext;
 
 /// Memgraph client wrapper optimized for read-heavy GraphQL queries
 #[derive(Clone)]
 pub struct GraphClient {
     client: Arc<MemgraphClient>,
+    /// Pool size for monitoring
+    pool_size: usize,
 }
 
 impl GraphClient {
     /// Connect to Memgraph with connection pooling
+    /// 
+    /// Pool size is calculated as (2 * CPU cores) + 1 for optimal performance:
+    /// - 2 * cores: Maximizes throughput for I/O-bound operations
+    /// - +1: Ensures at least one connection is always available
     #[instrument(skip(config), fields(uri = %config.memgraph.uri))]
     pub async fn connect(config: &crate::config::Config) -> Result<Self> {
-        info!("Connecting to Memgraph for GraphQL API...");
+        let pool_size = config.memgraph.pool_size;
+        
+        info!(
+            pool_size = pool_size,
+            cpu_cores = std::thread::available_parallelism().map(|p| p.get()).unwrap_or(4),
+            "Connecting to Memgraph with optimized pool (formula: 2*cores + 1)"
+        );
 
         // Translate app config to storage config
         let memgraph_config = MemgraphConfig {
             uri: config.memgraph.uri.clone(),
             username: config.memgraph.username.clone(),
             password: config.memgraph.password.clone(),
-            max_connections: config.memgraph.pool_size as usize,
+            max_connections: pool_size,
             connect_timeout: std::time::Duration::from_secs(30),
             query_timeout: std::time::Duration::from_secs(60),
             max_retries: 3,
@@ -32,11 +44,20 @@ impl GraphClient {
 
         let client = MemgraphClient::new(memgraph_config).await?;
 
-        info!("Connected to Memgraph successfully");
+        info!(pool_size = pool_size, "Connected to Memgraph successfully");
+        
+        // Record pool size as gauge metric
+        metrics::gauge!("memgraph_pool_size").set(pool_size as f64);
 
         Ok(Self {
             client: Arc::new(client),
+            pool_size,
         })
+    }
+
+    /// Get the configured pool size
+    pub fn pool_size(&self) -> usize {
+        self.pool_size
     }
 
     /// Execute a query and return all rows
@@ -53,5 +74,10 @@ impl GraphClient {
     /// Health check
     pub async fn health_check(&self) -> bool {
         self.client.health_check().await
+    }
+
+    /// Get memory usage statistics for OOM prevention
+    pub async fn get_memory_stats(&self) -> Result<MemoryStats> {
+        self.client.get_memory_stats().await
     }
 }

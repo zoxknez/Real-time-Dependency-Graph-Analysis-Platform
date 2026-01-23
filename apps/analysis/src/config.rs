@@ -1,29 +1,34 @@
 //! Configuration for analysis service
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// Analysis service configuration
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     /// Kafka/Redpanda configuration
+    #[serde(default)]
     pub kafka: KafkaConfig,
     
     /// Worker pool configuration
+    #[serde(default)]
     pub workers: WorkerConfig,
     
     /// Parser configuration
+    #[serde(default)]
     pub parser: ParserConfig,
     
     /// Embedding configuration
+    #[serde(default)]
     pub embedding: EmbeddingConfig,
     
     /// Service configuration
+    #[serde(default)]
     pub service: ServiceConfig,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct KafkaConfig {
     /// Broker addresses (comma-separated)
     #[serde(default = "default_brokers")]
@@ -50,7 +55,7 @@ pub struct KafkaConfig {
     pub max_retries: u32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct WorkerConfig {
     /// Number of parallel workers
     #[serde(default = "default_worker_count")]
@@ -69,7 +74,7 @@ pub struct WorkerConfig {
     pub shutdown_timeout_secs: u64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ParserConfig {
     /// Enable Rust parsing
     #[serde(default = "default_true")]
@@ -92,7 +97,7 @@ pub struct ParserConfig {
     pub max_files_per_package: usize,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct EmbeddingConfig {
     /// Embedding provider: "local" or "openai"
     #[serde(default = "default_embedding_provider")]
@@ -114,7 +119,7 @@ pub struct EmbeddingConfig {
     pub batch_size: usize,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ServiceConfig {
     /// Service name for tracing
     #[serde(default = "default_service_name")]
@@ -147,6 +152,9 @@ fn default_shutdown_timeout_secs() -> u64 { 30 }
 fn default_true() -> bool { true }
 fn default_max_file_size() -> usize { 1024 * 1024 } // 1MB
 fn default_max_files() -> usize { 1000 }
+#[cfg(test)]
+fn default_embedding_provider() -> String { "mock".to_string() }
+#[cfg(not(test))]
 fn default_embedding_provider() -> String { "local".to_string() }
 fn default_model_path() -> String { "./models/all-MiniLM-L6-v2".to_string() }
 fn default_embedding_dim() -> usize { 384 }
@@ -155,12 +163,85 @@ fn default_service_name() -> String { "analysis-service".to_string() }
 fn default_log_level() -> String { "info".to_string() }
 fn default_metrics_port() -> u16 { 9091 }
 
+impl Default for KafkaConfig {
+    fn default() -> Self {
+        Self {
+            brokers: default_brokers(),
+            consumer_group: default_consumer_group(),
+            input_topic: default_input_topic(),
+            output_topic: default_output_topic(),
+            dlq_topic: default_dlq_topic(),
+            max_retries: default_max_retries(),
+        }
+    }
+}
+
+impl Default for WorkerConfig {
+    fn default() -> Self {
+        Self {
+            count: default_worker_count(),
+            queue_size: default_queue_size(),
+            parse_timeout_secs: default_parse_timeout_secs(),
+            shutdown_timeout_secs: default_shutdown_timeout_secs(),
+        }
+    }
+}
+
+impl Default for ParserConfig {
+    fn default() -> Self {
+        Self {
+            rust_enabled: true,
+            js_enabled: true,
+            python_enabled: true,
+            max_file_size: default_max_file_size(),
+            max_files_per_package: default_max_files(),
+        }
+    }
+}
+
+impl Default for EmbeddingConfig {
+    fn default() -> Self {
+        Self {
+            provider: default_embedding_provider(),
+            openai_api_key: None,
+            model_path: default_model_path(),
+            dimension: default_embedding_dim(),
+            batch_size: default_batch_size(),
+        }
+    }
+}
+
+impl Default for ServiceConfig {
+    fn default() -> Self {
+        Self {
+            name: default_service_name(),
+            log_level: default_log_level(),
+            metrics_enabled: true,
+            metrics_port: default_metrics_port(),
+        }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            kafka: KafkaConfig::default(),
+            workers: WorkerConfig::default(),
+            parser: ParserConfig::default(),
+            embedding: EmbeddingConfig::default(),
+            service: ServiceConfig::default(),
+        }
+    }
+}
+
 impl Config {
     /// Load configuration from environment variables
     pub fn from_env() -> Result<Self> {
         dotenvy::dotenv().ok();
         
         let config = config::Config::builder()
+            // Add defaults first
+            .add_source(config::Config::try_from(&Config::default())?)
             .add_source(config::Environment::with_prefix("ANALYSIS").separator("__"))
             .build()
             .context("Failed to build configuration")?;
@@ -168,45 +249,6 @@ impl Config {
         config.try_deserialize().context("Failed to deserialize configuration")
     }
     
-    /// Load with defaults (useful for testing)
-    pub fn default() -> Self {
-        Self {
-            kafka: KafkaConfig {
-                brokers: default_brokers(),
-                consumer_group: default_consumer_group(),
-                input_topic: default_input_topic(),
-                output_topic: default_output_topic(),
-                dlq_topic: default_dlq_topic(),
-                max_retries: default_max_retries(),
-            },
-            workers: WorkerConfig {
-                count: default_worker_count(),
-                queue_size: default_queue_size(),
-                parse_timeout_secs: default_parse_timeout_secs(),
-                shutdown_timeout_secs: default_shutdown_timeout_secs(),
-            },
-            parser: ParserConfig {
-                rust_enabled: true,
-                js_enabled: true,
-                python_enabled: true,
-                max_file_size: default_max_file_size(),
-                max_files_per_package: default_max_files(),
-            },
-            embedding: EmbeddingConfig {
-                provider: default_embedding_provider(),
-                openai_api_key: None,
-                model_path: default_model_path(),
-                dimension: default_embedding_dim(),
-                batch_size: default_batch_size(),
-            },
-            service: ServiceConfig {
-                name: default_service_name(),
-                log_level: default_log_level(),
-                metrics_enabled: true,
-                metrics_port: default_metrics_port(),
-            },
-        }
-    }
     
     /// Get parse timeout as Duration
     pub fn parse_timeout(&self) -> Duration {

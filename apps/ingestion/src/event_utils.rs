@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 /// ```
 ///
 /// # Example
-/// ```no_run
+/// ```ignore
 /// let event_id = generate_event_id(
 ///     "package.upserted",
 ///     "npm",

@@ -7,6 +7,7 @@
 //! - Security Headers (HSTS, CSP, X-Frame-Options, etc.)
 //! - Audit Logging
 //! - Input Validation
+//! - WebSocket Rate Limiting
 
 pub mod audit;
 pub mod auth;
@@ -16,6 +17,7 @@ pub mod rate_limit;
 pub mod rbac;
 pub mod security_headers;
 pub mod validation;
+pub mod ws_rate_limit;
 
 // Re-exports for convenience - these are available for external use
 #[allow(unused_imports)]
@@ -42,4 +44,10 @@ pub use security_headers::{SecurityHeadersConfig, SecurityHeadersLayer};
 pub use validation::{
     validate_package_id, validate_version, GraphQLRequest, InputValidator, ValidationConfig,
     ValidationError,
+};
+
+// WebSocket rate limiting exports
+#[allow(unused_imports)]
+pub use ws_rate_limit::{
+    init_ws_rate_limiter, get_ws_rate_limiter, WsRateLimiter, WsRateLimitConfig, ConnectionStats,
 };

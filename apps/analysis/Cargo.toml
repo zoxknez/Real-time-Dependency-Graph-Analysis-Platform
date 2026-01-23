@@ -40,6 +40,11 @@ walkdir = "2"
 models = { path = "../../packages/models" }
 storage = { path = "../../packages/storage" }
 
+# ML/Embeddings
+ort = { version = "2.0.0-rc.9", features = ["ndarray", "copy-dylibs"] }
+tokenizers = "0.21.0"
+ndarray = "0.17.2"
+
 [dev-dependencies]
 tokio-test = "0.4"
 

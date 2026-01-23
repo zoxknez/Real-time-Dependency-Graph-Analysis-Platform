@@ -33,6 +33,8 @@ pub struct EmbeddingGenerator {
 enum EmbeddingProvider {
     OpenAI(OpenAIEmbedder),
     Mock(MockEmbedder),
+    TEI(TEIEmbedder),
+    Hybrid(HybridEmbedder),
 }
 
 #[derive(Clone)]
@@ -169,6 +171,14 @@ impl EmbeddingGenerator {
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?,
             EmbeddingProvider::Mock(mock) => mock.embed(text),
+            EmbeddingProvider::TEI(tei) => tei
+                .embed(text)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?,
+            EmbeddingProvider::Hybrid(hybrid) => hybrid
+                .embed(text)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?,
         };
 
         if embedding.len() != self.dimension {
@@ -531,5 +541,344 @@ impl OpenAIEmbedder {
                 }
             }
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TEI (Text Embeddings Inference) Provider
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// TEI (HuggingFace Text Embeddings Inference) embedder
+/// 
+/// Connects to a local or remote TEI server for high-performance embeddings.
+/// TEI supports GPU acceleration and is ideal for self-hosted deployments.
+/// 
+/// Docker: ghcr.io/huggingface/text-embeddings-inference:latest
+pub struct TEIEmbedder {
+    client: Client,
+    url: String,
+    timeout: Duration,
+    max_retries: usize,
+    retry_base_delay: Duration,
+}
+
+impl TEIEmbedder {
+    pub fn new(
+        url: String,
+        timeout: Duration,
+        max_retries: usize,
+        retry_base_delay: Duration,
+    ) -> Result<Self> {
+        let client = Client::builder()
+            .timeout(timeout)
+            .build()
+            .context("Failed to build HTTP client for TEI")?;
+
+        info!(url = %url, "TEI embedder initialized");
+
+        Ok(Self {
+            client,
+            url,
+            timeout,
+            max_retries,
+            retry_base_delay,
+        })
+    }
+
+    pub async fn embed(&self, text: &str) -> std::result::Result<Vec<f32>, EmbeddingError> {
+        #[derive(serde::Serialize)]
+        struct TEIRequest<'a> {
+            inputs: &'a str,
+            truncate: bool,
+        }
+
+        let req = TEIRequest {
+            inputs: text,
+            truncate: true,
+        };
+
+        let mut attempt: usize = 0;
+        loop {
+            let started = Instant::now();
+            let resp = self
+                .client
+                .post(&format!("{}/embed", self.url))
+                .json(&req)
+                .send()
+                .await;
+
+            match resp {
+                Ok(resp) => {
+                    let status = resp.status();
+                    let elapsed = started.elapsed().as_secs_f64();
+                    histogram!(
+                        metric_names::EMBEDDINGS_REQUEST_DURATION_SECONDS,
+                        &[("provider", "tei".to_string())]
+                    )
+                    .record(elapsed);
+
+                    if !status.is_success() {
+                        let body = resp.text().await.unwrap_or_default();
+                        let err = EmbeddingError::ProviderRejected {
+                            status: status.as_u16(),
+                            body,
+                        };
+
+                        counter!(
+                            metric_names::EMBEDDINGS_ERRORS_TOTAL,
+                            &[("provider", "tei".to_string()), ("code", err.code().to_string())]
+                        )
+                        .increment(1);
+
+                        let retriable = matches!(status.as_u16(), 429 | 500 | 502 | 503 | 504);
+                        if retriable && attempt < self.max_retries {
+                            let backoff = self
+                                .retry_base_delay
+                                .saturating_mul(2u32.saturating_pow(attempt as u32))
+                                .min(Duration::from_secs(10));
+                            warn!(
+                                attempt,
+                                status = status.as_u16(),
+                                "TEI embeddings failed; retrying"
+                            );
+                            attempt += 1;
+                            tokio::time::sleep(backoff).await;
+                            continue;
+                        }
+
+                        return Err(err);
+                    }
+
+                    counter!(
+                        metric_names::EMBEDDINGS_REQUESTS_TOTAL,
+                        &[("provider", "tei".to_string()), ("result", "ok".to_string())]
+                    )
+                    .increment(1);
+
+                    // TEI returns array of embeddings directly
+                    let embeddings: Vec<Vec<f32>> = resp
+                        .json()
+                        .await
+                        .map_err(|e| EmbeddingError::Http(e.to_string()))?;
+
+                    return embeddings
+                        .into_iter()
+                        .next()
+                        .ok_or(EmbeddingError::EmptyResponse);
+                }
+                Err(e) => {
+                    let err = if e.is_timeout() {
+                        EmbeddingError::Timeout
+                    } else {
+                        EmbeddingError::Http(e.to_string())
+                    };
+
+                    counter!(
+                        metric_names::EMBEDDINGS_ERRORS_TOTAL,
+                        &[("provider", "tei".to_string()), ("code", err.code().to_string())]
+                    )
+                    .increment(1);
+
+                    if attempt < self.max_retries {
+                        let backoff = self
+                            .retry_base_delay
+                            .saturating_mul(2u32.saturating_pow(attempt as u32))
+                            .min(Duration::from_secs(10));
+                        warn!(
+                            attempt,
+                            error = %err,
+                            "TEI embeddings request error; retrying"
+                        );
+                        attempt += 1;
+                        tokio::time::sleep(backoff).await;
+                        continue;
+                    }
+
+                    return Err(err);
+                }
+            }
+        }
+    }
+
+    /// Health check for TEI server
+    pub async fn health_check(&self) -> bool {
+        match self.client.get(&format!("{}/health", self.url)).send().await {
+            Ok(resp) => resp.status().is_success(),
+            Err(_) => false,
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Hybrid Embedding Provider
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Hybrid embedding provider with automatic fallback
+/// 
+/// Tries primary provider first, falls back to secondary on failure.
+/// Useful for:
+/// - TEI (primary) with OpenAI (fallback)
+/// - OpenAI (primary) with Mock (fallback for testing)
+pub struct HybridEmbedder {
+    primary: Box<dyn EmbedderTrait + Send + Sync>,
+    fallback: Box<dyn EmbedderTrait + Send + Sync>,
+    primary_name: String,
+    fallback_name: String,
+}
+
+/// Trait for embedding providers
+#[async_trait::async_trait]
+pub trait EmbedderTrait {
+    async fn embed(&self, text: &str) -> std::result::Result<Vec<f32>, EmbeddingError>;
+    fn name(&self) -> &str;
+}
+
+#[async_trait::async_trait]
+impl EmbedderTrait for TEIEmbedder {
+    async fn embed(&self, text: &str) -> std::result::Result<Vec<f32>, EmbeddingError> {
+        self.embed(text).await
+    }
+    fn name(&self) -> &str {
+        "tei"
+    }
+}
+
+#[async_trait::async_trait]
+impl EmbedderTrait for MockEmbedder {
+    async fn embed(&self, text: &str) -> std::result::Result<Vec<f32>, EmbeddingError> {
+        Ok(self.embed(text))
+    }
+    fn name(&self) -> &str {
+        "mock"
+    }
+}
+
+impl HybridEmbedder {
+    pub fn new(
+        primary: Box<dyn EmbedderTrait + Send + Sync>,
+        fallback: Box<dyn EmbedderTrait + Send + Sync>,
+    ) -> Self {
+        let primary_name = primary.name().to_string();
+        let fallback_name = fallback.name().to_string();
+        
+        info!(
+            primary = %primary_name,
+            fallback = %fallback_name,
+            "Hybrid embedder initialized"
+        );
+
+        Self {
+            primary,
+            fallback,
+            primary_name,
+            fallback_name,
+        }
+    }
+
+    pub async fn embed(&self, text: &str) -> std::result::Result<Vec<f32>, EmbeddingError> {
+        match self.primary.embed(text).await {
+            Ok(embedding) => {
+                counter!(
+                    metric_names::EMBEDDINGS_REQUESTS_TOTAL,
+                    &[("provider", self.primary_name.clone()), ("result", "ok".to_string())]
+                )
+                .increment(1);
+                Ok(embedding)
+            }
+            Err(e) => {
+                warn!(
+                    primary = %self.primary_name,
+                    error = %e,
+                    "Primary embedder failed, using fallback"
+                );
+                counter!(
+                    "embeddings_fallback_used_total",
+                    &[("primary", self.primary_name.clone()), ("fallback", self.fallback_name.clone())]
+                )
+                .increment(1);
+
+                self.fallback.embed(text).await
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Extended EmbeddingGenerator with TEI support
+// ═══════════════════════════════════════════════════════════════════════════
+
+impl EmbeddingGenerator {
+    /// Create a new EmbeddingGenerator with TEI support
+    /// 
+    /// Provider precedence:
+    /// 1. "tei" - Uses TEI server (requires TEI_URL env var)
+    /// 2. "hybrid" - TEI primary with OpenAI fallback
+    /// 3. "openai" - OpenAI API
+    /// 4. "mock" - Deterministic mock embeddings
+    pub async fn new_with_tei(config: &EmbeddingConfig, tei_url: Option<&str>) -> Result<Self> {
+        let env_tei_url = std::env::var("TEI_URL").ok();
+        
+        let provider = match config.provider.as_str() {
+            "tei" => {
+                let url = tei_url
+                    .or(env_tei_url.as_deref())
+                    .unwrap_or("http://localhost:8090");
+                
+                let tei = TEIEmbedder::new(
+                    url.to_string(),
+                    Duration::from_secs(config.timeout_secs),
+                    config.max_retries,
+                    Duration::from_millis(config.retry_base_delay_ms),
+                )?;
+                
+                // Check if TEI is available
+                if tei.health_check().await {
+                    info!(url = %url, "TEI server is healthy");
+                    EmbeddingProvider::TEI(tei)
+                } else {
+                    warn!(url = %url, "TEI server not available, falling back to mock");
+                    EmbeddingProvider::Mock(MockEmbedder::new(config.dimension))
+                }
+            }
+            "hybrid" => {
+                // Create hybrid: TEI -> Mock
+                let url = tei_url
+                    .or(env_tei_url.as_deref())
+                    .unwrap_or("http://localhost:8090");
+                
+                let tei = TEIEmbedder::new(
+                    url.to_string(),
+                    Duration::from_secs(config.timeout_secs),
+                    config.max_retries,
+                    Duration::from_millis(config.retry_base_delay_ms),
+                )?;
+
+                let mock = MockEmbedder::new(config.dimension);
+                let hybrid = HybridEmbedder::new(
+                    Box::new(tei),
+                    Box::new(mock),
+                );
+
+                EmbeddingProvider::Hybrid(hybrid)
+            }
+            _ => {
+                // Fall back to original logic
+                return Self::new(config).await;
+            }
+        };
+
+        info!(
+            provider = %config.provider,
+            dimension = config.dimension,
+            "Embedding generator initialized with TEI support"
+        );
+
+        Ok(Self {
+            provider,
+            dimension: config.dimension,
+            cache: Arc::new(RwLock::new(HashMap::new())),
+            max_cache_size: config.cache_max_entries,
+            cache_ttl: Duration::from_secs(config.cache_ttl_secs),
+        })
     }
 }

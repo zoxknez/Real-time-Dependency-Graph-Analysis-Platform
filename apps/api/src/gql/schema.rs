@@ -1,7 +1,7 @@
-//! GraphQL Schema builder with complexity limits
+//! GraphQL Schema builder with security limits and production hardening
 
 use anyhow::Result;
-use async_graphql::{EmptyMutation, Schema};
+use async_graphql::{EmptyMutation, Schema, extensions::Analyzer};
 use std::sync::Arc;
 use tracing::{info, warn};
 use std::time::Duration;
@@ -25,7 +25,6 @@ pub async fn build_schema(config: &Config) -> Result<(ApiSchema, Arc<EventChanne
 
     info!("Building GraphQL schema...");
 
-    // Connect to Memgraph (Required)
     // Connect to Memgraph (Required)
     info!("Connecting to Memgraph at {}...", config.memgraph.uri);
     let graph = match tokio::time::timeout(Duration::from_secs(5), GraphClient::connect(config)).await {
@@ -111,8 +110,6 @@ pub async fn build_schema(config: &Config) -> Result<(ApiSchema, Arc<EventChanne
         None
     };
 
-
-
     // Initialize Gemini Service
     let gemini = if !config.gemini.api_key.is_empty() {
         info!("Gemini service enabled");
@@ -136,18 +133,34 @@ pub async fn build_schema(config: &Config) -> Result<(ApiSchema, Arc<EventChanne
         gemini,
     );
 
-    // Build schema with complexity limits
-    let schema = Schema::build(QueryRoot, EmptyMutation, SubscriptionRoot)
+    // Get limits from config (already adjusted for environment)
+    let max_depth = config.guardrails.max_depth;
+    let max_complexity = config.guardrails.max_complexity;
+    let is_production = config.environment.is_production();
+
+    // Build schema with security limits
+    let mut schema_builder = Schema::build(QueryRoot, EmptyMutation, SubscriptionRoot)
         .data(ctx)
-        .limit_complexity(config.guardrails.max_complexity)
-        .limit_depth(12) // Hard limit on query nesting
-        .finish();
+        .extension(Analyzer) // Logs query complexity
+        .limit_complexity(max_complexity)
+        .limit_depth(max_depth);
+    
+    // Disable introspection in production for security
+    if is_production {
+        info!("🔒 GraphQL introspection DISABLED (production mode)");
+        schema_builder = schema_builder.disable_introspection();
+    } else {
+        info!("📖 GraphQL introspection enabled (development mode)");
+    }
+    
+    let schema = schema_builder.finish();
 
     info!(
-        max_complexity = config.guardrails.max_complexity,
-        max_depth = 12,
+        max_complexity = max_complexity,
+        max_depth = max_depth,
+        introspection = !is_production,
         subscription_channels = 4,
-        "GraphQL schema built successfully"
+        "GraphQL schema built successfully with security limits"
     );
 
     Ok((schema, channels, graph, cache))

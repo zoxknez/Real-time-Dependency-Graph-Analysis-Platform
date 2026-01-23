@@ -51,6 +51,42 @@ impl GraphQueries {
     // VERSION QUERIES
     // ═══════════════════════════════════════════════════════════════
 
+    /// Get multiple versions by IDs (for DataLoader batch)
+    pub fn get_versions_batch(tenant_id: &str, version_ids: &[String]) -> Query {
+        neo4rs::query(
+            r#"
+            MATCH (v:Version {tenant_id: $tenant_id})-[:BELONGS_TO]->(p:Package {tenant_id: $tenant_id})
+            WHERE v.id IN $ids
+            RETURN v.id AS id,
+                   p.id AS package_id,
+                   v.version AS version,
+                   v.published_at AS published_at,
+                   v.yanked AS yanked
+            "#,
+        )
+        .param("tenant_id", tenant_id.to_string())
+        .param("ids", version_ids.to_vec())
+    }
+
+    /// Get direct dependencies for multiple packages at once (for DataLoader batch)
+    /// Returns source_id to identify which package each dependency belongs to
+    pub fn get_dependencies_batch(tenant_id: &str, package_ids: &[String]) -> Query {
+        neo4rs::query(
+            r#"
+            MATCH (src:Package {tenant_id: $tenant_id})<-[:BELONGS_TO]-(v:Version {tenant_id: $tenant_id})
+            WHERE src.id IN $ids
+            MATCH (v)-[:DEPENDS_ON]->(dep:Package {tenant_id: $tenant_id})
+            WHERE dep.deleted_at IS NULL AND dep <> src
+            RETURN DISTINCT src.id AS source_id,
+                   dep.id AS id,
+                   dep.ecosystem AS ecosystem,
+                   dep.name AS name
+            "#,
+        )
+        .param("tenant_id", tenant_id.to_string())
+        .param("ids", package_ids.to_vec())
+    }
+
     /// Get versions of a package
     pub fn get_versions(tenant_id: &str, package_id: &str, limit: i32) -> Query {
         neo4rs::query(

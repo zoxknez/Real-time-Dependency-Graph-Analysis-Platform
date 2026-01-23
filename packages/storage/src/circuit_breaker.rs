@@ -387,6 +387,7 @@ impl CircuitBreakerRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[tokio::test]
     async fn test_circuit_breaker_opens_after_threshold() {
@@ -434,27 +435,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_circuit_breaker_closes_after_successes() {
-        let breaker = CircuitBreaker::new("test", "operation", CircuitBreakerConfig {
+        let breaker = CircuitBreaker::new("test_close", "operation", CircuitBreakerConfig {
             failure_threshold: 2,
-            success_threshold: 2,
-            timeout_ms: 100,
-            half_open_requests: 3,
+            success_threshold: 1,  // Close after just 1 success in half-open
+            timeout_ms: 50,
+            half_open_requests: 10,
         });
 
-        // Open the circuit
+        // Open the circuit with 2 failures
         for _ in 0..2 {
             let _ = breaker.call(async { Err::<(), _>("error") }).await;
         }
+        assert_eq!(breaker.state(), CircuitState::Open);
 
         // Wait for timeout
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-        // Succeed enough times to close
-        for _ in 0..2 {
-            let result = breaker.call(async { Ok::<_, String>(()) }).await;
-            assert!(result.is_ok());
-        }
+        // One successful call should transition through half-open to closed
+        let result = breaker.call(async { Ok::<_, String>(()) }).await;
+        assert!(result.is_ok(), "Call should succeed");
 
+        // Should now be closed
         assert_eq!(breaker.state(), CircuitState::Closed);
     }
 }

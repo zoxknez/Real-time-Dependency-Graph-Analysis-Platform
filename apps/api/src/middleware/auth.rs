@@ -2,9 +2,11 @@
 //!
 //! Features:
 //! - JWT token validation (HS256, RS256)
+//! - Key rotation support (multiple validation secrets)
 //! - Token extraction from Authorization header
 //! - Claims extraction and injection into request
 //! - Optional authentication (public endpoints)
+//! - Production-safe configuration
 
 #![allow(dead_code)]
 
@@ -19,20 +21,24 @@ use axum::{
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::{warn, info};
 use models::tenant::{TenantContext, Permission, RateTier};
 use std::collections::HashSet;
 use uuid::Uuid;
+
+use crate::config::Environment;
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════
 
-/// JWT configuration
+/// JWT configuration with key rotation support
 #[derive(Debug, Clone)]
 pub struct JwtConfig {
-    /// Secret key for HS256 (or public key for RS256)
-    pub secret: String,
+    /// Primary secret key for signing new tokens
+    pub primary_secret: String,
+    /// All secrets valid for verification (includes primary + old keys for rotation)
+    pub validation_secrets: Vec<String>,
     /// Algorithm to use
     pub algorithm: Algorithm,
     /// Issuer to validate
@@ -41,17 +47,134 @@ pub struct JwtConfig {
     pub audience: Option<String>,
     /// Whether to validate expiration
     pub validate_exp: bool,
+    /// Environment for logging/behavior
+    environment: Environment,
 }
 
-impl Default for JwtConfig {
-    fn default() -> Self {
+impl JwtConfig {
+    /// Create JwtConfig from environment variables.
+    /// 
+    /// Environment variables:
+    /// - JWT_SECRET: Primary signing secret (REQUIRED in production)
+    /// - JWT_SECRETS: Comma-separated list of valid secrets for rotation
+    /// - JWT_ISSUER: Expected token issuer
+    /// - JWT_AUDIENCE: Expected token audience
+    /// - ENVIRONMENT: production/staging/development
+    pub fn from_env() -> Self {
+        let environment = Environment::from_env();
+        
+        // Get primary secret
+        let primary_secret = match std::env::var("JWT_SECRET") {
+            Ok(secret) => {
+                // Validate secret strength in production
+                if environment.is_production() {
+                    if secret.len() < 32 {
+                        panic!(
+                            "❌ SECURITY ERROR: JWT_SECRET must be at least 32 characters. Current: {}",
+                            secret.len()
+                        );
+                    }
+                    if secret.starts_with("dev") || secret.contains("development") {
+                        panic!("❌ SECURITY ERROR: JWT_SECRET contains development values in production!");
+                    }
+                }
+                secret
+            }
+            Err(_) => {
+                if environment.is_production() {
+                    panic!("❌ SECURITY ERROR: JWT_SECRET environment variable MUST be set in production!");
+                }
+                
+                // Development default with warning
+                let dev_secret = "dev-only-insecure-secret-do-not-use-in-prod-32chars!".to_string();
+                warn!("⚠️  JWT_SECRET not set - using insecure development default!");
+                dev_secret
+            }
+        };
+        
+        // Get validation secrets (for key rotation)
+        // Format: JWT_SECRETS=current_secret,old_secret_1,old_secret_2
+        let validation_secrets: Vec<String> = std::env::var("JWT_SECRETS")
+            .map(|s| {
+                s.split(',')
+                    .map(|k| k.trim().to_string())
+                    .filter(|k| !k.is_empty())
+                    .collect()
+            })
+            .unwrap_or_else(|_| vec![primary_secret.clone()]);
+        
+        // Ensure primary secret is in validation list
+        let mut all_secrets = validation_secrets;
+        if !all_secrets.contains(&primary_secret) {
+            all_secrets.insert(0, primary_secret.clone());
+        }
+        
+        if all_secrets.len() > 1 {
+            info!(
+                "🔑 JWT key rotation enabled with {} validation keys",
+                all_secrets.len()
+            );
+        }
+        
         Self {
-            secret: std::env::var("JWT_SECRET").unwrap_or_else(|_| "development-secret".to_string()),
+            primary_secret,
+            validation_secrets: all_secrets,
             algorithm: Algorithm::HS256,
             issuer: std::env::var("JWT_ISSUER").ok(),
             audience: std::env::var("JWT_AUDIENCE").ok(),
             validate_exp: true,
+            environment,
         }
+    }
+    
+    /// Validate a token against any valid secret (supports key rotation)
+    pub fn validate_token(&self, token: &str) -> Result<Claims, AuthError> {
+        let mut last_error = None;
+        
+        // Try each secret in order (newest first)
+        for secret in &self.validation_secrets {
+            match self.try_validate_with_secret(token, secret) {
+                Ok(claims) => return Ok(claims),
+                Err(e) => {
+                    last_error = Some(e);
+                    // Continue to try next secret
+                }
+            }
+        }
+        
+        // All secrets failed
+        Err(last_error.unwrap_or(AuthError {
+            error: "VALIDATION_FAILED",
+            message: "Token validation failed with all available keys".to_string(),
+        }))
+    }
+    
+    fn try_validate_with_secret(&self, token: &str, secret: &str) -> Result<Claims, AuthError> {
+        let mut validation = Validation::new(self.algorithm);
+        validation.validate_exp = self.validate_exp;
+        
+        if let Some(ref iss) = self.issuer {
+            validation.set_issuer(&[iss]);
+        }
+        
+        if let Some(ref aud) = self.audience {
+            validation.set_audience(&[aud]);
+        }
+        
+        let decoding_key = DecodingKey::from_secret(secret.as_bytes());
+        
+        decode::<Claims>(token, &decoding_key, &validation)
+            .map(|data| data.claims)
+            .map_err(|e| AuthError {
+                error: "INVALID_TOKEN",
+                message: format!("Token validation failed: {}", e),
+            })
+    }
+}
+
+impl Default for JwtConfig {
+    fn default() -> Self {
+        Self::from_env()
     }
 }
 
@@ -214,37 +337,11 @@ fn extract_and_validate_token(
     // Extract token from Authorization header
     let token = extract_bearer_token(request)?;
 
-    // Build validation
-    let mut validation = Validation::new(config.algorithm);
-    validation.validate_exp = config.validate_exp;
-
-    if let Some(ref iss) = config.issuer {
-        validation.set_issuer(&[iss]);
-    }
-
-    if let Some(ref aud) = config.audience {
-        validation.set_audience(&[aud]);
-    }
-
-    // Decode and validate token
-    let decoding_key = DecodingKey::from_secret(config.secret.as_bytes());
-
-    match decode::<Claims>(&token, &decoding_key, &validation) {
-        Ok(token_data) => {
-            debug!(sub = %token_data.claims.sub, "Token validated successfully");
-            Ok(token_data.claims)
-        }
-        Err(e) => {
-            warn!(error = %e, "Token validation failed");
-            Err((
-                StatusCode::UNAUTHORIZED,
-                Json(AuthError {
-                    error: "INVALID_TOKEN",
-                    message: format!("Token validation failed: {}", e),
-                }),
-            ))
-        }
-    }
+    // Use the new validation method that supports key rotation
+    config.validate_token(&token).map_err(|e| {
+        warn!(error = %e.message, "Token validation failed");
+        (StatusCode::UNAUTHORIZED, Json(e))
+    })
 }
 
 /// Extract Bearer token from Authorization header

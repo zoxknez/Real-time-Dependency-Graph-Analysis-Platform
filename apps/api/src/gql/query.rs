@@ -51,14 +51,41 @@ pub struct QueryRoot;
 #[Object]
 impl QueryRoot {
     /// Get a package by its stable ID (e.g., "npm:express")
+    /// 
+    /// Uses CachedGraphService when available for:
+    /// - Singleflight (prevents concurrent duplicate queries)
+    /// - Negative caching (caches 404s to prevent repeated lookups)
+    /// - Stale-while-revalidate (returns stale data while refreshing)
     #[instrument(skip(self, ctx))]
     async fn package(&self, ctx: &Context<'_>, id: ID) -> Result<Option<Package>> {
         let gql_ctx = ctx.data::<GqlContext>()?;
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
-        // Use a default/system tenant ID for public access if no context 
-        // (In production, maybe strict error? For now, empty string or handled by loader)
-        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
         
+        // Try cached graph service first (with singleflight + negative caching)
+        if let Some(ref cached_graph) = gql_ctx.cached_graph {
+            match cached_graph.get_package(&id.to_string(), tenant_ctx).await {
+                Ok(Some(pkg_data)) => {
+                    return Ok(Some(Package {
+                        id: ID(pkg_data.id),
+                        ecosystem: Ecosystem::from(pkg_data.ecosystem.as_str()),
+                        name: pkg_data.name,
+                        created_at: None,
+                        updated_at: None,
+                    }));
+                }
+                Ok(None) => {
+                    // Cached 404
+                    return Ok(None);
+                }
+                Err(e) => {
+                    // Log error but fall through to direct query
+                    tracing::warn!(error = %e, "CachedGraphService failed, falling back to direct query");
+                }
+            }
+        }
+        
+        // Fallback to direct loader (no cache)
+        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
         let pkg = gql_ctx.package_loader.load(&id.to_string(), &tenant_id).await;
         Ok(pkg)
     }

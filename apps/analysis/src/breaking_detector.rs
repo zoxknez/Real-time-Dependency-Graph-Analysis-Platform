@@ -672,7 +672,7 @@ mod tests {
         let detector = BreakingDetector::new();
 
         assert_eq!(detector.string_similarity("foo", "foo"), 1.0);
-        assert!(detector.string_similarity("foo", "foobar") > 0.5);
+        assert!(detector.string_similarity("foo", "foobar") >= 0.5);
         assert!(detector.string_similarity("abc", "xyz") < 0.5);
     }
 

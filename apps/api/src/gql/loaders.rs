@@ -1,46 +1,231 @@
-//! DataLoader for batch-loading packages to avoid N+1 queries
+//! DataLoader implementations for batch-loading to avoid N+1 queries
+//!
+//! Uses async-graphql's built-in DataLoader which provides:
+//! - Automatic batching within a request
+//! - Configurable batch windows
+//! - Per-request deduplication
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use async_graphql::dataloader::Loader;
 use async_graphql::ID;
-use tokio::sync::Mutex;
-use tracing::debug;
+use tracing::{debug, instrument};
+use uuid::Uuid;
 
 use crate::graph::{GraphClient, GraphQueries};
-use crate::gql::types::{Ecosystem, Package};
+use crate::gql::types::{Ecosystem, Package, Version};
 
-/// DataLoader for batch-loading Package nodes
+// ============================================================================
+// Async-GraphQL DataLoader Implementations
+// ============================================================================
+
+/// Batch loader for Package nodes with tenant isolation
+pub struct PackageBatchLoader {
+    graph: GraphClient,
+    tenant_id: Option<Uuid>,
+}
+
+impl PackageBatchLoader {
+    pub fn new(graph: GraphClient, tenant_id: Option<Uuid>) -> Self {
+        Self { graph, tenant_id }
+    }
+}
+
+impl Loader<String> for PackageBatchLoader {
+    type Value = Package;
+    type Error = Arc<async_graphql::Error>;
+
+    #[instrument(skip(self), fields(batch_size = keys.len()))]
+    async fn load(&self, keys: &[String]) -> Result<HashMap<String, Package>, Self::Error> {
+        if keys.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        debug!(
+            count = keys.len(),
+            tenant = ?self.tenant_id,
+            "DataLoader batch loading packages"
+        );
+
+        let tenant_str = self.tenant_id
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| "public".to_string());
+
+        let query = GraphQueries::get_packages_batch(&tenant_str, keys);
+        
+        let rows = self.graph.query(query, None).await
+            .map_err(|e| Arc::new(async_graphql::Error::new(format!("DataLoader query failed: {}", e))))?;
+
+        let mut map = HashMap::with_capacity(keys.len());
+        for row in rows {
+            let id: String = row.get("id").unwrap_or_default();
+            let pkg = Package {
+                id: ID(id.clone()),
+                ecosystem: Ecosystem::from(
+                    row.get::<String>("ecosystem")
+                        .unwrap_or_default()
+                        .as_str(),
+                ),
+                name: row.get::<String>("name").unwrap_or_default(),
+                created_at: row.get("created_at").ok(),
+                updated_at: row.get("updated_at").ok(),
+            };
+            map.insert(id, pkg);
+        }
+
+        debug!(
+            requested = keys.len(),
+            returned = map.len(),
+            "DataLoader batch complete"
+        );
+
+        // Record metrics
+        metrics::counter!("dataloader_batch_requests", "loader" => "package").increment(1);
+        metrics::histogram!("dataloader_batch_size", "loader" => "package").record(keys.len() as f64);
+        if !keys.is_empty() {
+            metrics::histogram!("dataloader_batch_hit_rate", "loader" => "package")
+                .record(map.len() as f64 / keys.len() as f64);
+        }
+
+        Ok(map)
+    }
+}
+
+/// Batch loader for Version nodes with tenant isolation
+pub struct VersionBatchLoader {
+    graph: GraphClient,
+    tenant_id: Option<Uuid>,
+}
+
+impl VersionBatchLoader {
+    pub fn new(graph: GraphClient, tenant_id: Option<Uuid>) -> Self {
+        Self { graph, tenant_id }
+    }
+}
+
+impl Loader<String> for VersionBatchLoader {
+    type Value = Version;
+    type Error = Arc<async_graphql::Error>;
+
+    #[instrument(skip(self), fields(batch_size = keys.len()))]
+    async fn load(&self, keys: &[String]) -> Result<HashMap<String, Version>, Self::Error> {
+        if keys.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        debug!(
+            count = keys.len(),
+            tenant = ?self.tenant_id,
+            "DataLoader batch loading versions"
+        );
+
+        let tenant_str = self.tenant_id
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| "public".to_string());
+
+        let query = GraphQueries::get_versions_batch(&tenant_str, keys);
+        
+        let rows = self.graph.query(query, None).await
+            .map_err(|e| Arc::new(async_graphql::Error::new(format!("Version DataLoader failed: {}", e))))?;
+
+        let mut map = HashMap::with_capacity(keys.len());
+        for row in rows {
+            let id: String = row.get("id").unwrap_or_default();
+            let version = Version {
+                id: ID(id.clone()),
+                package_id: ID(row.get::<String>("package_id").unwrap_or_default()),
+                version: row.get::<String>("version").unwrap_or_default(),
+                published_at: row.get("published_at").ok(),
+                yanked: row.get::<bool>("yanked").unwrap_or(false),
+            };
+            map.insert(id, version);
+        }
+
+        metrics::counter!("dataloader_batch_requests", "loader" => "version").increment(1);
+        metrics::histogram!("dataloader_batch_size", "loader" => "version").record(keys.len() as f64);
+
+        Ok(map)
+    }
+}
+
+/// Batch loader for direct dependencies of packages
+pub struct DependenciesLoader {
+    graph: GraphClient,
+    tenant_id: Option<Uuid>,
+}
+
+impl DependenciesLoader {
+    pub fn new(graph: GraphClient, tenant_id: Option<Uuid>) -> Self {
+        Self { graph, tenant_id }
+    }
+}
+
+impl Loader<String> for DependenciesLoader {
+    type Value = Vec<Package>;
+    type Error = Arc<async_graphql::Error>;
+
+    #[instrument(skip(self), fields(batch_size = keys.len()))]
+    async fn load(&self, keys: &[String]) -> Result<HashMap<String, Vec<Package>>, Self::Error> {
+        if keys.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let tenant_str = self.tenant_id
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| "public".to_string());
+
+        let query = GraphQueries::get_dependencies_batch(&tenant_str, keys);
+        
+        let rows = self.graph.query(query, None).await
+            .map_err(|e| Arc::new(async_graphql::Error::new(format!("Dependencies loader failed: {}", e))))?;
+
+        let mut map: HashMap<String, Vec<Package>> = HashMap::with_capacity(keys.len());
+        
+        for row in rows {
+            let source_id: String = row.get("source_id").unwrap_or_default();
+            let pkg = Package {
+                id: ID(row.get::<String>("id").unwrap_or_default()),
+                ecosystem: Ecosystem::from(row.get::<String>("ecosystem").unwrap_or_default().as_str()),
+                name: row.get::<String>("name").unwrap_or_default(),
+                created_at: None,
+                updated_at: None,
+            };
+            
+            map.entry(source_id).or_default().push(pkg);
+        }
+
+        // Ensure all keys have entries (even if empty)
+        for key in keys {
+            map.entry(key.to_string()).or_default();
+        }
+
+        metrics::counter!("dataloader_batch_requests", "loader" => "dependencies").increment(1);
+
+        Ok(map)
+    }
+}
+
+// ============================================================================
+// Legacy PackageLoader for backwards compatibility
+// ============================================================================
+
+/// Legacy PackageLoader - kept for backwards compatibility with existing code
 #[derive(Clone)]
 pub struct PackageLoader {
     graph: GraphClient,
-    cache: Arc<Mutex<HashMap<String, Package>>>,
 }
 
 impl PackageLoader {
     pub fn new(graph: GraphClient) -> Self {
-        Self {
-            graph,
-            cache: Arc::new(Mutex::new(HashMap::new())),
-        }
+        Self { graph }
     }
 
     /// Load a single package by ID
     pub async fn load(&self, id: &str, tenant_id: &str) -> Option<Package> {
-        let cache_key = format!("{}::{}", tenant_id, id);
-
-        // Check cache first
-        {
-            let cache = self.cache.lock().await;
-            if let Some(pkg) = cache.get(&cache_key) {
-                return Some(pkg.clone());
-            }
-        }
-
-        // Fetch from database
         let query = GraphQueries::get_package(tenant_id, id);
         match self.graph.query_one(query, None).await {
             Ok(Some(row)) => {
-                let pkg = Package {
+                Some(Package {
                     id: ID(row.get::<String>("id").unwrap_or_default()),
                     ecosystem: Ecosystem::from(
                         row.get::<String>("ecosystem")
@@ -50,19 +235,7 @@ impl PackageLoader {
                     name: row.get::<String>("name").unwrap_or_default(),
                     created_at: row.get("created_at").ok(),
                     updated_at: row.get("updated_at").ok(),
-                };
-
-                // Cache the result
-                {
-                    let mut cache = self.cache.lock().await;
-                     // Minimal eviction: prevent unbounded growth
-                    if cache.len() > 10000 {
-                        cache.clear();
-                    }
-                    cache.insert(cache_key, pkg.clone());
-                }
-
-                Some(pkg)
+                })
             }
             Ok(None) => None,
             Err(e) => {
@@ -80,61 +253,27 @@ impl PackageLoader {
 
         debug!(count = ids.len(), "Batch loading packages");
 
-        // Check cache for existing entries
+        let query = GraphQueries::get_packages_batch(tenant_id, ids);
         let mut result = HashMap::new();
-        let mut missing_ids = Vec::new();
 
-        {
-            let cache = self.cache.lock().await;
-            for id in ids {
-                let cache_key = format!("{}::{}", tenant_id, id);
-                if let Some(pkg) = cache.get(&cache_key) {
-                    result.insert(id.clone(), pkg.clone());
-                } else {
-                    missing_ids.push(id.clone());
-                }
-            }
-        }
-
-        // Fetch missing from database
-        if !missing_ids.is_empty() {
-            let query = GraphQueries::get_packages_batch(tenant_id, &missing_ids);
-            
-            if let Ok(rows) = self.graph.query(query, None).await {
-                let mut cache = self.cache.lock().await;
-                
-                for row in rows {
-                    let id: String = row.get("id").unwrap_or_default();
-                    let pkg = Package {
-                        id: ID(id.clone()),
-                        ecosystem: Ecosystem::from(
-                            row.get::<String>("ecosystem")
-                                .unwrap_or_default()
-                                .as_str(),
-                        ),
-                        name: row.get::<String>("name").unwrap_or_default(),
-                        created_at: row.get("created_at").ok(),
-                        updated_at: row.get("updated_at").ok(),
-                    };
-
-                    let cache_key = format!("{}::{}", tenant_id, id);
-                    // Minimal eviction
-                     if cache.len() > 10000 {
-                         cache.clear();
-                     }
-                    cache.insert(cache_key, pkg.clone());
-                    result.insert(id, pkg);
-                }
+        if let Ok(rows) = self.graph.query(query, None).await {
+            for row in rows {
+                let id: String = row.get("id").unwrap_or_default();
+                let pkg = Package {
+                    id: ID(id.clone()),
+                    ecosystem: Ecosystem::from(
+                        row.get::<String>("ecosystem")
+                            .unwrap_or_default()
+                            .as_str(),
+                    ),
+                    name: row.get::<String>("name").unwrap_or_default(),
+                    created_at: row.get("created_at").ok(),
+                    updated_at: row.get("updated_at").ok(),
+                };
+                result.insert(id, pkg);
             }
         }
 
         result
-    }
-
-    /// Clear the cache (useful for testing or after mutations)
-    #[allow(dead_code)]
-    pub async fn clear_cache(&self) {
-        let mut cache = self.cache.lock().await;
-        cache.clear();
     }
 }

@@ -20,10 +20,13 @@
 #![allow(unused_parens)]
 
 mod ast_parser;
+mod breaking_change_predictor;
 mod breaking_detector;
 mod config;
 mod consumer;
 mod embeddings;
+mod feature_extraction;
+mod onnx_model;
 
 use anyhow::{Context, Result};
 use config::Config;
@@ -108,21 +111,25 @@ fn init_tracing() {
 
 async fn run_service(config: Config, shutdown_rx: watch::Receiver<bool>) -> Result<()> {
     // Initialize components
+    info!("Initializing AST Parser Pool...");
     let parse_timeout = Duration::from_secs(config.workers.parse_timeout_secs);
     let parser_pool = Arc::new(ParserPool::new(
         parse_timeout,
         config.parser.max_file_size,
     ));
 
+    info!("Initializing Embedding Generator...");
     let embedding_generator = Arc::new(
         EmbeddingGenerator::new(&config.embedding)
             .await
             .context("Failed to initialize embedding generator")?,
     );
 
+    info!("Initializing Breaking Change Detector...");
     let breaking_detector = Arc::new(BreakingDetector::new());
 
     // Create work channel with bounded capacity for backpressure
+    info!("Creating work channels...");
     let (work_tx, work_rx) = mpsc::channel::<WorkItem>(config.workers.queue_size);
     let work_rx = Arc::new(Mutex::new(work_rx));
 
@@ -130,15 +137,19 @@ async fn run_service(config: Config, shutdown_rx: watch::Receiver<bool>) -> Resu
     let semaphore = Arc::new(Semaphore::new(config.workers.count));
 
     // Initialize Kafka consumer and producer
+    info!("Connecting to Kafka (Consumer)...");
     let consumer = EventConsumer::new(&config.kafka)
         .await
         .context("Failed to create Kafka consumer")?;
 
+    info!("Connecting to Kafka (Producer)...");
     let producer = Arc::new(
         EventProducer::new(&config.kafka)
             .await
-            .context("Failed to create Kafka producer")?,
+            .context("Failed to create Kafka producer")?
     );
+
+    info!("Spawning worker pool...");
 
     // Spawn worker pool
     let mut workers = JoinSet::new();

@@ -2,6 +2,9 @@
 # 
 # This schema defines the complete API surface for dependency graph intelligence.
 # Generated from the Rust async-graphql implementation.
+#
+# Last Updated: 2025-01
+# API Version: 0.1.0
 
 # ═══════════════════════════════════════════════════════════════
 # ENUMS
@@ -10,11 +13,12 @@
 """Package ecosystem/registry"""
 enum Ecosystem {
   NPM
-  PYPI
+  PY_PI
   CARGO
   MAVEN
-  NUGET
+  NU_GET
   GO
+  UNKNOWN
 }
 
 """Severity of breaking changes"""
@@ -143,6 +147,33 @@ type SearchEdge {
   cursor: String!
 }
 
+"""Semantic search results connection"""
+type SemanticSearchConnection {
+  edges: [SemanticSearchEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+"""Edge in semantic search results"""
+type SemanticSearchEdge {
+  node: Package!
+  cursor: String!
+  score: Float!
+}
+
+"""Dependency information"""
+type Dependency {
+  package: Package!
+  versionRequirement: String
+}
+
+"""Gemini AI response"""
+type GeminiResponse {
+  answer: String!
+  model: String!
+  tokensUsed: Int
+}
+
 # ═══════════════════════════════════════════════════════════════
 # SUBSCRIPTION TYPES
 # ═══════════════════════════════════════════════════════════════
@@ -228,22 +259,22 @@ type Query {
   reverseDependents(
     """Package ID (e.g., 'npm:lodash')"""
     packageId: ID!
+    """Maximum depth of transitive dependents"""
+    maxDepth: Int = 2
     """Number of results to return"""
     first: Int = 20
     """Cursor for pagination"""
     after: String
-    """Maximum depth of transitive dependents"""
-    depth: Int = 3
   ): PackageConnection!
 
   """Find the shortest path between two packages"""
   dependencyPath(
     """Source package ID"""
-    from: ID!
+    fromPackageId: ID!
     """Target package ID"""
-    to: ID!
+    toPackageId: ID!
     """Maximum path length"""
-    maxDepth: Int = 10
+    maxHops: Int = 6
   ): DependencyPathResult!
 
   """Simulate CVE impact - find all affected packages"""
@@ -251,13 +282,34 @@ type Query {
     """Vulnerable package ID"""
     packageId: ID!
     """Semver range of vulnerable versions (e.g., '<2.0.0')"""
-    versionRange: String
+    vulnerableVersionRange: String
     """Maximum traversal depth"""
     maxDepth: Int = 5
+    """Maximum results"""
+    limit: Int = 1000
   ): ImpactRadiusResult!
 
+  """Get versions of a package"""
+  versions(
+    """Package ID"""
+    packageId: ID!
+    """Maximum number of versions"""
+    limit: Int = 50
+  ): [Version!]!
+
+  """Get direct dependencies of a package"""
+  dependencies(
+    """Package ID"""
+    packageId: ID!
+    """Maximum number of dependencies"""
+    limit: Int = 100
+  ): [Dependency!]!
+
+  """Get platform statistics"""
+  graphStats: GraphStats!
+
   """Search packages by name"""
-  search(
+  searchPackages(
     """Search query"""
     query: String!
     """Filter by ecosystem"""
@@ -268,8 +320,31 @@ type Query {
     after: String
   ): SearchConnection!
 
-  """Get platform statistics"""
-  stats: GraphStats!
+  """Semantic search packages using vector similarity (Qdrant)"""
+  semanticSearchPackages(
+    """Natural language query"""
+    query: String!
+    """Filter by ecosystem"""
+    ecosystem: Ecosystem
+    """Number of results"""
+    first: Int = 20
+    """Pagination cursor"""
+    after: String
+  ): SemanticSearchConnection!
+
+  """Ask Gemini AI about dependencies"""
+  askGemini(
+    """Question to ask"""
+    question: String!
+    """Context packages to include"""
+    contextPackages: [ID!]
+  ): GeminiResponse!
+
+  """Explain dependency graph using AI"""
+  explainDependencyGraph(
+    """Package ID to explain"""
+    packageId: ID!
+  ): GeminiResponse!
 }
 
 # ═══════════════════════════════════════════════════════════════

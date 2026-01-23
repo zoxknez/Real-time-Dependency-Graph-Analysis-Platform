@@ -48,7 +48,7 @@ services:
       redpanda:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "18080:8080"
     environment:
       - KAFKA_BROKERS=redpanda:9092
       - KAFKA_SCHEMAREGISTRY_ENABLED=true
@@ -88,10 +88,10 @@ services:
       retries: 5
 
   # ═══════════════════════════════════════════════════════════════
-  # 3. GRAPH DATABASE - Memgraph v3.0 + MAGE 1.18 (Cypher)
+  # 3. GRAPH DATABASE - Memgraph 2.14.1 + MAGE (Cypher)
   # ═══════════════════════════════════════════════════════════════
   memgraph:
-    image: memgraph/memgraph-mage:latest # TODO: Pin to specific version for production
+    image: memgraph/memgraph-mage:1.18-memgraph-2.14.1
     container_name: idp-memgraph
     restart: unless-stopped
     ports:
@@ -112,10 +112,11 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: [ "CMD-SHELL", "echo 'Healthcheck disabled for debug'" ]
-      interval: 30s
+      test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole --host localhost --port 7687 || exit 1"]
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
 
   memgraph-lab:
     image: memgraph/lab:2.14.0
@@ -158,16 +159,17 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: [ "CMD-SHELL", "echo 'Healthcheck disabled for debug'" ]
-      interval: 30s
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:6333/readyz || exit 1"]
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   # ═══════════════════════════════════════════════════════════════
-  # 5. METADATA & AUDIT - PostgreSQL 16
+  # 5. METADATA & AUDIT - PostgreSQL 16.2
   # ═══════════════════════════════════════════════════════════════
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16.2-alpine
     container_name: idp-postgres
     restart: unless-stopped
     ports:
@@ -195,10 +197,10 @@ services:
       retries: 5
 
   # ═══════════════════════════════════════════════════════════════
-  # 6. CACHING - Redis 7
+  # 6. CACHING - Redis 7.2.4
   # ═══════════════════════════════════════════════════════════════
   redis:
-    image: redis:7-alpine
+    image: redis:7.2.4-alpine
     container_name: idp-redis
     restart: unless-stopped
     ports:
@@ -277,6 +279,39 @@ services:
         max-file: "2"
     profiles:
       - monitoring
+
+  # ═══════════════════════════════════════════════════════════════
+  # 9. TEXT EMBEDDINGS INFERENCE (TEI) - HuggingFace
+  # ═══════════════════════════════════════════════════════════════
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    container_name: idp-tei
+    restart: unless-stopped
+    ports:
+      - "8090:80"
+    volumes:
+      - ./models:/data:ro
+    environment:
+      - MODEL_ID=/data/all-MiniLM-L6-v2
+      - MAX_CONCURRENT_REQUESTS=128
+      - MAX_CLIENT_BATCH_SIZE=32
+    deploy:
+      resources:
+        limits:
+          memory: ${TEI_MEMORY_LIMIT:-1g}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    profiles:
+      - embeddings
 
 volumes:
   redpanda_data:

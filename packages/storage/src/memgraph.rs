@@ -324,6 +324,52 @@ impl MemgraphClient {
             version_count: version_count as u64,
         })
     }
+
+    /// Get memory usage statistics
+    /// 
+    /// Uses Memgraph's internal memory tracking to detect OOM risk.
+    #[instrument(skip(self))]
+    pub async fn get_memory_stats(&self) -> Result<MemoryStats> {
+        // Use SHOW STORAGE INFO which returns memory information
+        let rows = self
+            .execute(query("SHOW STORAGE INFO"), None)
+            .await?;
+
+        let mut stats = MemoryStats::default();
+
+        for row in rows {
+            // SHOW STORAGE INFO returns rows with 'setting_name' and 'setting_value' columns
+            let name: String = row.get("setting_name").unwrap_or_default();
+            let value: String = row.get("setting_value").unwrap_or_default();
+
+            match name.as_str() {
+                "memory_usage" => {
+                    stats.memory_used_bytes = parse_memgraph_bytes(&value);
+                }
+                "peak_memory_usage" => {
+                    stats.peak_memory_bytes = parse_memgraph_bytes(&value);
+                }
+                "memory_limit" => {
+                    stats.memory_limit_bytes = parse_memgraph_bytes(&value);
+                }
+                _ => {}
+            }
+        }
+
+        // Calculate percentage if limit is set
+        if stats.memory_limit_bytes > 0 {
+            stats.usage_percent = (stats.memory_used_bytes as f64 / stats.memory_limit_bytes as f64) * 100.0;
+            stats.under_pressure = stats.usage_percent > 80.0;
+            stats.critical = stats.usage_percent > 95.0;
+        }
+
+        // Record as Prometheus metrics
+        metrics::gauge!("memgraph_memory_used_bytes").set(stats.memory_used_bytes as f64);
+        metrics::gauge!("memgraph_memory_limit_bytes").set(stats.memory_limit_bytes as f64);
+        metrics::gauge!("memgraph_memory_usage_percent").set(stats.usage_percent);
+
+        Ok(stats)
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -337,6 +383,51 @@ pub struct GraphStats {
     pub edge_count: u64,
     pub package_count: u64,
     pub version_count: u64,
+}
+
+/// Memory usage statistics from Memgraph
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct MemoryStats {
+    /// Total memory used by Memgraph (bytes)
+    pub memory_used_bytes: u64,
+    /// Peak memory usage (bytes)
+    pub peak_memory_bytes: u64,
+    /// Memory limit configured (bytes), 0 if unlimited
+    pub memory_limit_bytes: u64,
+    /// Memory usage as percentage of limit (0-100)
+    pub usage_percent: f64,
+    /// Whether memory pressure is high (>80%)
+    pub under_pressure: bool,
+    /// Whether critical (>95%)
+    pub critical: bool,
+}
+
+/// Parse Memgraph byte strings like "1.5 GB", "512 MB", "1024 KB" to bytes
+fn parse_memgraph_bytes(value: &str) -> u64 {
+    let value = value.trim();
+    
+    // Try to parse as raw number first
+    if let Ok(n) = value.parse::<u64>() {
+        return n;
+    }
+    
+    // Parse "X.Y UNIT" format
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    if parts.len() >= 2 {
+        if let Ok(num) = parts[0].parse::<f64>() {
+            let multiplier = match parts[1].to_uppercase().as_str() {
+                "B" => 1u64,
+                "KB" | "KIB" => 1024,
+                "MB" | "MIB" => 1024 * 1024,
+                "GB" | "GIB" => 1024 * 1024 * 1024,
+                "TB" | "TIB" => 1024 * 1024 * 1024 * 1024,
+                _ => 1,
+            };
+            return (num * multiplier as f64) as u64;
+        }
+    }
+    
+    0
 }
 
 // ═══════════════════════════════════════════════════════════════

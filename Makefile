@@ -264,6 +264,10 @@ helm-dry-run:
 # Utility Commands
 # ═══════════════════════════════════════════════════════════════════════════════
 
+download-models:
+	@echo "📥 Downloading embedding models..."
+	python scripts/download-models.py
+
 setup: pre-commit-install frontend-install
 	@echo "✅ Development environment setup complete!"
 

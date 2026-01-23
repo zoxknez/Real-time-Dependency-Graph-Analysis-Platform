@@ -1,0 +1,202 @@
+# Prometheus Alert Rules for Memgraph Graph Database
+# Enterprise-grade monitoring for OOM prevention and performance
+
+groups:
+  - name: memgraph.memory
+    interval: 15s
+    rules:
+      # Memory Usage Critical (>95%)
+      - alert: MemgraphMemoryCritical
+        expr: memgraph_memory_usage_percent > 95
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "CRITICAL: Memgraph memory usage above 95%"
+          description: |
+            Memgraph instance {{ $labels.instance }} memory usage is at {{ $value | printf "%.1f" }}%.
+            Immediate action required to prevent OOM.
+            Memory used: {{ with query "memgraph_memory_used_bytes" }}{{ . | first | value | humanize1024 }}{{ end }}
+            Memory limit: {{ with query "memgraph_memory_limit_bytes" }}{{ . | first | value | humanize1024 }}{{ end }}
+          runbook_url: "https://docs.example.com/runbooks/memgraph-oom"
+
+      # Memory Pressure Warning (>80%)
+      - alert: MemgraphMemoryPressure
+        expr: memgraph_memory_usage_percent > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Memgraph memory usage above 80%"
+          description: |
+            Memgraph instance {{ $labels.instance }} memory is under pressure at {{ $value | printf "%.1f" }}%.
+            Consider scaling or optimizing queries.
+          runbook_url: "https://docs.example.com/runbooks/memgraph-memory"
+
+      # Peak Memory Higher Than Limit (configuration issue)
+      - alert: MemgraphPeakExceedsLimit
+        expr: memgraph_memory_peak_bytes > memgraph_memory_limit_bytes and memgraph_memory_limit_bytes > 0
+        for: 0s
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Memgraph peak memory exceeded configured limit"
+          description: |
+            Peak memory ({{ with query "memgraph_memory_peak_bytes" }}{{ . | first | value | humanize1024 }}{{ end }})
+            has exceeded limit ({{ with query "memgraph_memory_limit_bytes" }}{{ . | first | value | humanize1024 }}{{ end }}).
+            This may indicate a memory spike that could lead to OOM.
+
+  - name: memgraph.performance
+    interval: 30s
+    rules:
+      # High Query Latency (p99 > 1s)
+      - alert: MemgraphHighQueryLatency
+        expr: histogram_quantile(0.99, rate(memgraph_query_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Memgraph p99 query latency above 1s"
+          description: |
+            Memgraph query latency p99 is {{ $value | humanizeDuration }}.
+            This may indicate complex queries or resource contention.
+
+      # Very High Query Latency (p99 > 5s)
+      - alert: MemgraphCriticalQueryLatency
+        expr: histogram_quantile(0.99, rate(memgraph_query_duration_seconds_bucket[5m])) > 5
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "CRITICAL: Memgraph p99 query latency above 5s"
+          description: |
+            Memgraph is severely degraded. P99 latency: {{ $value | humanizeDuration }}.
+            Check for lock contention, memory pressure, or expensive queries.
+
+      # High Query Error Rate
+      - alert: MemgraphHighErrorRate
+        expr: |
+          sum(rate(memgraph_query_errors_total[5m]))
+          /
+          (sum(rate(memgraph_query_errors_total[5m])) + sum(rate(memgraph_query_success_total[5m])))
+          > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Memgraph query error rate above 5%"
+          description: |
+            Memgraph is experiencing {{ $value | humanizePercentage }} error rate.
+            Check logs for query errors and circuit breaker status.
+
+  - name: memgraph.connection
+    interval: 30s
+    rules:
+      # Connection Pool Exhaustion
+      - alert: MemgraphPoolExhausted
+        expr: memgraph_pool_available_connections == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Memgraph connection pool exhausted"
+          description: |
+            All Memgraph connections are in use. New queries will fail.
+            Pool size: {{ with query "memgraph_pool_size" }}{{ . | first | value }}{{ end }}
+
+      # Pool Saturation Warning (>80% in use)
+      - alert: MemgraphPoolSaturation
+        expr: |
+          (memgraph_pool_size - memgraph_pool_available_connections)
+          /
+          memgraph_pool_size
+          > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Memgraph connection pool above 80% utilization"
+          description: |
+            Pool utilization is at {{ $value | humanizePercentage }}.
+            Consider increasing pool size if this persists.
+
+      # Health Check Failures
+      - alert: MemgraphHealthCheckFailed
+        expr: memgraph_health_check_success == 0
+        for: 30s
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Memgraph health check failing"
+          description: |
+            Memgraph instance {{ $labels.instance }} is not responding to health checks.
+            Check network connectivity and instance status.
+
+  - name: memgraph.circuit_breaker
+    interval: 15s
+    rules:
+      # Circuit Breaker Open
+      - alert: MemgraphCircuitBreakerOpen
+        expr: circuit_breaker_state{service="memgraph"} == 2
+        for: 0s
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Memgraph circuit breaker is OPEN"
+          description: |
+            Circuit breaker for Memgraph has tripped to OPEN state.
+            All queries are being rejected. Recent failures: {{ with query "circuit_breaker_failures_total{service=\"memgraph\"}" }}{{ . | first | value }}{{ end }}
+
+      # Circuit Breaker Half-Open (recovering)
+      - alert: MemgraphCircuitBreakerRecovering
+        expr: circuit_breaker_state{service="memgraph"} == 1
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Memgraph circuit breaker in HALF-OPEN state"
+          description: |
+            Memgraph circuit breaker is attempting recovery.
+            If this persists, the underlying issue may not be resolved.
+
+  - name: memgraph.graph_stats
+    interval: 60s
+    rules:
+      # Graph Size Growing Fast
+      - alert: MemgraphRapidGrowth
+        expr: |
+          rate(memgraph_node_count[1h]) > 10000
+        for: 1h
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Memgraph graph growing rapidly"
+          description: |
+            Graph is growing at {{ $value | humanize }} nodes per hour.
+            Monitor memory usage closely.
+
+      # Unusual Edge/Node Ratio
+      - alert: MemgraphUnusualGraphStructure
+        expr: |
+          memgraph_edge_count / memgraph_node_count > 100
+        for: 1h
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Unusual graph structure detected"
+          description: |
+            Edge to node ratio is {{ $value | printf "%.1f" }}, which is unusually high.
+            This may indicate a data ingestion issue or dense graph pattern.
