@@ -27,7 +27,7 @@ pub async fn run_server(
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port)
         .parse()
-        .expect("Invalid server address");
+        .map_err(|e| anyhow::anyhow!("Invalid server address '{}:{}': {}", config.host, config.port, e))?;
 
     info!("Starting HTTP server on {}", addr);
 

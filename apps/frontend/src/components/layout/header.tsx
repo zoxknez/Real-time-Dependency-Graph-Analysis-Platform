@@ -49,7 +49,7 @@ export function Header() {
     <header className="h-16 px-6 flex items-center justify-between border-b theme-border glass-card rounded-none border-l-0 border-t-0 border-r-0 relative z-50 transition-colors duration-300">
       {/* Search Bar - Hidden on Explore page to avoid duplication */}
       <div className="flex-1 max-w-xl">
-        <form onSubmit={handleSearch} className="relative w-full">
+        <form onSubmit={handleSearch} className="relative w-full" role="search">
           <div
             className={cn(
               "relative flex items-center transition-all duration-300",
@@ -67,6 +67,8 @@ export function Header() {
               onFocus={() => setIsSearchFocused(true)}
               onBlur={() => setIsSearchFocused(false)}
               placeholder="Search packages... (e.g., npm:express, pypi:flask)"
+              aria-label="Search packages"
+              role="searchbox"
               className={cn(
                 "w-full pl-12 pr-24 py-2.5 rounded-xl transition-all duration-300",
                 "bg-surface-900/40 backdrop-blur-md border",
@@ -95,6 +97,7 @@ export function Header() {
           onClick={() => setShowFavorites(true)}
           className="relative p-2.5 rounded-xl theme-interactive transition-all duration-200"
           title="Favorites & Recent"
+          aria-label="Open favorites and recent items"
         >
           <Star className="w-5 h-5" />
         </button>
@@ -106,6 +109,7 @@ export function Header() {
         <button
           onClick={toggleTheme}
           className="p-2.5 rounded-xl theme-interactive transition-all duration-200"
+          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
         >
           <AnimatePresence mode="wait">
             {theme === "dark" ? (

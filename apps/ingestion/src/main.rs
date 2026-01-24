@@ -73,16 +73,28 @@ async fn main() -> Result<()> {
     });
 
     let builder = PrometheusBuilder::new();
-    let handle = builder.install_recorder().expect("failed to install recorder");
+    let handle = match builder.install_recorder() {
+        Ok(h) => h,
+        Err(e) => {
+            tracing::error!("Failed to install Prometheus recorder: {}", e);
+            return Err(anyhow::anyhow!("Failed to install Prometheus recorder: {}", e));
+        }
+    };
     
     tokio::spawn(async move {
         let app = Router::new().route("/metrics", get(move || std::future::ready(handle.render())));
         let addr = SocketAddr::from(([0, 0, 0, 0], 9001));
         info!("Metrics server listening on {}", addr);
-        let listener = tokio::net::TcpListener::bind(addr).await
-            .expect("Failed to bind metrics server to port 9001");
-        axum::serve(listener, app).await
-            .expect("Metrics server crashed unexpectedly");
+        match tokio::net::TcpListener::bind(addr).await {
+            Ok(listener) => {
+                if let Err(e) = axum::serve(listener, app).await {
+                    tracing::error!("Metrics server crashed: {}", e);
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to bind metrics server to port 9001: {}", e);
+            }
+        }
     });
 
     info!("Connecting to database...");

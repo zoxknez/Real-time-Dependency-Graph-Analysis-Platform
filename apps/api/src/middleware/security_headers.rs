@@ -42,7 +42,7 @@ impl Default for SecurityHeadersConfig {
             hsts_enabled: true,
             hsts_max_age: 31536000, // 1 year
             hsts_include_subdomains: true,
-            csp: Some("default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ws: wss:".to_string()),
+            csp: Some("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ws: wss: http://localhost:* https://localhost:*".to_string()),
             frame_options: "DENY".to_string(),
             referrer_policy: "strict-origin-when-cross-origin".to_string(),
             permissions_policy: Some("accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()".to_string()),

@@ -175,7 +175,7 @@ export function SearchInput({
   const showDropdown = isFocused && dropdownItems.length > 0;
 
   return (
-    <form onSubmit={handleSubmit} className={cn("relative z-50", className)}>
+    <form onSubmit={handleSubmit} className={cn("relative z-50", className)} role="search">
       <div className={cn(
         "relative transition-all duration-300",
         isFocused && "shadow-[0_0_20px_rgba(99,102,241,0.2)] rounded-2xl"
@@ -198,6 +198,10 @@ export function SearchInput({
           onFocus={() => setIsFocused(true)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
+          aria-label="Search packages"
+          aria-autocomplete="list"
+          aria-expanded={showDropdown}
+          role="combobox"
           className={cn(
             "input-search !pl-16 pr-20 transition-all duration-300",
             isFocused ? "ring-2 ring-primary-500/30 border-primary-500/50" : "",
