@@ -148,6 +148,7 @@ pub async fn execute_security_agent_tool(
 
                     let references: Vec<String> = v
                         .references
+                        .clone()
                         .unwrap_or_default()
                         .into_iter()
                         .map(|r| r.url)

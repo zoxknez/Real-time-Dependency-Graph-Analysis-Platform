@@ -42,121 +42,39 @@ fn qdrant_error_code(message: &str) -> &'static str {
 
 fn ecosystem_payload_value(e: Ecosystem) -> &'static str {
     match e {
-            let _gql_ctx = ctx.data::<GqlContext>()?;
-            let limit = first.unwrap_or(20).min(100);
-            let offset = after.and_then(|c| base64_decode_cursor(&c)).unwrap_or(0) as i64;
+        Ecosystem::Npm => "NPM",
+        Ecosystem::PyPi => "PY_PI",
+        Ecosystem::Cargo => "CARGO",
+        Ecosystem::Go => "GO",
+        Ecosystem::Maven => "MAVEN",
+        Ecosystem::NuGet => "NU_GET",
+        Ecosystem::Unknown => "UNKNOWN",
+    }
+}
 
-            let Some(pool) = get_pg_pool() else {
-                return Ok(AuditEventConnection {
-                    total_count: 0,
-                    page_info: PageInfo {
-                        has_next_page: false,
-                        has_previous_page: false,
-                        start_cursor: None,
-                        end_cursor: None,
-                    },
-                    edges: vec![],
-                });
-            };
+pub struct QueryRoot;
 
-            let mut qb = QueryBuilder::new(
-                "SELECT id, tenant_id, user_id, action, resource_type, resource_id, metadata, ip_address, user_agent, request_id, duration_ms, status_code, created_at FROM audit_log WHERE 1=1",
-            );
+#[Object]
+impl QueryRoot {
+    /// Get a package by its ID (e.g., "npm:react")
+    #[instrument(skip(self, ctx))]
+    async fn package(&self, ctx: &Context<'_>, id: ID) -> Result<Option<Package>> {
+        let gql_ctx = ctx.data::<GqlContext>()?;
+        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
+        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+        
+        let query = GraphQueries::get_package(&tenant_id, &id.to_string());
+        let row = gql_ctx.graph.query_one(query, tenant_ctx).await?;
+        
+        Ok(row.map(|r| Package {
+            id: ID(r.get::<String>("id").unwrap_or_default()),
+            ecosystem: Ecosystem::from(r.get::<String>("ecosystem").unwrap_or_default().as_str()),
+            name: r.get("name").unwrap_or_default(),
+            created_at: None,
+            updated_at: None,
+        }))
+    }
 
-            if let Some(filter) = filter.as_ref() {
-                if let Some(tenant_id) = filter.tenant_id.as_ref() {
-                    qb.push(" AND tenant_id = ").push_bind(tenant_id);
-                }
-                if let Some(actor_id) = filter.actor_id.as_ref() {
-                    qb.push(" AND user_id = ").push_bind(actor_id);
-                }
-                if let Some(target_type) = filter.target_type.as_ref() {
-                    qb.push(" AND resource_type = ").push_bind(target_type);
-                }
-                if let Some(target_id) = filter.target_id.as_ref() {
-                    qb.push(" AND resource_id = ").push_bind(target_id);
-                }
-                if let Some(start_time) = filter.start_time.as_ref() {
-                    qb.push(" AND created_at >= ").push_bind(start_time);
-                }
-                if let Some(end_time) = filter.end_time.as_ref() {
-                    qb.push(" AND created_at <= ").push_bind(end_time);
-                }
-            }
-
-            qb.push(" ORDER BY created_at DESC");
-            qb.push(" OFFSET ").push_bind(offset);
-            qb.push(" LIMIT ").push_bind(limit as i64);
-
-            let rows = qb.build().fetch_all(pool).await?;
-            let mut edges: Vec<AuditEventEdge> = Vec::new();
-
-            for (idx, row) in rows.iter().enumerate() {
-                let id: String = row.get::<String, _>("id");
-                let tenant_id: Option<String> = row.get("tenant_id");
-                let user_id: Option<String> = row.get("user_id");
-                let action: String = row.get("action");
-                let resource_type: String = row.get("resource_type");
-                let resource_id: Option<String> = row.get("resource_id");
-                let ip_address: Option<String> = row.get("ip_address");
-                let status_code: Option<i16> = row.get("status_code");
-                let created_at: chrono::DateTime<chrono::Utc> = row.get("created_at");
-                let request_id: Option<String> = row.get("request_id");
-
-                let category = map_audit_category(&action);
-                let severity = map_audit_severity(status_code);
-                let outcome = map_audit_outcome(status_code);
-
-                let actor = AuditActor {
-                    actor_type: if user_id.is_some() { ActorType::User } else { ActorType::Anonymous },
-                    id: user_id.clone(),
-                    name: None,
-                    email: None,
-                    ip_address: ip_address.clone(),
-                };
-
-                let target = resource_id.as_ref().map(|id| AuditTarget {
-                    target_type: resource_type.clone(),
-                    id: id.clone(),
-                    name: None,
-                });
-
-                let event = AuditEvent {
-                    id,
-                    sequence: offset + idx as i64 + 1,
-                    timestamp: created_at.to_rfc3339(),
-                    event_type: action.clone(),
-                    category,
-                    severity,
-                    outcome,
-                    message: format!("{} on {}", action, resource_type),
-                    actor,
-                    target,
-                    tenant_id,
-                    correlation_id: request_id,
-                };
-
-                edges.push(AuditEventEdge {
-                    cursor: base64_encode_cursor((offset + idx as i64) as i32),
-                    node: event,
-                });
-            }
-
-            let total_count: i32 = sqlx::query("SELECT COUNT(*) as total FROM audit_log")
-                .fetch_one(pool)
-                .await?
-                .get::<i64, _>("total") as i32;
-
-            Ok(AuditEventConnection {
-                total_count,
-                page_info: PageInfo {
-                    has_next_page: (offset + edges.len() as i64) < total_count as i64,
-                    has_previous_page: offset > 0,
-                    start_cursor: edges.first().map(|e| e.cursor.clone()),
-                    end_cursor: edges.last().map(|e| e.cursor.clone()),
-                },
-                edges,
-            })
     async fn reverse_dependents(
         &self,
         ctx: &Context<'_>,
