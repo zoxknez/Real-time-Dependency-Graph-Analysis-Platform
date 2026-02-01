@@ -18,6 +18,8 @@
 //!     [GraphClient Query] → Cache result → Return
 //! ```
 
+#![allow(dead_code)]
+
 use crate::cache::CacheClient;
 use crate::graph::GraphClient;
 use anyhow::{Context, Result};

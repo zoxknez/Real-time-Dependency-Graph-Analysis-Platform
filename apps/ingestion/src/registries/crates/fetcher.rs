@@ -34,7 +34,7 @@ pub struct FetchResult {
 impl CargoFetcher {
     pub fn new() -> Result<Self> {
         let client = Client::builder()
-            .user_agent("realtime-dependency-graph/1.0 (contact@example.com)")
+            .user_agent("randomapp-ingestion/1.0 (security@randomapp.dev)")
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .build()

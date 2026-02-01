@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Activity,
-  Radio,
   Package,
   Pause,
   Play,
@@ -17,19 +16,16 @@ import {
   BellOff,
   GitBranch,
   Shield,
-  Filter,
   BarChart3,
   AlertTriangle,
   RefreshCw,
 } from "lucide-react";
-import { cn, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass } from "@/lib/utils";
+import { cn, formatEcosystemName, getEcosystemColor } from "@/lib/utils";
 import { EcosystemFilter } from "@/components/explore/ecosystem-filter";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
-import { ConnectionIndicator } from "@/components/ui/connection-indicator";
 import {
   useLivePackageActivity,
   useBreakingChanges,
-  useConnectionStatus
 } from "@/lib/hooks";
 import type { Ecosystem, EventType, LivePackageEvent } from "@/lib/graphql/types";
 
@@ -112,7 +108,6 @@ const generateVersion = (ecosystem: string): string => {
 
 export default function LivePage() {
   const router = useRouter();
-  const connectionStatus = useConnectionStatus();
   const [isPaused, setIsPaused] = useState(false);
   const [selectedEcosystem, setSelectedEcosystem] = useState("ALL");
   const [selectedEventType, setSelectedEventType] = useState("ALL");

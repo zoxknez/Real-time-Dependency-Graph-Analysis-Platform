@@ -39,6 +39,8 @@ use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::ast_parser::{Language, ParserPool, PublicApiSnapshot};
+use std::path::PathBuf;
+use tokio::io::AsyncWriteExt;
 use crate::breaking_detector::{BreakingDetector, SeverityLevel};
 use crate::embeddings::EmbeddingGenerator;
 
@@ -448,6 +450,11 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
         }
     }
 
+    // Persist snapshot for future comparisons
+    if let Err(e) = save_snapshot(&api_snapshot).await {
+        warn!(error = %e, "Failed to persist API snapshot");
+    }
+
     // 5. Detect breaking changes (if previous version exists)
     if let Some(ref prev_version) = event.previous_version {
         info!(previous = %prev_version, "Checking for breaking changes");
@@ -500,31 +507,129 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
 // ═══════════════════════════════════════════════════════════════
 
 async fn download_tarball(url: &str) -> Result<String> {
-    // TODO: Implement actual tarball download
-    // For now, return a placeholder path
     info!(url, "Downloading tarball");
-    Ok(format!("/tmp/tarball-{}.tgz", uuid::Uuid::new_v4()))
+
+    let client = reqwest::Client::new();
+    let response = client.get(url).send().await?.error_for_status()?;
+    let bytes = response.bytes().await?;
+
+    let base_dir = std::env::temp_dir().join("randomapp-tarballs");
+    tokio::fs::create_dir_all(&base_dir).await?;
+    let file_path = base_dir.join(format!("tarball-{}.tgz", uuid::Uuid::new_v4()));
+
+    let mut file = tokio::fs::File::create(&file_path).await?;
+    file.write_all(&bytes).await?;
+    file.flush().await?;
+
+    Ok(file_path.to_string_lossy().to_string())
 }
 
 async fn extract_source_files(tarball_path: &str) -> Result<Vec<(String, String)>> {
-    // TODO: Implement actual tarball extraction
-    // Returns list of (file_path, content) tuples
     info!(path = tarball_path, "Extracting source files");
-    Ok(vec![])
+    let extract_dir = std::env::temp_dir().join(format!("randomapp-extract-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&extract_dir).await?;
+
+    let tarball_path = tarball_path.to_string();
+    let extract_dir_clone = extract_dir.clone();
+
+    let files = tokio::task::spawn_blocking(move || -> Result<Vec<(String, String)>> {
+        let file = std::fs::File::open(&tarball_path)?;
+        let decoder = flate2::read::GzDecoder::new(file);
+        let mut archive = tar::Archive::new(decoder);
+        archive.unpack(&extract_dir_clone)?;
+
+        let mut results = Vec::new();
+        let max_size = 1_000_000usize;
+
+        for entry in walkdir::WalkDir::new(&extract_dir_clone).into_iter().filter_map(|e| e.ok()) {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let metadata = entry.metadata().ok();
+            if let Some(meta) = metadata {
+                if meta.len() as usize > max_size {
+                    continue;
+                }
+            }
+
+            let path = entry.path();
+            let bytes = match std::fs::read(path) {
+                Ok(b) => b,
+                Err(_) => continue,
+            };
+
+            if bytes.iter().any(|b| *b == 0) {
+                continue;
+            }
+
+            let content = match String::from_utf8(bytes) {
+                Ok(text) => text,
+                Err(_) => continue,
+            };
+
+            let rel_path = path.strip_prefix(&extract_dir_clone).ok()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.to_string_lossy().to_string());
+
+            results.push((rel_path, content));
+        }
+
+        let _ = std::fs::remove_dir_all(&extract_dir_clone);
+        Ok(results)
+    }).await??;
+
+    Ok(files)
 }
 
 async fn load_previous_snapshot(
     package_id: &str,
     version: &str,
 ) -> Option<PublicApiSnapshot> {
-    // TODO: Load from cache/database
     info!(package_id, version, "Loading previous API snapshot");
-    None
+    let path = snapshot_path(package_id, version);
+    if !path.exists() {
+        return None;
+    }
+
+    match tokio::fs::read_to_string(path).await {
+        Ok(content) => serde_json::from_str::<PublicApiSnapshot>(&content).ok(),
+        Err(_) => None,
+    }
 }
 
 async fn cleanup_tarball(path: &str) {
-    // TODO: Remove temporary files
     info!(path, "Cleaning up tarball");
+    let _ = tokio::fs::remove_file(path).await;
+}
+
+fn snapshot_base_dir() -> PathBuf {
+    std::env::var("ANALYSIS_SNAPSHOT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::temp_dir().join("randomapp-snapshots"))
+}
+
+fn sanitize_segment(value: &str) -> String {
+    value
+        .replace('/', "_")
+        .replace('\\', "_")
+        .replace(':', "_")
+}
+
+fn snapshot_path(package_id: &str, version: &str) -> PathBuf {
+    let base = snapshot_base_dir();
+    let pkg = sanitize_segment(package_id);
+    base.join(pkg).join(format!("{}.json", sanitize_segment(version)))
+}
+
+async fn save_snapshot(snapshot: &PublicApiSnapshot) -> Result<()> {
+    let path = snapshot_path(&snapshot.package_id, &snapshot.version);
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let data = serde_json::to_string_pretty(snapshot)?;
+    tokio::fs::write(path, data).await?;
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -541,7 +646,7 @@ mod tests {
             package_id: "test-package".to_string(),
             version: "1.0.0".to_string(),
             ecosystem: "npm".to_string(),
-            tarball_url: "https://example.com/test.tgz".to_string(),
+            tarball_url: "https://registry.npmjs.org/test-package/-/test-package-1.0.0.tgz".to_string(),
             previous_version: None,
             published_at: chrono::Utc::now(),
         };

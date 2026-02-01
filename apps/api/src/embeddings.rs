@@ -1,7 +1,9 @@
 //! Embedding generation utilities for API semantic search.
 //!
-//! This is intentionally lightweight: it supports a Mock provider by default,
-//! and an OpenAI provider when configured.
+//! This module supports multiple embedding providers (OpenAI, TEI, Hybrid, and Mock for tests),
+//! selected via configuration.
+
+#![allow(dead_code)]
 
 use anyhow::{Context, Result};
 use governor::{
@@ -99,14 +101,9 @@ impl EmbeddingGenerator {
         let provider = match config.provider.as_str() {
             "openai" => {
                 let Some(api_key) = config.openai_api_key.clone() else {
-                    warn!("EMBEDDING_PROVIDER=openai but OPENAI_API_KEY is missing; falling back to mock");
-                    return Ok(Self {
-                        provider: EmbeddingProvider::Mock(MockEmbedder::new(config.dimension)),
-                        dimension: config.dimension,
-                        cache: Arc::new(RwLock::new(HashMap::new())),
-                        max_cache_size: config.cache_max_entries,
-                        cache_ttl: Duration::from_secs(config.cache_ttl_secs),
-                    });
+                    return Err(anyhow::anyhow!(EmbeddingError::Config(
+                        "EMBEDDING_PROVIDER=openai but OPENAI_API_KEY is missing".to_string()
+                    )));
                 };
 
                 let limiter = create_rate_limiter(config.rate_limit_rpm);
@@ -123,8 +120,9 @@ impl EmbeddingGenerator {
             }
             "mock" | "test" | "local" => EmbeddingProvider::Mock(MockEmbedder::new(config.dimension)),
             other => {
-                warn!(provider = other, "Unknown embedding provider; using mock");
-                EmbeddingProvider::Mock(MockEmbedder::new(config.dimension))
+                return Err(anyhow::anyhow!(EmbeddingError::Config(format!(
+                    "Unknown embedding provider: {other}"
+                ))));
             }
         };
 
@@ -753,6 +751,16 @@ impl EmbedderTrait for MockEmbedder {
     }
 }
 
+#[async_trait::async_trait]
+impl EmbedderTrait for OpenAIEmbedder {
+    async fn embed(&self, text: &str) -> std::result::Result<Vec<f32>, EmbeddingError> {
+        self.embed(text).await
+    }
+    fn name(&self) -> &str {
+        "openai"
+    }
+}
+
 impl HybridEmbedder {
     pub fn new(
         primary: Box<dyn EmbedderTrait + Send + Sync>,
@@ -836,12 +844,13 @@ impl EmbeddingGenerator {
                     info!(url = %url, "TEI server is healthy");
                     EmbeddingProvider::TEI(tei)
                 } else {
-                    warn!(url = %url, "TEI server not available, falling back to mock");
-                    EmbeddingProvider::Mock(MockEmbedder::new(config.dimension))
+                    return Err(anyhow::anyhow!(EmbeddingError::Config(format!(
+                        "TEI server not available at {url}"
+                    ))));
                 }
             }
             "hybrid" => {
-                // Create hybrid: TEI -> Mock
+                // Create hybrid: TEI -> OpenAI
                 let url = tei_url
                     .or(env_tei_url.as_deref())
                     .unwrap_or("http://localhost:8090");
@@ -853,10 +862,26 @@ impl EmbeddingGenerator {
                     Duration::from_millis(config.retry_base_delay_ms),
                 )?;
 
-                let mock = MockEmbedder::new(config.dimension);
+                let Some(api_key) = config.openai_api_key.clone() else {
+                    return Err(anyhow::anyhow!(EmbeddingError::Config(
+                        "EMBEDDING_PROVIDER=hybrid requires OPENAI_API_KEY".to_string()
+                    )));
+                };
+
+                let limiter = create_rate_limiter(config.rate_limit_rpm);
+                let openai = OpenAIEmbedder::new(
+                    api_key,
+                    config.model.clone(),
+                    Duration::from_secs(config.timeout_secs),
+                    config.max_retries,
+                    Duration::from_millis(config.retry_base_delay_ms),
+                    limiter,
+                )
+                .await?;
+
                 let hybrid = HybridEmbedder::new(
                     Box::new(tei),
-                    Box::new(mock),
+                    Box::new(openai),
                 );
 
                 EmbeddingProvider::Hybrid(hybrid)

@@ -15,6 +15,8 @@ import {
   ChevronRight,
   Layers,
   GitCompare,
+  AlertTriangle,
+  Mic,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -39,9 +41,21 @@ const navigation = [
     description: "Dependency Visualization",
   },
   {
+    name: "Security",
+    href: "/security",
+    icon: Shield,
+    description: "Security Dashboard",
+  },
+  {
+    name: "SBOM",
+    href: "/sbom",
+    icon: Layers,
+    description: "Bill of Materials",
+  },
+  {
     name: "Impact Analysis",
     href: "/impact",
-    icon: Shield,
+    icon: AlertTriangle,
     description: "Vulnerability Impact",
   },
   {
@@ -61,6 +75,12 @@ const navigation = [
     href: "/live",
     icon: Activity,
     description: "Real-time Updates",
+  },
+  {
+    name: "Live Voice Agent",
+    href: "/agent-live",
+    icon: Mic,
+    description: "Gemini Live API Demo",
   },
 ];
 

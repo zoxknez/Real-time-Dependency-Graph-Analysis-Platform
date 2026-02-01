@@ -951,7 +951,7 @@ impl ParserPool {
             raw_signature: sig,
             start_line: node.start_position().row as u32 + 1,
             end_line: node.end_position().row as u32 + 1,
-            documentation: None, // TODO: JSDoc parsing
+            documentation: self.get_jsdoc_comment(node, source),
             parameters: params,
             return_type: None,
             generics: vec![],
@@ -987,7 +987,7 @@ impl ParserPool {
             raw_signature: sig,
             start_line: node.start_position().row as u32 + 1,
             end_line: node.end_position().row as u32 + 1,
-            documentation: None,
+            documentation: self.get_jsdoc_comment(node, source),
             parameters: vec![],
             return_type: None,
             generics: vec![],
@@ -1029,7 +1029,7 @@ impl ParserPool {
                             raw_signature: sig,
                             start_line: child.start_position().row as u32 + 1,
                             end_line: child.end_position().row as u32 + 1,
-                            documentation: None,
+                            documentation: self.get_jsdoc_comment(&child, source),
                             parameters: vec![],
                             return_type: None,
                             generics: vec![],
@@ -1302,6 +1302,35 @@ impl ParserPool {
                     }
                 }
             }
+        }
+        None
+    }
+
+    fn get_jsdoc_comment(&self, node: &tree_sitter::Node, source: &str) -> Option<String> {
+        let mut current = node.prev_sibling();
+        while let Some(prev) = current {
+            if prev.kind() == "comment" {
+                let text = self.get_node_text(&prev, source);
+                let trimmed = text.trim();
+                if trimmed.starts_with("/**") {
+                    let cleaned = trimmed
+                        .trim_start_matches("/**")
+                        .trim_end_matches("*/");
+                    let content = cleaned
+                        .lines()
+                        .map(|line| line.trim().trim_start_matches('*').trim())
+                        .filter(|line| !line.is_empty())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    return if content.is_empty() { None } else { Some(content) };
+                }
+                if trimmed.starts_with("//") {
+                    let content = trimmed.trim_start_matches("//").trim();
+                    return if content.is_empty() { None } else { Some(content.to_string()) };
+                }
+                return None;
+            }
+            current = prev.prev_sibling();
         }
         None
     }

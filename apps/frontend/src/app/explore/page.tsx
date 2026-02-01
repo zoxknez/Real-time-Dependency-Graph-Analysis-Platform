@@ -6,8 +6,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useLazyQuery } from "@apollo/client";
 import {
   Search,
-  Package,
-  SlidersHorizontal,
   Loader2,
   Sparkles,
 } from "lucide-react";
@@ -16,7 +14,6 @@ import { PackageCard } from "@/components/explore/package-card";
 import { PackageDetail } from "@/components/explore/package-detail";
 import { EcosystemFilter } from "@/components/explore/ecosystem-filter";
 import { SearchInput } from "@/components/ui/search-input";
-import { SkeletonCard } from "@/components/ui/skeleton";
 import { QueryError } from "@/components/ui/error-display";
 
 import { cn } from "@/lib/utils";

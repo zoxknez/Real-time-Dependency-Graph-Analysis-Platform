@@ -7,6 +7,8 @@
 //!
 //! Rate limiting is applied per-connection and per-IP.
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;

@@ -15,6 +15,13 @@ Enterprise-grade platform for real-time analysis of 100M+ packages from npm/PyPI
 - **📈 Real-time Subscriptions** - WebSocket-based live updates
 - **🔒 Enterprise Security** - JWT auth, rate limiting, audit logging
 
+## 🏆 Gemini 3 Hackathon
+
+This project includes an **Autonomous Security Agent** powered by Gemini 3 function calling and structured outputs.
+
+- Submission summary: [docs/HACKATHON_SUBMISSION.md](docs/HACKATHON_SUBMISSION.md)
+- Demo script: [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)
+
 ## 🚀 Quick Start
 
 ### Prerequisites

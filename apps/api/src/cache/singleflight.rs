@@ -8,6 +8,8 @@
 //! - Stale-while-revalidate: Returns stale data immediately, refreshes in background
 //! - Metrics: Tracks hit/miss/inflight rates
 
+#![allow(dead_code)]
+
 use anyhow::Result;
 use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;

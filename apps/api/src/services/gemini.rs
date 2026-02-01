@@ -104,6 +104,11 @@ impl GeminiService {
         }
     }
 
+    /// Get the API key for agent use
+    pub fn api_key(&self) -> &str {
+        &self.api_key
+    }
+
     /// Fast generation using the Flash model (Low thinking level)
     #[allow(dead_code)]
     #[instrument(skip(self, prompt), fields(model = %self.flash_model))]

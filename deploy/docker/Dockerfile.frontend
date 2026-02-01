@@ -1,16 +1,19 @@
 # Build stage
 FROM node:20-alpine AS builder
 
-WORKDIR /app
+WORKDIR /tmp/app
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@9 --activate
+# Avoid permission errors writing npm cache
+ENV NPM_CONFIG_CACHE=/tmp/.npm
+ENV PNPM_HOME=/tmp/.pnpm
+ENV PNPM_STORE_PATH=/tmp/.pnpm-store
+RUN mkdir -p /tmp/.pnpm /tmp/.pnpm-store && chmod -R 777 /tmp/.pnpm /tmp/.pnpm-store
 
 # Copy package files
 COPY apps/frontend/package.json apps/frontend/pnpm-lock.yaml* ./
 
-# Install dependencies
-RUN pnpm install --frozen-lockfile || pnpm install
+# Install dependencies (store in /tmp to avoid permission issues) including devDeps for build
+RUN NODE_ENV=development npx -y pnpm@9 install --store-dir /tmp/.pnpm-store --frozen-lockfile || NODE_ENV=development npx -y pnpm@9 install --store-dir /tmp/.pnpm-store
 
 # Copy source (excluding node_modules via .dockerignore)
 COPY apps/frontend/src ./src
@@ -30,27 +33,27 @@ ENV NEXT_PUBLIC_GRAPHQL_ENDPOINT=$NEXT_PUBLIC_GRAPHQL_ENDPOINT
 ENV NEXT_PUBLIC_WS_ENDPOINT=$NEXT_PUBLIC_WS_ENDPOINT
 ENV NEXT_PUBLIC_SEARCH_MODE=$NEXT_PUBLIC_SEARCH_MODE
 
-# Build
+# Build (store-dir not needed here to avoid EACCES)
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN pnpm build
+RUN npx -y pnpm@9 run build
 
 # Runtime stage
 FROM node:20-alpine
 
 WORKDIR /app
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@9 --activate
+# Avoid permission errors writing npm cache
+ENV NPM_CONFIG_CACHE=/tmp/.npm
 
-# Copy built app
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public
+# Copy built app into a subdir to avoid node_modules path conflicts
+COPY --from=builder /tmp/app/.next/standalone ./standalone
+COPY --from=builder /tmp/app/.next/static ./standalone/.next/static
+COPY --from=builder /tmp/app/public ./standalone/public
 
-# Create non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nextjs -u 1001
-USER nextjs
+WORKDIR /app/standalone
+
+# Use built-in non-root user from base image
+USER node
 
 # Expose port
 EXPOSE 3000

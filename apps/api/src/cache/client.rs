@@ -5,7 +5,6 @@ use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
-use std::time::Duration;
 use tracing::{debug, instrument, warn};
 
 use crate::config::RedisConfig;

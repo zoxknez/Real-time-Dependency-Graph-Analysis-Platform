@@ -66,6 +66,9 @@ impl EmbeddingGenerator {
                 EmbeddingProvider::Local(local)
             }
             "openai" => {
+                if config.openai_api_key.is_none() {
+                    return Err(anyhow::anyhow!("OpenAI API key not configured"));
+                }
                 let openai = OpenAIEmbedder::new(
                     config.openai_api_key.clone(),
                     config.model_path.clone(),
@@ -80,8 +83,7 @@ impl EmbeddingGenerator {
                 EmbeddingProvider::Mock(mock)
             }
             unknown => {
-                warn!(provider = unknown, "Unknown provider, using mock");
-                EmbeddingProvider::Mock(MockEmbedder::new(config.dimension))
+                return Err(anyhow::anyhow!(format!("Unknown embedding provider: {unknown}")));
             }
         };
 

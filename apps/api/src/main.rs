@@ -43,6 +43,7 @@ use axum::http::{HeaderValue, Method};
 use crate::config::Config;
 use crate::gql::ApiSchema;
 use crate::handlers::AppState;
+use crate::handlers::{security_agent_stream, live_token_handler};
 use crate::middleware::security_headers::SecurityHeadersLayer;
 #[allow(unused_imports)]
 use crate::middleware::create_rate_limiter;
@@ -63,6 +64,8 @@ pub struct CombinedState {
     pub rate_limit_rpm: u32,
     pub jwt_state: JwtState,
     pub query_timeout: Duration,
+    pub gemini_api_key: String,
+    pub max_results: i32,
 }
 
 #[tokio::main]
@@ -192,6 +195,8 @@ async fn main() -> Result<()> {
         rate_limit_rpm: config.guardrails.rate_limit_rpm,
         jwt_state: jwt_config.clone(),
         query_timeout: config.query_timeout(),
+        gemini_api_key: config.gemini.api_key.clone(),
+        max_results: config.guardrails.max_results,
     };
 
     // Build router with security layers
@@ -203,6 +208,8 @@ async fn main() -> Result<()> {
         .route("/metrics", get(metrics::metrics_handler))
         .route("/graphql", get(graphql_playground).post(graphql_handler))
         .route("/graphql/ws", get(graphql_ws_handler))
+        .route("/agent/stream", axum::routing::post(security_agent_stream))
+        .route("/live/token", get(live_token_handler))
         .layer(axum::Extension(metrics_handle))
         .layer(axum::Extension(ws_schema))
         .layer(axum_middleware::from_fn_with_state(jwt_config, optional_jwt_middleware))

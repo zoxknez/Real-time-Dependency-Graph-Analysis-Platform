@@ -20,7 +20,6 @@ import {
   Check,
   FileJson,
   Search,
-  Sparkles,
 } from "lucide-react";
 import { GET_IMPACT_RADIUS } from "@/lib/graphql/queries";
 import { cn, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass } from "@/lib/utils";

@@ -160,6 +160,8 @@ async fn run_simulation_mode(config: AppConfig) -> Result<()> {
         let now = std::time::SystemTime::now(); 
         
         // Use fully qualified path to ensure correct struct
+        let tarball_url = build_simulated_tarball_url(ecosystem, name, &version);
+
         let event = crate::proto_gen::domain::package::v1::VersionUpserted {
             meta: Some(crate::proto_gen::shared::event::v1::EventMeta {
                 event_id: uuid::Uuid::new_v4().to_string(),
@@ -172,8 +174,8 @@ async fn run_simulation_mode(config: AppConfig) -> Result<()> {
             package_name: name.to_string(),
             version: version.clone(),
             yanked: false,
-            tarball_url: format!("https://registry.example.com/{}/-/{}-{}.tgz", name, name, version),
-            integrity: "sha512-mock".to_string(),
+            tarball_url,
+            integrity: "".to_string(),
             size_bytes: rng.gen_range(1000..5000000),
             published_at: Some(prost_types::Timestamp::from(now)),
             dependencies: vec![],
@@ -193,6 +195,17 @@ async fn run_simulation_mode(config: AppConfig) -> Result<()> {
         }
         
         tokio::time::sleep(Duration::from_millis(rng.gen_range(2000..5000))).await;
+    }
+}
+
+fn build_simulated_tarball_url(ecosystem: &str, name: &str, version: &str) -> String {
+    match ecosystem.to_ascii_lowercase().as_str() {
+        "npm" => format!("https://registry.npmjs.org/{}/-/{}-{}.tgz", name, name, version),
+        "cargo" | "crates" | "crates.io" => {
+            format!("https://crates.io/api/v1/crates/{}/{}/download", name, version)
+        }
+        "pypi" | "py_pi" => format!("https://pypi.org/project/{}/{}/", name, version),
+        _ => "".to_string(),
     }
 }
 

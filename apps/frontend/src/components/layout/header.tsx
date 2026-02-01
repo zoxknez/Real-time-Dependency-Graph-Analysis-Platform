@@ -43,7 +43,7 @@ export function Header() {
     }
   };
 
-  const isExplorePage = pathname === "/explore";
+  const _isExplorePage = pathname === "/explore";
 
   return (
     <header className="h-16 px-6 flex items-center justify-between border-b theme-border glass-card rounded-none border-l-0 border-t-0 border-r-0 relative z-50 transition-colors duration-300">

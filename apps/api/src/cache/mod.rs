@@ -8,5 +8,6 @@
 mod client;
 mod singleflight;
 
-pub use client::{CacheClient, CacheKeys};
+pub use client::CacheClient;
+#[allow(unused_imports)]
 pub use singleflight::{CacheConfig, SingleflightCache, TimestampedEntry};

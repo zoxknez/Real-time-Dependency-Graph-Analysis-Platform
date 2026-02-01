@@ -47,9 +47,8 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
         </div>
       )}
 
-      {/* Main Stats */}
-      {true ? ( // Always show stats (either real or placeholder)
-        <div className="space-y-4">
+      {/* Main Stats - Always show stats (either real or placeholder) */}
+      <div className="space-y-4">
           {/* Events Per Minute */}
           <div className="flex items-center justify-between">
             <span className="text-sm theme-text-muted">Events/min</span>
@@ -135,13 +134,6 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
             </div>
           </div>
         </div>
-      ) : (
-        <div className="space-y-4 animate-pulse">
-          <div className="h-8 bg-surface-700/50 rounded" />
-          <div className="h-6 bg-surface-700/50 rounded w-2/3" />
-          <div className="h-10 bg-surface-700/50 rounded" />
-        </div>
-      )}
     </motion.div>
   );
 }

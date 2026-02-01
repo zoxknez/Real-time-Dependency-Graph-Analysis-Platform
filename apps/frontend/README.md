@@ -40,6 +40,9 @@ Create a `.env.local` file (copy from `.env.example`):
 
 ```env
 NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8000/graphql
+NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=http://localhost:8000/agent/stream
+NEXT_PUBLIC_LIVE_TOKEN_ENDPOINT=http://localhost:8000/live/token
+NEXT_PUBLIC_LIVE_WS_ENDPOINT=wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent
 ```
 
 ## 🖥️ Development

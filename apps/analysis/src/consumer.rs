@@ -339,7 +339,7 @@ mod tests {
             package_id: "test-package".to_string(),
             version: "1.0.0".to_string(),
             ecosystem: "npm".to_string(),
-            tarball_url: "https://example.com/test.tgz".to_string(),
+            tarball_url: "https://registry.npmjs.org/test-package/-/test-package-1.0.0.tgz".to_string(),
             previous_version: Some("0.9.0".to_string()),
             published_at: Utc::now(),
         };
@@ -390,7 +390,7 @@ mod tests {
             package_id: "test".to_string(),
             version: "1.0.0".to_string(),
             ecosystem: "npm".to_string(),
-            tarball_url: "https://example.com/test.tgz".to_string(),
+            tarball_url: "https://registry.npmjs.org/test/-/test-1.0.0.tgz".to_string(),
             previous_version: None,
             published_at: Utc::now(),
         };

@@ -6,7 +6,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useLazyQuery } from "@apollo/client";
 import {
   Route,
-  ArrowRight,
   Package as PackageIcon,
   Loader2,
   CheckCircle,
@@ -14,7 +13,6 @@ import {
   Search,
   ArrowLeftRight,
   Sparkles,
-  ExternalLink,
   Copy,
   Check,
   GitBranch,

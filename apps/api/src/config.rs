@@ -161,7 +161,7 @@ pub struct QdrantConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct EmbeddingConfig {
-    /// Embedding provider: "mock" (default) or "openai"
+    /// Embedding provider: "openai", "tei", "hybrid", or "mock"
     pub provider: String,
     /// OpenAI API key (when provider=openai)
     pub openai_api_key: Option<String>,
@@ -409,7 +409,7 @@ impl Config {
             },
             embedding: EmbeddingConfig {
                 provider: env::var("EMBEDDING_PROVIDER")
-                    .unwrap_or_else(|_| "mock".to_string()),
+                    .unwrap_or_else(|_| "openai".to_string()),
                 openai_api_key: env::var("OPENAI_API_KEY").ok(),
                 model: env::var("EMBEDDING_MODEL")
                     .unwrap_or_else(|_| "text-embedding-3-small".to_string()),

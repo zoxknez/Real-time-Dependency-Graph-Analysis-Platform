@@ -31,7 +31,7 @@ import { useDependencyGraphUpdates, useConnectionStatus } from "@/lib/hooks";
 import type { DependencyGraphUpdate, PackageEdge } from "@/lib/graphql/types";
 import * as THREE from "three";
 import SpriteText from "three-spritetext";
-import type { NodeObject, LinkObject, ForceGraphMethods } from "react-force-graph-3d";
+import type { NodeObject, LinkObject } from "react-force-graph-3d";
 
 // Dynamic import for 3D Graph
 const ForceGraph3D = dynamic(() => import("react-force-graph-3d"), {
@@ -69,6 +69,7 @@ function GraphPageContent() {
   const searchParams = useSearchParams();
   const initialPkg = searchParams.get("pkg") || "";
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [packageId, setPackageId] = useState(initialPkg);
@@ -230,12 +231,14 @@ function GraphPageContent() {
 
   const handleZoomIn = () => {
     if (!graphRef.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const currentPos = (graphRef.current as any).cameraPosition();
     const newZ = currentPos.z * 0.7;
     graphRef.current.cameraPosition({ z: newZ }, undefined, 400);
   };
   const handleZoomOut = () => {
     if (!graphRef.current) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const currentPos = (graphRef.current as any).cameraPosition();
     const newZ = currentPos.z / 0.7;
     graphRef.current.cameraPosition({ z: newZ }, undefined, 400);
@@ -335,6 +338,7 @@ function GraphPageContent() {
           y: (graphNode.y || 0) * distRatio,
           z: (graphNode.z || 0) * distRatio
         }, // new position
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         node as any, // lookAt component
         2000  // transition ms
       );
@@ -484,7 +488,7 @@ function GraphPageContent() {
             linkDirectionalParticles={2}
             linkDirectionalParticleSpeed={0.005}
             linkDirectionalParticleWidth={1.5}
-            linkDirectionalParticleColor={(link) => {
+            linkDirectionalParticleColor={() => {
               // Particles flow towards the dependency (the target)
               return "rgba(99, 102, 241, 0.6)";
             }}

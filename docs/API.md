@@ -28,6 +28,37 @@ Opens GraphiQL interactive playground for exploring the API.
 ws://[host]/graphql/ws
 ```
 
+### Security Agent Streaming (SSE)
+
+```
+POST /agent/stream
+```
+
+Streams real-time agent steps and final results as Server-Sent Events. Each event is JSON.
+
+**Request body:**
+```json
+{
+  "task": "Analyze npm:lodash for vulnerabilities",
+  "max_steps": 10,
+  "target_packages": ["npm:lodash"],
+  "analysis_depth": 3
+}
+```
+
+**Event types:**
+- `step`: incremental agent step
+- `final`: final result (includes structured report)
+- `error`: error message
+
+### Live API Token Helper
+
+```
+GET /live/token
+```
+
+Returns a pre-generated ephemeral token for Gemini Live API demos. Configure by setting `GEMINI_LIVE_EPHEMERAL_TOKEN` in the API environment.
+
 ## Authentication
 
 The API supports JWT-based authentication. Include the token in the Authorization header:

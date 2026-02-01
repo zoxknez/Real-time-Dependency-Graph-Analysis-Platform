@@ -356,18 +356,43 @@ impl DistributedRateLimiter {
     
     /// Determine tier from API key (stub - would lookup in database)
     pub async fn determine_tier(&self, client_key: &str) -> RateTier {
-        // In production, this would look up the API key in a database
-        // For now, use simple heuristics
-        if client_key.starts_with("apikey:ent_") {
-            RateTier::Enterprise
-        } else if client_key.starts_with("apikey:pro_") {
-            RateTier::Pro
-        } else if client_key.starts_with("apikey:internal_") {
-            RateTier::Unlimited
-        } else {
-            RateTier::Free
+        // In production, this would look up the API key in a database.
+        // For now, use env-configured API key tiers (RATE_LIMIT_API_KEYS).
+        if let Some(api_key) = client_key.strip_prefix("apikey:") {
+            if let Some(tier) = lookup_api_key_tier(api_key) {
+                return tier;
+            }
+        }
+
+        RateTier::Free
+    }
+}
+
+fn lookup_api_key_tier(api_key: &str) -> Option<RateTier> {
+    let Ok(raw) = std::env::var("RATE_LIMIT_API_KEYS") else {
+        return None;
+    };
+
+    // Format: "free:key1,key2;pro:key3;enterprise:key4;unlimited:key5"
+    for section in raw.split(';') {
+        let mut parts = section.splitn(2, ':');
+        let tier_label = parts.next().unwrap_or("").trim();
+        let keys = parts.next().unwrap_or("").trim();
+        if keys.is_empty() {
+            continue;
+        }
+        if keys.split(',').any(|k| k.trim() == api_key) {
+            return match tier_label.to_ascii_lowercase().as_str() {
+                "free" => Some(RateTier::Free),
+                "pro" => Some(RateTier::Pro),
+                "enterprise" => Some(RateTier::Enterprise),
+                "unlimited" => Some(RateTier::Unlimited),
+                _ => None,
+            };
         }
     }
+
+    None
 }
 
 /// Get current timestamp in seconds
@@ -506,6 +531,10 @@ mod tests {
     
     #[tokio::test]
     async fn test_tier_detection() {
+        std::env::set_var(
+            "RATE_LIMIT_API_KEYS",
+            "enterprise:ent_123;pro:pro_456;unlimited:internal_svc",
+        );
         let config = DistributedRateLimiterConfig::default();
         let limiter = DistributedRateLimiter::local_only(config);
         
@@ -513,5 +542,6 @@ mod tests {
         assert_eq!(limiter.determine_tier("apikey:pro_456").await, RateTier::Pro);
         assert_eq!(limiter.determine_tier("ip:1.2.3.4").await, RateTier::Free);
         assert_eq!(limiter.determine_tier("apikey:internal_svc").await, RateTier::Unlimited);
+        std::env::remove_var("RATE_LIMIT_API_KEYS");
     }
 }

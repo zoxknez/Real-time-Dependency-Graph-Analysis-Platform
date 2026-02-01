@@ -36,6 +36,8 @@ futures = "0.3"
 
 # Serialization
 walkdir = "2"
+flate2 = "1.0"
+tar = "0.4"
 
 models = { path = "../../packages/models" }
 storage = { path = "../../packages/storage" }

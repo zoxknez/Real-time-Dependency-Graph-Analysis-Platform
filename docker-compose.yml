@@ -92,7 +92,8 @@ services:
   # 3. GRAPH DATABASE - Memgraph 2.14.1 + MAGE (Cypher)
   # ═══════════════════════════════════════════════════════════════
   memgraph:
-    image: memgraph/memgraph-mage:1.18-memgraph-2.14.1
+    # Latest tag is used because the specific 1.18-memgraph-2.14.1 tag is unavailable on Docker Hub.
+    image: memgraph/memgraph-mage:latest
     container_name: idp-memgraph
     restart: unless-stopped
     ports:

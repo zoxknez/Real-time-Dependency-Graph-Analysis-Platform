@@ -65,7 +65,7 @@ pub async fn build_schema(config: &Config) -> Result<(ApiSchema, Arc<EventChanne
             );
         }
 
-        let embedder = match EmbeddingGenerator::new(&config.embedding).await {
+        let embedder = match EmbeddingGenerator::new_with_tei(&config.embedding, None).await {
             Ok(e) => Some(Arc::new(e)),
             Err(e) => {
                 warn!(error = %e, "Embedding generator init failed; semantic search disabled");

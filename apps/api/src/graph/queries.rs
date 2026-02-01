@@ -336,46 +336,34 @@ impl GraphQueries {
     // ═══════════════════════════════════════════════════════════════
 
     /// Get overall graph stats
-    pub fn graph_stats() -> Query {
+    pub fn graph_stats(tenant_id: &str) -> Query {
         // Use OPTIONAL MATCH for edges that may not exist yet
-        // NOTE: For MVP tenant isolation, we might not have efficient global counters per tenant without indices/metadata
-        // Doing full count(*) with WHERE tenant_id is expensive but correct for MVP.
         neo4rs::query(
             r#"
-            MATCH (p:Package)
+            MATCH (p:Package {tenant_id: $tenant_id})
             WITH count(p) AS packages
-            MATCH (v:Version)
+            MATCH (v:Version {tenant_id: $tenant_id})
             WITH packages, count(v) AS versions
-            OPTIONAL MATCH ()-[d:DEPENDS_ON]->()
+            OPTIONAL MATCH (v:Version {tenant_id: $tenant_id})-[d:DEPENDS_ON]->(p:Package {tenant_id: $tenant_id})
             WITH packages, versions, count(d) AS dependencies
-            OPTIONAL MATCH ()-[dp:DEPENDS_ON_PKG]->()
+            OPTIONAL MATCH (p:Package {tenant_id: $tenant_id})-[dp:DEPENDS_ON_PKG]->(p2:Package {tenant_id: $tenant_id})
             RETURN packages, versions, dependencies, count(dp) AS pkg_dependencies
             "#,
         )
-        // TODO: Add tenant_id filtering here efficiently.
-        // For now, let's keep stats global or leave as is to avoid breaking if caller doesn't pass tenant_id yet?
-        // Wait, if I change signature I MUST update caller.
-        // Let's NOT change signature for stats for now, as stats might remain global in this Phase or it's complex.
-        // Prompt says "Modifying Memgraph storage to enforce tenant_id on ALL nodes".
-        // If I enforce tenant_id, then global count query `MATCH (p:Package)` will return ALL tenants data unless I add WHERE.
-        // But `MemgraphClient` is configured to "Inject tenant_id param".
-        // It DOES NOT automatically append `WHERE tenant_id = $tenant_id`.
-        // So `MATCH (p:Package)` will indeed return global count.
-        // This is a data leak if stats are exposed to tenants.
-        // So I SHOULD filter.
+        .param("tenant_id", tenant_id.to_string())
     }
 
     /// Get ecosystem breakdown for stats
-    pub fn ecosystem_breakdown() -> Query {
+    pub fn ecosystem_breakdown(tenant_id: &str) -> Query {
         neo4rs::query(
             r#"
-            MATCH (p:Package)
+            MATCH (p:Package {tenant_id: $tenant_id})
             WHERE p.deleted_at IS NULL
             RETURN p.ecosystem AS ecosystem, count(p) AS count
             ORDER BY count DESC
             "#,
         )
-        // Same as above, global stats for now.
+        .param("tenant_id", tenant_id.to_string())
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -475,5 +463,147 @@ mod tests {
     fn test_impact_radius_query_builds() {
         let query = GraphQueries::impact_radius("test_tenant", "npm:lodash", 3, 5000);
         assert!(true);
+    }
+    
+    #[test]
+    fn test_transitive_paths_query_builds() {
+        let query = GraphQueries::transitive_paths("test_tenant", "npm:express", "npm:lodash", 3);
+        assert!(true);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TRANSITIVE PATH QUERIES
+// Based on GitHub Dependency Graph "Show paths" feature
+// ═══════════════════════════════════════════════════════════════
+
+impl GraphQueries {
+    /// Get shortest paths from root to target package
+    /// Returns top N shortest paths (for "Show paths" UI feature)
+    /// 
+    /// Based on GitHub Dependency Graph transitive path visualization
+    pub fn transitive_paths(tenant_id: &str, from_id: &str, to_id: &str, limit: i32) -> Query {
+        // Using BFS-based path finding in Memgraph
+        // Note: With Version→Package schema, we trace through versions
+        neo4rs::query(
+            r#"
+            MATCH path = (root:Package {id: $from_id, tenant_id: $tenant_id})
+                         <-[:BELONGS_TO]-(rv:Version {tenant_id: $tenant_id})
+                         -[:DEPENDS_ON*1..5]->(target:Package {id: $to_id, tenant_id: $tenant_id})
+            WITH path, length(path) AS len
+            ORDER BY len
+            LIMIT $limit
+            WITH path, len
+            UNWIND nodes(path) AS n
+            WITH path, len, collect(
+                CASE 
+                    WHEN n:Package THEN n.id 
+                    ELSE null 
+                END
+            ) AS all_ids
+            WITH path, len, [x IN all_ids WHERE x IS NOT NULL] AS package_ids
+            RETURN DISTINCT package_ids, len AS length
+            ORDER BY length
+            LIMIT $limit
+            "#,
+        )
+        .param("tenant_id", tenant_id.to_string())
+        .param("from_id", from_id.to_string())
+        .param("to_id", to_id.to_string())
+        .param("limit", limit as i64)
+    }
+    
+    /// Get which direct dependencies introduced a transitive dependency
+    /// Returns list of direct deps that bring in the target
+    #[allow(dead_code)]
+    pub fn introduced_by(tenant_id: &str, root_id: &str, target_id: &str) -> Query {
+        neo4rs::query(
+            r#"
+            MATCH (root:Package {id: $root_id, tenant_id: $tenant_id})
+                  <-[:BELONGS_TO]-(rv:Version {tenant_id: $tenant_id})
+                  -[:DEPENDS_ON]->(direct:Package {tenant_id: $tenant_id})
+            WHERE direct.deleted_at IS NULL AND direct.id <> $root_id
+            MATCH (direct)<-[:BELONGS_TO]-(dv:Version {tenant_id: $tenant_id})
+                  -[:DEPENDS_ON*0..4]->(target:Package {id: $target_id, tenant_id: $tenant_id})
+            RETURN DISTINCT direct.id AS id,
+                   direct.ecosystem AS ecosystem,
+                   direct.name AS name
+            ORDER BY direct.name
+            "#,
+        )
+        .param("tenant_id", tenant_id.to_string())
+        .param("root_id", root_id.to_string())
+        .param("target_id", target_id.to_string())
+    }
+    
+    /// Get dependencies with extended info (relationship type, depth, introduced_by)
+    /// For the extended dependency view with Direct/Transitive badges
+    #[allow(dead_code)]
+    pub fn dependencies_extended(tenant_id: &str, package_id: &str, limit: i32) -> Query {
+        neo4rs::query(
+            r#"
+            MATCH (src:Package {id: $package_id, tenant_id: $tenant_id})
+                  <-[:BELONGS_TO]-(v:Version {tenant_id: $tenant_id})
+            
+            // Direct dependencies
+            MATCH (v)-[:DEPENDS_ON]->(direct:Package {tenant_id: $tenant_id})
+            WHERE direct.deleted_at IS NULL AND direct <> src
+            
+            WITH DISTINCT src, direct, 'DIRECT' AS rel, 1 AS depth
+            
+            RETURN direct.id AS id,
+                   direct.ecosystem AS ecosystem,
+                   direct.name AS name,
+                   rel AS relationship,
+                   depth,
+                   [] AS introduced_by_ids
+            ORDER BY direct.name
+            LIMIT $limit
+            "#,
+        )
+        .param("tenant_id", tenant_id.to_string())
+        .param("package_id", package_id.to_string())
+        .param("limit", limit as i64)
+    }
+    
+    /// Get reverse dependents with extended relationship info
+    pub fn reverse_dependents_extended(
+        tenant_id: &str, 
+        package_id: &str, 
+        relationship: Option<&str>,
+        limit: i32
+    ) -> Query {
+        // For now, all reverse deps are "DIRECT" since they directly depend on target
+        // Transitive reverse deps would be packages that depend on packages that depend on target
+        let rel_filter = match relationship {
+            Some("DIRECT") => "AND depth = 1",
+            Some("TRANSITIVE") => "AND depth > 1",
+            _ => "",
+        };
+        
+        let cypher = format!(
+            r#"
+            MATCH (target:Package {{id: $package_id, tenant_id: $tenant_id}})
+            MATCH (depV:Version {{tenant_id: $tenant_id}})-[:DEPENDS_ON]->(target)
+            MATCH (depV)-[:BELONGS_TO]->(dep:Package {{tenant_id: $tenant_id}})
+            WHERE dep.deleted_at IS NULL AND dep <> target
+            WITH DISTINCT dep, 1 AS depth, 'DIRECT' AS relationship
+            {}
+            RETURN dep.id AS id,
+                   dep.ecosystem AS ecosystem,
+                   dep.name AS name,
+                   depth,
+                   relationship,
+                   [] AS introduced_by_ids
+            ORDER BY dep.name
+            LIMIT $limit
+            "#,
+            rel_filter
+        );
+        
+        neo4rs::query(&cypher)
+            .param("tenant_id", tenant_id.to_string())
+            .param("package_id", package_id.to_string())
+            .param("limit", limit as i64)
     }
 }

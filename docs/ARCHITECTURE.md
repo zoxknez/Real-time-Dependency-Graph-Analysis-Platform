@@ -110,6 +110,39 @@
 - `src/gql/subscription.rs` - Real-time subscriptions
 - `src/kafka/consumer.rs` - Event broadcasting
 
+### Gemini 3 Security Agent (apps/api + apps/frontend)
+
+**Purpose:** Autonomous, multi‑step security analysis powered by Gemini 3.
+
+**Capabilities:**
+- Function Calling (custom tools)
+- High‑level reasoning (thinking level: high)
+- Thought summaries for explainability
+- Structured JSON report for automation
+
+**Flow (Tool‑Orchestrated):**
+
+```mermaid
+sequenceDiagram
+  participant UI as Frontend UI
+  participant API as API Gateway
+  participant G3 as Gemini 3
+  participant Graph as Memgraph
+
+  UI->>API: securityAgent(task)
+  API->>G3: generateContent + tools
+  G3-->>API: functionCall(search_packages)
+  API->>Graph: search query
+  Graph-->>API: package matches
+  API->>G3: functionResponse
+  G3-->>API: functionCall(get_dependency_path)
+  API->>Graph: path query
+  Graph-->>API: path result
+  API->>G3: functionResponse
+  G3-->>API: final response
+  API-->>UI: steps + final_response + structured_report_json
+```
+
 ### Frontend (apps/frontend)
 
 **Technology:** Next.js 14, TypeScript, TailwindCSS

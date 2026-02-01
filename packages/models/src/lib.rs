@@ -6,12 +6,21 @@
 pub mod package;
 pub mod analysis;
 pub mod tenant;
+pub mod vulnerability;
+pub mod sbom;
+pub mod scorecard;
+pub mod license;
+pub mod vex;
+pub mod provenance;
+pub mod policy;
+pub mod audit;
 pub mod generated;
 
 // Re-export common types
 pub use package::*;
 pub use analysis::*;
 pub use tenant::*;
+pub use vulnerability::*;
 
 /// Common ID type used across the platform
 pub type PackageId = String;
