@@ -610,8 +610,33 @@ export default function PackageDetailPage() {
               )}
 
               {!graphLoading && !graphHasEdges && (
-                <div className="glass-card p-6 border theme-border theme-text-muted">
-                  No reverse dependents found yet. Try the full graph view for deeper scans.
+                <div className="glass-card p-8 border theme-border text-center space-y-3">
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/5 border border-white/10 mx-auto">
+                    <GitBranch className="w-5 h-5 text-primary-300" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold theme-text-primary">
+                      Graph data not available yet
+                    </h3>
+                    <p className="text-sm theme-text-muted mt-1">
+                      We did not find reverse dependents for this package in the graph. Try the
+                      full graph view for deeper scans.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-3 justify-center">
+                    <Link
+                      href={packageId ? `/graph?pkg=${encodeURIComponent(packageId)}` : "/graph"}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-primary-500/30 text-primary-300 hover:text-white hover:bg-primary-500/20 transition-colors text-sm"
+                    >
+                      Open full graph
+                    </Link>
+                    <Link
+                      href={supplyChainUrl}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors text-sm"
+                    >
+                      Supply chain view
+                    </Link>
+                  </div>
                 </div>
               )}
 
@@ -622,6 +647,24 @@ export default function PackageDetailPage() {
                     <span>Edges: {graphStats?.links ?? graphData.links.length}</span>
                     {graphStats && <span>Max depth: {graphStats.maxDepth}</span>}
                     <span>Showing up to 60 dependents</span>
+                  </div>
+                  <div className="flex flex-wrap gap-4 text-xs theme-text-faint mb-4">
+                    <div className="inline-flex items-center gap-2">
+                      <span className="w-4 h-0.5 bg-white/50" />
+                      Direct link
+                    </div>
+                    <div className="inline-flex items-center gap-2">
+                      <span className="w-4 h-0.5 border-t-2 border-dashed border-white/50" />
+                      Transitive link
+                    </div>
+                    <div className="inline-flex items-center gap-2">
+                      <span
+                        className={`w-2.5 h-2.5 rounded-full ${
+                          totalVulns > 0 ? "bg-red-500/70" : "bg-emerald-500/70"
+                        }`}
+                      />
+                      {totalVulns > 0 ? "Vulnerable root" : "No known vulns"}
+                    </div>
                   </div>
                   <DependencyGraph
                     data={graphData}
@@ -764,6 +807,21 @@ export default function PackageDetailPage() {
                   )}
                 </div>
               )}
+
+              <div className="flex flex-wrap gap-3">
+                <Link
+                  href={supplyChainUrl}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-primary-500/30 text-primary-300 hover:text-white hover:bg-primary-500/20 transition-colors text-sm"
+                >
+                  Open supply chain dashboard
+                </Link>
+                <Link
+                  href={packageId ? `/impact?pkg=${encodeURIComponent(packageId)}` : "/impact"}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors text-sm"
+                >
+                  Run impact analysis
+                </Link>
+              </div>
             </div>
           )}
 
