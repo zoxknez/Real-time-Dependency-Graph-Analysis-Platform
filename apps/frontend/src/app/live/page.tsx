@@ -290,7 +290,7 @@ export default function LivePage() {
             <div className="flex items-center gap-2 mt-1">
               <span className="w-1.5 h-1.5 rounded-full bg-accent-500 animate-pulse" />
               <p className="text-[10px] uppercase font-bold tracking-[0.2em] theme-text-muted">
-                Global Dependency Feed
+                Global dependency feed
               </p>
             </div>
           </div>
@@ -377,7 +377,7 @@ export default function LivePage() {
       >
         <div className="absolute inset-0 bg-primary-500/5 translate-y-full group-hover:translate-y-0 transition-transform duration-500" />
         <div className="relative z-10">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Total Signals</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Total signals</p>
           <div className="flex items-baseline gap-1">
             <span className="text-2xl font-black text-white tracking-tight">
               <AnimatedCounter value={stats.total} />
@@ -403,7 +403,7 @@ export default function LivePage() {
             <span className="text-2xl font-black text-emerald-400 tracking-tight">
               {stats.eventsPerMinute}
             </span>
-            <span className="text-[10px] font-mono text-emerald-500/70">ops/m</span>
+            <span className="text-[10px] font-mono text-emerald-500/70">events/m</span>
           </div>
         </div>
         <div className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/5 text-emerald-400">
@@ -473,7 +473,7 @@ export default function LivePage() {
             <div className="flex flex-col">
               <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500">System Status</span>
               <span className={cn("text-xs font-mono font-bold", isPaused ? "text-amber-500" : "text-emerald-400 uppercase")}>
-                {isPaused ? "PAUSED - BUFFERING" : "ONLINE - RECEIVING"}
+                {isPaused ? "PAUSED - BUFFERING" : "ONLINE - STREAMING"}
               </span>
             </div>
           </div>
@@ -522,7 +522,7 @@ export default function LivePage() {
                     transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
                     className="w-24 h-24 rounded-full border-2 border-dashed border-slate-700 mb-8"
                   />
-                  <h3 className="text-xl font-bold theme-text-primary mb-2">Scanning Global Frequencies</h3>
+                  <h3 className="text-xl font-bold theme-text-primary mb-2">Scanning global frequencies</h3>
                   <p className="text-sm font-mono text-slate-500">Awaiting incoming data packets...</p>
                 </div>
               ) : (

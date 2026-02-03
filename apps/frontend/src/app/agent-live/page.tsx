@@ -190,7 +190,7 @@ export default function AgentLivePage() {
             </h1>
             <span className="px-2 py-1 text-xs rounded-full bg-purple-500/15 text-purple-400 flex items-center gap-1">
               <Sparkles className="w-3 h-3" />
-              Hackathon Wow-Factor
+              Hackathon Demo
             </span>
             {demoRunning && (
               <span className="px-2 py-1 text-xs rounded-full bg-green-500/15 text-green-300 flex items-center gap-1">

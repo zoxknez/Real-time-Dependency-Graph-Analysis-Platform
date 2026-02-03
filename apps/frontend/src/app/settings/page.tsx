@@ -270,7 +270,7 @@ export default function SettingsPage() {
             Settings
           </h1>
           <p className="theme-text-muted mt-1">
-            Configure your Inverse Dependency Platform experience
+            Configure your platform experience
           </p>
         </div>
         
@@ -294,7 +294,7 @@ export default function SettingsPage() {
             className="btn-secondary flex items-center gap-2"
           >
             <RotateCcw className="w-4 h-4" />
-            Reset to Defaults
+            Reset defaults
           </button>
         </div>
       </motion.div>
@@ -393,7 +393,7 @@ export default function SettingsPage() {
                   GraphQL Endpoint
                 </h2>
                 <p className="text-sm theme-text-muted mb-4">
-                  Configure the API endpoint for the dependency graph
+                  Configure the API endpoint for dependency data
                 </p>
                 <div className="flex gap-3">
                   <input
@@ -642,7 +642,7 @@ export default function SettingsPage() {
                       <div>
                         <p className="font-medium theme-text-primary">Local Cache</p>
                         <p className="text-sm theme-text-muted">
-                          Cached data stored in your browser
+                          Cached data stored locally in your browser
                         </p>
                       </div>
                       <div className="text-right">
@@ -660,7 +660,7 @@ export default function SettingsPage() {
 
                   {/* Export/Import */}
                   <div className="p-4 rounded-xl theme-inner-card">
-                    <p className="font-medium theme-text-primary mb-3">Export / Import Settings</p>
+                    <p className="font-medium theme-text-primary mb-3">Export or import settings</p>
                     <div className="flex gap-3">
                       <button
                         onClick={exportSettings}
@@ -697,7 +697,7 @@ export default function SettingsPage() {
                   Inverse Dependency Platform
                 </h2>
                 <p className="theme-text-muted">
-                  Real-time dependency analysis and impact assessment
+                  Real-time dependency analysis and impact insights
                 </p>
               </div>
 

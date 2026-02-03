@@ -137,7 +137,7 @@ export default function AskPage() {
             className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 text-xs font-medium theme-text-muted hover:text-white transition-all flex items-center gap-2 backdrop-blur-sm group"
           >
             <RefreshCcw className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-500" />
-            Clear Session
+            Clear chat
           </button>
         </motion.div>
 
@@ -162,9 +162,9 @@ export default function AskPage() {
                     </div>
                   </div>
                   <div>
-                    <h2 className="text-2xl font-bold text-white mb-2">System Ready</h2>
+                    <h2 className="text-2xl font-bold text-white mb-2">Ready for questions</h2>
                     <p className="text-sm theme-text-tertiary max-w-xs mx-auto">
-                      Initiate query sequence for dependency analysis, risk assessment, or architectural patterns.
+                      Ask about dependencies, risk posture, or architecture patterns.
                     </p>
                   </div>
                 </motion.div>
@@ -270,7 +270,7 @@ export default function AskPage() {
                         <span className="w-1.5 h-1.5 bg-primary-400 rounded-full animate-[bounce_1s_infinite_-0.15s]" />
                         <span className="w-1.5 h-1.5 bg-primary-400 rounded-full animate-[bounce_1s_infinite]" />
                       </div>
-                      <span className="text-xs theme-text-tertiary font-medium animate-pulse">Processing query...</span>
+                      <span className="text-xs theme-text-tertiary font-medium animate-pulse">Processing response...</span>
                     </div>
                   </motion.div>
                 )}
@@ -295,7 +295,7 @@ export default function AskPage() {
                       handleAsk();
                     }
                   }}
-                  placeholder="Enter your query..."
+                  placeholder="Ask a question..."
                   className="relative w-full bg-surface-900 border border-white/10 rounded-2xl py-4 pl-5 pr-14 text-white placeholder:text-white/20 focus:outline-none focus:border-white/20 resize-none max-h-32 transition-all min-h-[60px] shadow-inner"
                   rows={1}
                 />
