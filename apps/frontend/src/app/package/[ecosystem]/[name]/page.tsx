@@ -228,6 +228,8 @@ export default function PackageDetailPage() {
 
   const graphHasEdges = graphEdges.length > 0;
   const isLoading = packageLoading || metadataLoading || reverseLoading || vulnLoading;
+  const reverseDisplay = reverseLoading ? "--" : reverseCount;
+  const totalVulnDisplay = vulnLoading ? "--" : totalVulns;
 
   const vulnRiskLabel = useMemo(() => {
     if (vulnCounts.critical > 0) return "Critical risk";
@@ -303,10 +305,13 @@ export default function PackageDetailPage() {
                     data-testid="copy-package-id"
                     title={copiedId ? "Copied" : "Copy package id"}
                     aria-label={copiedId ? "Package id copied" : "Copy package id"}
-                    className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50"
+                    className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
                   >
                     {copiedId ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
                   </button>
+                  <span className="sr-only" aria-live="polite">
+                    {copiedId ? "Package id copied to clipboard." : ""}
+                  </span>
                 </div>
               </div>
               <h1 data-testid="package-name" className="text-2xl sm:text-3xl font-bold mt-3">
@@ -397,7 +402,7 @@ export default function PackageDetailPage() {
                   aria-selected={isActive}
                   aria-controls={`tab-panel-${tab.id}`}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex flex-col gap-1 px-4 py-2 rounded-lg border text-left transition-colors min-w-[140px] ${
+                  className={`flex flex-col gap-1 px-4 py-2 rounded-lg border text-left transition-colors min-w-[140px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 ${
                     isActive
                       ? "border-primary-500/40 bg-primary-500/15 text-primary-200"
                       : "border-transparent theme-text-muted hover:text-white hover:border-white/10 hover:bg-white/5"
@@ -521,7 +526,9 @@ export default function PackageDetailPage() {
                     <GitBranch className="w-4 h-4 text-accent-400" />
                     Reverse Dependents
                   </h2>
-                  <p className="text-2xl font-bold theme-text-primary">{reverseCount}</p>
+                  <p className={`text-2xl font-bold theme-text-primary ${reverseLoading ? "animate-pulse" : ""}`}>
+                    {reverseDisplay}
+                  </p>
                   <p className="text-xs theme-text-faint mt-1">Total packages depending on this package.</p>
                 </div>
 
@@ -530,7 +537,9 @@ export default function PackageDetailPage() {
                     <Shield className="w-4 h-4 text-danger" />
                     Vulnerabilities
                   </h2>
-                  <p className="text-2xl font-bold theme-text-primary">{totalVulns}</p>
+                  <p className={`text-2xl font-bold theme-text-primary ${vulnLoading ? "animate-pulse" : ""}`}>
+                    {totalVulnDisplay}
+                  </p>
                   <div className="mt-2 text-xs theme-text-faint grid grid-cols-2 gap-y-1">
                     <span>Critical: {vulnCounts.critical}</span>
                     <span>High: {vulnCounts.high}</span>
@@ -555,7 +564,7 @@ export default function PackageDetailPage() {
                       disabled={!installCommand}
                       aria-label={copied ? "Install command copied" : "Copy install command"}
                       title={copied ? "Copied" : "Copy install command"}
-                      className="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-md border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50"
+                      className="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-md border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
                     >
                       {copied ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
                       {copied ? "Copied" : "Copy"}
@@ -571,19 +580,19 @@ export default function PackageDetailPage() {
                   <div className="flex flex-col gap-2 text-sm">
                     <Link
                       href={packageId ? `/graph?pkg=${encodeURIComponent(packageId)}` : "/graph"}
-                      className="theme-text-muted theme-hover-text transition-colors"
+                      className="theme-text-muted theme-hover-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 rounded-md"
                     >
                       View dependency graph
                     </Link>
                     <Link
                       href={packageId ? `/impact?pkg=${encodeURIComponent(packageId)}` : "/impact"}
-                      className="theme-text-muted theme-hover-text transition-colors"
+                      className="theme-text-muted theme-hover-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 rounded-md"
                     >
                       Impact analysis
                     </Link>
                     <Link
                       href={supplyChainUrl}
-                      className="theme-text-muted theme-hover-text transition-colors"
+                      className="theme-text-muted theme-hover-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 rounded-md"
                     >
                       Supply chain dashboard
                     </Link>
@@ -860,7 +869,7 @@ export default function PackageDetailPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <Link
                   href={supplyChainUrl}
-                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-primary-500/40"
+                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-primary-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
                 >
                   <div className="flex items-center justify-between text-xs theme-text-faint uppercase">
                     <span>Dashboard</span>
@@ -886,7 +895,7 @@ export default function PackageDetailPage() {
 
                 <Link
                   href={packageId ? `/sbom?packageId=${encodeURIComponent(packageId)}` : "/sbom"}
-                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-emerald-500/40"
+                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-emerald-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
                 >
                   <div className="flex items-center justify-between text-xs theme-text-faint uppercase">
                     <span>SBOM</span>
@@ -916,7 +925,7 @@ export default function PackageDetailPage() {
                       ? `/supply-chain?view=slsa&package=${encodeURIComponent(packageId)}`
                       : "/supply-chain?view=slsa"
                   }
-                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-amber-500/40"
+                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-amber-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
                 >
                   <div className="flex items-center justify-between text-xs theme-text-faint uppercase">
                     <span>SLSA</span>
