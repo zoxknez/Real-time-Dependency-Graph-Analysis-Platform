@@ -622,8 +622,9 @@ export default function PackageDetailPage() {
               </div>
 
               {graphLoading && (
-                <div className="glass-card p-6 border theme-border theme-text-muted">
-                  Loading graph data...
+                <div className="glass-card p-6 border theme-border theme-text-muted flex items-center gap-3">
+                  <Loader2 className="w-4 h-4 animate-spin text-primary-400" />
+                  Mapping the graph around this package...
                 </div>
               )}
 
@@ -637,8 +638,8 @@ export default function PackageDetailPage() {
                       Graph data not available yet
                     </h3>
                     <p className="text-sm theme-text-muted mt-1">
-                      We did not find reverse dependents for this package in the graph. Try the
-                      full graph view for deeper scans.
+                      We did not find reverse dependents for this package yet. Try the full graph
+                      view for deeper scans or check back after the next indexing run.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-3 justify-center">
@@ -664,16 +665,16 @@ export default function PackageDetailPage() {
                     <span>Nodes: {graphStats?.nodes ?? graphData.nodes.length}</span>
                     <span>Edges: {graphStats?.links ?? graphData.links.length}</span>
                     {graphStats && <span>Max depth: {graphStats.maxDepth}</span>}
-                    <span>Showing up to 60 dependents</span>
+                    <span>Showing first 60 dependents</span>
                   </div>
                   <div className="flex flex-wrap gap-4 text-xs theme-text-faint mb-4">
                     <div className="inline-flex items-center gap-2">
                       <span className="w-4 h-0.5 bg-white/50" />
-                      Direct link
+                      Direct dependency
                     </div>
                     <div className="inline-flex items-center gap-2">
                       <span className="w-4 h-0.5 border-t-2 border-dashed border-white/50" />
-                      Transitive link
+                      Transitive dependency
                     </div>
                     <div className="inline-flex items-center gap-2">
                       <span
@@ -681,9 +682,16 @@ export default function PackageDetailPage() {
                           totalVulns > 0 ? "bg-red-500/70" : "bg-emerald-500/70"
                         }`}
                       />
-                      {totalVulns > 0 ? "Vulnerable root" : "No known vulns"}
+                      {totalVulns > 0 ? "Vulnerable root" : "No known vulnerabilities"}
+                    </div>
+                    <div className="inline-flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-primary-300/70" />
+                      Root package
                     </div>
                   </div>
+                  <p className="text-xs theme-text-faint mb-4">
+                    Tip: hover nodes to reveal names and click the full graph for 3D exploration.
+                  </p>
                   <DependencyGraph
                     data={graphData}
                     className="min-h-[420px]"
