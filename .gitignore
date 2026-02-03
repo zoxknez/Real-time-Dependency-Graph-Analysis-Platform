@@ -1,7 +1,6 @@
 # Generated files
 /target/
 **/*.rs.bk
-Cargo.lock
 
 # IDE
 .idea/
@@ -20,6 +19,8 @@ Cargo.lock
 # Logs
 *.log
 logs/
+*.txt
+!LICENSE.txt
 
 # OS
 .DS_Store
@@ -33,3 +34,15 @@ node_modules/
 .pnpm-store/
 web/dist/
 web/.next/
+.next/
+tsconfig.tsbuildinfo
+
+# Test artifacts
+playwright-report/
+test-results/
+
+# ML Models (download at runtime)
+/models/
+
+# Secrets
+.secrets.baseline
