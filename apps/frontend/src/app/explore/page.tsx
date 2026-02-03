@@ -326,7 +326,7 @@ function ExplorePageContent() {
                       )}
                     </div>
                     <p className="text-sm theme-text-muted">
-                      Enter a package ID to explore its dependency graph and impact analysis.
+                      Enter a package ID to open its dependency graph and impact view.
                     </p>
                   </motion.div>
                 ) : (
@@ -339,9 +339,9 @@ function ExplorePageContent() {
                       <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-white/10 flex items-center justify-center">
                         <Search className="w-8 h-8 text-white/50" />
                       </div>
-                      <h3 className="text-xl font-bold text-white mb-2">No matching signals</h3>
+                      <h3 className="text-xl font-bold text-white mb-2">No matching packages</h3>
                       <p className="text-white/50 mb-8">
-                        No packages found for "{searchQuery}". Check the ID or try a fuzzy search.
+                        No packages found for "{searchQuery}". Check the ID or try a broader search.
                       </p>
                       <button
                         onClick={() => {
@@ -350,7 +350,7 @@ function ExplorePageContent() {
                         }}
                         className="px-6 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium transition-colors"
                       >
-                        Reset Search
+                        Clear search
                       </button>
                     </motion.div>
                   )
@@ -409,7 +409,7 @@ function ExplorePageContent() {
                           <Loader2 className="w-4 h-4 animate-spin" /> Loading
                         </span>
                       ) : (
-                        "Load More Results"
+                        "Load more results"
                       )}
                     </button>
                   </div>

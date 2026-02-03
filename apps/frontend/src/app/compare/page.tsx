@@ -103,7 +103,7 @@ function PackageSelector({
                 onChange={(e) => setInputValue(e.target.value)}
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
-                placeholder="Enter Package ID"
+                placeholder="Enter package ID (e.g., cargo:tokio)"
                 className="w-full h-14 pl-12 pr-4 bg-slate-950/50 border border-white/10 rounded-xl outline-none text-white placeholder:text-slate-600 font-mono text-sm focus:border-primary-500/50 focus:bg-slate-950/80 transition-all"
               />
               <div className="absolute right-2 top-2">
@@ -112,7 +112,7 @@ function PackageSelector({
                   disabled={!inputValue.trim() || loading}
                   className="h-10 px-4 rounded-lg bg-primary-600 hover:bg-primary-500 text-white font-medium text-xs disabled:opacity-0 disabled:pointer-events-none transition-all shadow-lg shadow-primary-500/20"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "SCAN"}
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "LOAD"}
                 </button>
               </div>
             </div>

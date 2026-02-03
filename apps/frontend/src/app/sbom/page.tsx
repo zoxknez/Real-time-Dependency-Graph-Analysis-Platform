@@ -327,7 +327,7 @@ function SbomPageContent() {
 
         {!packageId && (
           <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-10 text-center text-gray-500">
-            Provide a root package to generate a live SBOM.
+            Provide a root package to generate an SBOM.
           </div>
         )}
 
@@ -410,7 +410,7 @@ function ComponentsTab({ components, loading = false }: ComponentsTabProps) {
   if (!components.length) {
     return (
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-gray-500">
-        No components found.
+        No components found for this package.
       </div>
     );
   }

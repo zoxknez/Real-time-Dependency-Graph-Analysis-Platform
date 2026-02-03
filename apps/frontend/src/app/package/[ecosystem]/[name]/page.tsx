@@ -430,10 +430,10 @@ export default function PackageDetailPage() {
                 <div className="glass-card p-5 border theme-border">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                  <h2 className="text-base sm:text-lg font-semibold theme-text-primary">Highlights</h2>
-                  <p className="text-sm theme-text-muted">
-                    Snapshot of the most important package signals.
-                  </p>
+                      <h2 className="text-base sm:text-lg font-semibold theme-text-primary">Highlights</h2>
+                      <p className="text-sm theme-text-muted">
+                        Snapshot of the most important package signals.
+                      </p>
                     </div>
                     {registryLink && (
                       <a
@@ -714,7 +714,7 @@ export default function PackageDetailPage() {
                         OpenSSF Scorecard
                       </h2>
                       <p className="text-sm theme-text-muted mt-1">
-                        Security checks for the source repository.
+                        Security checks for the repository behind this package.
                       </p>
                     </div>
                     {scorecardSummary && (
@@ -737,7 +737,7 @@ export default function PackageDetailPage() {
 
                   {!scorecardTarget && (
                     <p className="text-sm theme-text-muted mt-4">
-                      No repository target detected yet. Add a GitHub repository to enable the
+                      No repository target detected. Add a repository URL to enable the
                       OpenSSF Scorecard summary.
                     </p>
                   )}
@@ -756,18 +756,18 @@ export default function PackageDetailPage() {
                   )}
 
                   {scorecardTarget && scorecardLoading && (
-                    <p className="text-sm theme-text-muted mt-4">Loading scorecard summary...</p>
+                    <p className="text-sm theme-text-muted mt-4">Fetching scorecard summary...</p>
                   )}
 
                   {scorecardTarget && !scorecardLoading && scorecardError && (
                     <p className="text-sm text-amber-200 mt-4">
-                      Scorecard data is temporarily unavailable.
+                      Scorecard summary is temporarily unavailable.
                     </p>
                   )}
 
                   {scorecardTarget && !scorecardLoading && !scorecardError && !scorecardSummary && (
                     <p className="text-sm theme-text-muted mt-4">
-                      Scorecard data not available for this repository yet.
+                      Scorecard has not run for this repository yet.
                     </p>
                   )}
 

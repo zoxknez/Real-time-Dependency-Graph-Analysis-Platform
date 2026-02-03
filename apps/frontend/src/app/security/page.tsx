@@ -172,7 +172,7 @@ function SecurityDashboardContent() {
                   Security Dashboard
                 </h1>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Enterprise security overview & compliance
+                  Enterprise security overview and compliance
                 </p>
               </div>
             </div>
@@ -183,7 +183,7 @@ function SecurityDashboardContent() {
                 <Package className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="Filter by package..."
+                  placeholder="Filter by package ID..."
                   value={selectedPackageId ?? ""}
                   onChange={(e) => setSelectedPackageId(e.target.value || undefined)}
                   className="pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -311,7 +311,7 @@ function SecurityOverview({ metrics, packageId }: SecurityOverviewProps) {
             <ComplianceScoreGauge passed={85} total={100} size="lg" />
           </div>
           <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
-            Based on VEX, SLSA, and Policy evaluations
+            Based on VEX, SLSA, and policy evaluations
           </div>
         </div>
 
@@ -351,7 +351,7 @@ function SecurityOverview({ metrics, packageId }: SecurityOverviewProps) {
             />
           ) : (
             <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">
-              Select a package to view updates
+              Select a package to view updates.
             </div>
           )}
         </div>
@@ -367,7 +367,7 @@ function SecurityOverview({ metrics, packageId }: SecurityOverviewProps) {
             <VexStatisticsPanel packageId={packageId} />
           ) : (
             <div className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">
-              Select a package to view VEX statistics
+              Select a package to view VEX statistics.
             </div>
           )}
         </div>
@@ -446,10 +446,10 @@ function VulnerabilitiesTab({ packageId }: VulnerabilitiesTabProps) {
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
           <AlertTriangle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
-            Select a Package
+            Select a package
           </h3>
           <p className="text-gray-500 dark:text-gray-400">
-            Enter a package ID in the filter above to view vulnerability analysis
+            Enter a package ID above to view vulnerability analysis.
           </p>
         </div>
       )}
@@ -503,10 +503,10 @@ function ProvenanceTab({ packageId }: ProvenanceTabProps) {
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
           <Lock className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
-            Select a Package
+            Select a package
           </h3>
           <p className="text-gray-500 dark:text-gray-400">
-            Enter a package ID to view SLSA provenance details
+            Enter a package ID to view SLSA provenance details.
           </p>
         </div>
       )}
@@ -554,10 +554,10 @@ function PolicyTab({ packageId }: PolicyTabProps) {
             <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
               <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
-                Select a Package
+                Select a package
               </h3>
               <p className="text-gray-500 dark:text-gray-400">
-                Enter a package ID to evaluate policies
+                Enter a package ID to evaluate policies.
               </p>
             </div>
           )}
@@ -635,10 +635,10 @@ function UpdatesTab({ packageId }: UpdatesTabProps) {
         <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
           <RefreshCw className="w-12 h-12 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
-            Select a Package
+            Select a package
           </h3>
           <p className="text-gray-500 dark:text-gray-400">
-            Enter a package ID to view update recommendations
+            Enter a package ID to view update recommendations.
           </p>
         </div>
       )}

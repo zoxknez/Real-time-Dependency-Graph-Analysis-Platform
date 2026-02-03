@@ -385,7 +385,7 @@ function GraphPageContent() {
             Dependency Graph
           </h1>
           <p className="theme-text-muted mt-1">
-            Visualize package dependencies interactively
+            Explore reverse dependencies in 3D
           </p>
         </div>
 
@@ -395,11 +395,11 @@ function GraphPageContent() {
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Enter package ID..."
+            placeholder="Enter package ID (e.g., cargo:tokio)"
             className="input-search max-w-xs !pl-4 focus:ring-primary-500/50 shadow-lg"
           />
           <button type="submit" className="btn-primary whitespace-nowrap">
-            Load Graph
+            Render Graph
           </button>
         </form>
       </motion.div>

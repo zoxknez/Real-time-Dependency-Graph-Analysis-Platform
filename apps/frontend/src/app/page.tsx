@@ -70,7 +70,7 @@ function CommandSearch() {
           type="submit"
           className="absolute right-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-xl text-xs font-bold uppercase tracking-wider text-slate-400 hover:text-white transition-colors border border-white/5"
         >
-          Execute
+          Search
         </button>
       </div>
     </form>
@@ -123,7 +123,7 @@ export default function DashboardPage() {
                 <SystemStatus />
                 <div className="flex items-center gap-2 text-slate-300 text-xs font-mono uppercase tracking-widest">
                   <Activity className="w-4 h-4" />
-                  <span>Monitoring Global Registry Sync</span>
+                  <span>Monitoring registry sync</span>
                 </div>
               </div>
 
@@ -201,7 +201,7 @@ export default function DashboardPage() {
             <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> DB: ONLINE</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="animate-pulse">PROCESSING INCOMING SIGNALS...</span>
+            <span className="animate-pulse">INGESTING LIVE SIGNALS...</span>
           </div>
         </div>
       </motion.div>
@@ -214,7 +214,7 @@ export default function DashboardPage() {
           title="Total Packages"
           value={loading ? 0 : stats.totalPackages}
           icon={Package}
-          description="Global Registry Index"
+          description="Indexed across registries"
           color="primary"
           loading={loading}
           href="/explore"
@@ -223,7 +223,7 @@ export default function DashboardPage() {
           title="Total Versions"
           value={loading ? 0 : stats.totalVersions}
           icon={Layers}
-          description="Version History Points"
+          description="Version snapshots"
           color="accent"
           loading={loading}
           href="/live"
@@ -232,16 +232,16 @@ export default function DashboardPage() {
           title="Dependencies"
           value={loading ? 0 : stats.totalDependencies}
           icon={GitBranch}
-          description="Active Graph Edges"
+          description="Active dependency edges"
           color="success"
           loading={loading}
           href="/graph"
         />
         <StatsCard
-          title="Pkg Dependencies"
+          title="Package Links"
           value={loading ? 0 : stats.totalPackageDependencies}
           icon={Activity}
-          description="Relation Mapping"
+          description="Package relationships"
           color="warning"
           loading={loading}
           href="/impact"

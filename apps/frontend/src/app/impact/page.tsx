@@ -259,7 +259,7 @@ function ImpactPageContent() {
                 onChange={(e) => setInputValue(e.target.value)}
                 onFocus={() => setIsInputFocused(true)}
                 onBlur={() => setIsInputFocused(false)}
-                placeholder="Enter Package ID (e.g., npm:react)..."
+                placeholder="Enter package ID (e.g., npm:react)"
                 className="w-full h-14 pl-12 pr-4 bg-transparent border-none outline-none text-white placeholder:text-slate-600 font-mono text-sm focus:ring-0"
               />
             </div>
@@ -277,7 +277,7 @@ function ImpactPageContent() {
                 onChange={(e) => setVersionRange(e.target.value)}
                 onFocus={() => setIsInputFocused(true)}
                 onBlur={() => setIsInputFocused(false)}
-                placeholder="Version Range (opt)"
+                placeholder="Version range (optional)"
                 className="w-full h-14 pl-12 pr-4 bg-transparent border-none outline-none text-warning placeholder:text-slate-600 font-mono text-sm focus:ring-0"
               />
             </div>
@@ -318,7 +318,7 @@ function ImpactPageContent() {
               ) : (
                 <>
                   <Zap className="w-5 h-5 fill-white" />
-                  <span className="hidden lg:inline">SCAN</span>
+                  <span className="hidden lg:inline">ANALYZE</span>
                 </>
               )}
             </button>
@@ -977,7 +977,7 @@ function ImpactPageContent() {
               System Ready
             </h3>
             <p className="text-lg text-slate-400 leading-relaxed mb-8">
-              Awaiting target designation. Enter a package ID to initiate deep-scan impact analysis.
+              Awaiting target designation. Enter a package ID to start a deep impact scan.
             </p>
 
             <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-primary-500/5 border border-primary-500/20 text-primary-300 font-bold uppercase tracking-widest text-xs animate-pulse">

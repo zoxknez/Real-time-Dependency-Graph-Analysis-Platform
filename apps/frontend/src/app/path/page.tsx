@@ -174,7 +174,7 @@ function PathPageContent() {
                 onChange={(e) => setFromPackage(e.target.value)}
                 onFocus={() => setIsInputFocused(true)}
                 onBlur={() => setIsInputFocused(false)}
-                placeholder="From Package (e.g., cargo:axum)"
+                placeholder="From package (e.g., cargo:axum)"
                 className="w-full h-14 pl-12 pr-4 bg-transparent border-none outline-none text-white placeholder:text-slate-600 font-mono text-sm focus:ring-0"
               />
             </div>
@@ -201,7 +201,7 @@ function PathPageContent() {
                 onChange={(e) => setToPackage(e.target.value)}
                 onFocus={() => setIsInputFocused(true)}
                 onBlur={() => setIsInputFocused(false)}
-                placeholder="To Package (e.g., cargo:tokio)"
+                placeholder="To package (e.g., cargo:tokio)"
                 className="w-full h-14 pl-12 pr-4 bg-transparent border-none outline-none text-white placeholder:text-slate-600 font-mono text-sm focus:ring-0"
               />
             </div>
@@ -242,7 +242,7 @@ function PathPageContent() {
               ) : (
                 <>
                   <Zap className="w-5 h-5 fill-white" />
-                  <span className="hidden lg:inline">TRACE</span>
+                  <span className="hidden lg:inline">TRACE PATH</span>
                 </>
               )}
             </button>
@@ -253,7 +253,7 @@ function PathPageContent() {
         <div className="flex flex-wrap items-center justify-center gap-2 mt-4 text-xs text-slate-500">
           <span className="font-semibold uppercase tracking-wider flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-warning" />
-            Try Paths:
+            Try paths:
           </span>
           {EXAMPLE_PATHS.map((example) => (
             <button
