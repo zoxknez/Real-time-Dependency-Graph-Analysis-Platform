@@ -485,6 +485,10 @@ impl AuditPersistence {
                 .as_ref()
                 .and_then(|s| Uuid::parse_str(s).ok());
 
+            let timestamp = chrono::DateTime::parse_from_rfc3339(&entry.timestamp).ok()
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(chrono::Utc::now);
+
             values.push((
                 tenant_id,
                 user_uuid,
@@ -497,7 +501,7 @@ impl AuditPersistence {
                 Uuid::parse_str(&entry.correlation_id).ok(),
                 entry.duration_ms.map(|d| d as i32),
                 entry.status_code.map(|s| s as i16),
-                entry.timestamp.clone(),
+                timestamp,
             ));
         }
 
@@ -516,7 +520,7 @@ impl AuditPersistence {
                 .bind(v.8)    // request_id
                 .bind(v.9)    // duration_ms
                 .bind(v.10)   // status_code
-                .bind(&v.11);  // created_at
+                .bind(v.11);  // created_at
         }
 
         match sqlx_query.execute(pool).await {

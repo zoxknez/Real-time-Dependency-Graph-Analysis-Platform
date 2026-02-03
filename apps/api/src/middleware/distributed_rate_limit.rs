@@ -47,7 +47,7 @@ impl RateTier {
     /// Get requests per minute for this tier
     pub fn requests_per_minute(&self) -> u32 {
         match self {
-            Self::Free => 60,
+            Self::Free => 300, // Increased for development
             Self::Pro => 600,
             Self::Enterprise => 6000,
             Self::Unlimited => u32::MAX,

@@ -61,6 +61,15 @@ pub struct Version {
     pub yanked: bool,
 }
 
+/// Package metadata fetched from registries
+#[derive(SimpleObject, Clone, Debug, Serialize, Deserialize)]
+pub struct PackageMetadataResult {
+    pub latest_version: Option<String>,
+    pub license: Option<String>,
+    pub repository_url: Option<String>,
+    pub scorecard_target: Option<String>,
+}
+
 /// Dependency edge with version requirement
 #[derive(SimpleObject, Clone, Debug)]
 #[allow(dead_code)]
@@ -667,7 +676,7 @@ pub enum RiskLevel {
 }
 
 /// Individual scorecard check result
-#[derive(SimpleObject, Clone, Debug)]
+#[derive(SimpleObject, Clone, Debug, Serialize)]
 pub struct ScorecardCheck {
     pub check: ScorecardCheckType,
     pub name: String,

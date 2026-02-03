@@ -383,6 +383,18 @@ export const GET_PACKAGE_DETAILS = gql`
   ${PACKAGE_FRAGMENT}
 `;
 
+export const GET_PACKAGE_METADATA = gql`
+  query GetPackageMetadata($packageId: ID!) {
+    packageMetadata(packageId: $packageId) {
+      latestVersion
+      license
+      repositoryUrl
+      scorecardTarget
+    }
+  }
+`;
+
+
 // ═══════════════════════════════════════════════════════════════
 // SUBSCRIPTIONS (if WebSocket available)
 // ═══════════════════════════════════════════════════════════════

@@ -6,8 +6,9 @@ import { useState, useRef, useEffect } from "react";
 import { Mic, ExternalLink, Shield, Sparkles, KeyRound, CheckCircle, AlertTriangle, Send } from "lucide-react";
 
 export default function AgentLivePage() {
-  const TOKEN_ENDPOINT = process.env.NEXT_PUBLIC_LIVE_TOKEN_ENDPOINT || "http://localhost:8081/live/token";
+  const TOKEN_ENDPOINT = process.env.NEXT_PUBLIC_LIVE_TOKEN_ENDPOINT || "http://localhost:8000/live/token";
   const LIVE_WS_ENDPOINT = process.env.NEXT_PUBLIC_LIVE_WS_ENDPOINT || "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
+  const LIVE_MODEL = process.env.NEXT_PUBLIC_LIVE_MODEL || "models/gemini-2.5-flash-native-audio-preview-12-2025";
   const [token, setToken] = useState<string | null>(null);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,7 +65,7 @@ export default function AgentLivePage() {
     ws.onopen = () => {
       const setupMessage = {
         setup: {
-          model: "models/gemini-2.5-flash-native-audio-preview-12-2025",
+          model: LIVE_MODEL,
           generationConfig: {
             responseModalities: ["TEXT"],
           },
@@ -189,7 +190,7 @@ export default function AgentLivePage() {
             </h1>
             <span className="px-2 py-1 text-xs rounded-full bg-purple-500/15 text-purple-400 flex items-center gap-1">
               <Sparkles className="w-3 h-3" />
-              Hackathon Wow‑Factor
+              Hackathon Wow-Factor
             </span>
             {demoRunning && (
               <span className="px-2 py-1 text-xs rounded-full bg-green-500/15 text-green-300 flex items-center gap-1">
@@ -199,8 +200,7 @@ export default function AgentLivePage() {
             )}
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Low‑latency, real‑time voice interaction powered by Gemini Live API. This demo is designed to
-            showcase Gemini 3’s tool use and streaming capabilities.
+            Low-latency, real-time voice interaction powered by Gemini Live API. This optional demo uses a native audio model for streaming, while the core Security Agent uses Gemini 3 for tool calling and structured outputs.
           </p>
           {!showGuide && (
             <div className="mt-3">
@@ -226,8 +226,8 @@ export default function AgentLivePage() {
               </button>
             </div>
             <ol className="text-xs text-purple-200/90 list-decimal list-inside space-y-1">
-              <li>Click “Get Ephemeral Token”.</li>
-              <li>Click “Auto Demo (3 prompts)”.</li>
+              <li>Fetch an ephemeral token.</li>
+              <li>Run the three-step demo sequence.</li>
               <li>Watch the Live API respond in real time.</li>
             </ol>
           </div>
@@ -241,8 +241,8 @@ export default function AgentLivePage() {
             </h2>
             <ol className="space-y-2 text-sm text-gray-700 dark:text-gray-300 list-decimal list-inside">
               <li>Open the Live API demo in AI Studio.</li>
-              <li>Ask: “Analyze npm:lodash and explain security impact.”</li>
-              <li>Show how the agent narrates risk + mitigation in real time.</li>
+              <li>Ask: "Analyze npm:lodash and explain security impact."</li>
+              <li>Show how the model narrates risk + mitigation in real time.</li>
               <li>Connect back to the Security Agent dashboard results.</li>
             </ol>
           </div>
@@ -250,10 +250,10 @@ export default function AgentLivePage() {
           <div className="p-6 rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
               <KeyRound className="w-4 h-4 text-amber-500" />
-              Security‑First Setup
+              Security-First Setup
             </h2>
             <p className="text-sm text-gray-700 dark:text-gray-300 mb-4">
-              For production, use **ephemeral tokens** and client‑to‑server streaming as recommended by
+              For production, use **ephemeral tokens** and client-to-server streaming as recommended by
               Gemini Live API docs.
             </p>
             <div className="mb-4">
@@ -288,7 +288,7 @@ export default function AgentLivePage() {
                 onClick={runOneClickDemo}
                 className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-amber-500/20 text-amber-200 border border-amber-500/30"
               >
-                One‑Click Demo
+                One-Click Demo
                 <Sparkles className="w-4 h-4" />
               </button>
               <button
@@ -387,7 +387,7 @@ export default function AgentLivePage() {
           <h3 className="text-base font-semibold text-purple-300 mb-2">Next Step (optional)</h3>
           <p className="text-sm text-purple-200/90">
             We can wire a full WebRTC Live API client with ephemeral token minting in the backend for a
-            complete in‑app voice demo. This provides the strongest wow‑factor for the judges.
+            complete in-app voice demo. This provides the strongest wow-factor for the judges.
           </p>
         </div>
       </div>

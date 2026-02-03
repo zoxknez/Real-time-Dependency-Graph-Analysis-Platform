@@ -62,6 +62,8 @@ function CommandSearch() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search packages (e.g., cargo:actix, npm:react)..."
+          data-testid="search-input"
+          aria-label="Search packages"
           className="w-full h-14 pl-12 pr-4 bg-slate-950/80 border border-white/10 rounded-2xl outline-none text-white placeholder:text-slate-600 focus:border-primary-500/50 focus:bg-slate-900/90 transition-all shadow-xl backdrop-blur-md"
         />
         <button
@@ -119,7 +121,7 @@ export default function DashboardPage() {
             <div className="flex-1 text-center lg:text-left space-y-8">
               <div className="flex flex-col lg:flex-row items-center gap-6 mb-2 justify-center lg:justify-start">
                 <SystemStatus />
-                <div className="flex items-center gap-2 text-slate-500 text-xs font-mono uppercase tracking-widest">
+                <div className="flex items-center gap-2 text-slate-300 text-xs font-mono uppercase tracking-widest">
                   <Activity className="w-4 h-4" />
                   <span>Monitoring Global Registry Sync</span>
                 </div>
@@ -193,7 +195,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Bottom Status Bar */}
-        <div className="border-t border-white/5 bg-white/[0.02] px-8 py-4 flex items-center justify-between text-xs font-mono text-slate-500">
+        <div className="border-t border-white/5 bg-white/[0.02] px-8 py-4 flex items-center justify-between text-xs font-mono text-slate-300">
           <div className="flex items-center gap-8">
             <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> KAFKA: CONNECTED</span>
             <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> DB: ONLINE</span>
@@ -203,6 +205,8 @@ export default function DashboardPage() {
           </div>
         </div>
       </motion.div>
+
+      <h2 className="sr-only">Dashboard Sections</h2>
 
       {/* Stats Grid */}
       <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

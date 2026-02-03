@@ -233,8 +233,8 @@ const VulnerabilityCard: React.FC<{ vuln: AgentVulnerability }> = ({ vuln }) => 
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export const SecurityAgent: React.FC = () => {
-  const GRAPHQL_ENDPOINT = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || 'http://localhost:8081/graphql';
-  const STREAM_ENDPOINT = process.env.NEXT_PUBLIC_AGENT_STREAM_ENDPOINT || 'http://localhost:8081/agent/stream';
+  const GRAPHQL_ENDPOINT = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || 'http://localhost:8000/graphql';
+  const STREAM_ENDPOINT = process.env.NEXT_PUBLIC_AGENT_STREAM_ENDPOINT || 'http://localhost:8000/agent/stream';
   const [task, setTask] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<SecurityAgentResult | null>(null);

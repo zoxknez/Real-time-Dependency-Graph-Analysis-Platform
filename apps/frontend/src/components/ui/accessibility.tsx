@@ -33,6 +33,7 @@ export function SkipLink({
   return (
     <a
       href={href}
+      data-testid="skip-link"
       className={cn(
         "fixed top-0 left-0 z-[100] p-3 m-2 bg-primary text-white rounded-lg",
         "transform -translate-y-full focus:translate-y-0",

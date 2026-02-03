@@ -49,6 +49,8 @@ export function PackageCard({ package: pkg, onClick, isSelected, depth, score }:
         transition: { type: "spring", stiffness: 400, damping: 10 }
       }}
       onClick={onClick}
+      data-testid="package-card"
+      data-package-id={pkg.id}
       className={cn(
         "glass-card p-5 cursor-pointer transition-all duration-300 group relative overflow-hidden",
         isSelected

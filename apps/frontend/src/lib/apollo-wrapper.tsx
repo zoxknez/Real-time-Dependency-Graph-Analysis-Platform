@@ -1,34 +1,247 @@
 "use client";
 
-import { ApolloClient, ApolloProvider, InMemoryCache, HttpLink, split } from "@apollo/client";
+import { ApolloClient, ApolloProvider, InMemoryCache, HttpLink, split, from, ApolloLink, Observable } from "@apollo/client";
 import { GraphQLWsLink } from "@apollo/client/link/subscriptions";
 import { getMainDefinition } from "@apollo/client/utilities";
+import { onError } from "@apollo/client/link/error";
+import { RetryLink } from "@apollo/client/link/retry";
 import { createClient } from "graphql-ws";
 import { useMemo, useEffect, useState } from "react";
 
-// GraphQL endpoints
-const GRAPHQL_ENDPOINT = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:8081/graphql";
-const WS_ENDPOINT = process.env.NEXT_PUBLIC_WS_ENDPOINT || "ws://localhost:8081/graphql/ws";
+// ═══════════════════════════════════════════════════════════════
+// CONFIGURATION
+// ═══════════════════════════════════════════════════════════════
 
-// Connection state for UI feedback
+const GRAPHQL_ENDPOINT = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:8000/graphql";
+const WS_ENDPOINT = process.env.NEXT_PUBLIC_WS_ENDPOINT || "ws://localhost:8000/graphql/ws";
+
+// ═══════════════════════════════════════════════════════════════
+// CIRCUIT BREAKER - Prevents request flooding when API is down
+// ═══════════════════════════════════════════════════════════════
+
+interface CircuitBreakerState {
+  failures: number;
+  lastFailure: number;
+  isOpen: boolean;
+  nextRetry: number;
+  halfOpenAttempts: number;
+}
+
+const circuitBreaker: CircuitBreakerState = {
+  failures: 0,
+  lastFailure: 0,
+  isOpen: false,
+  nextRetry: 0,
+  halfOpenAttempts: 0,
+};
+
+const CIRCUIT_BREAKER_CONFIG = {
+  failureThreshold: 5,       // Open circuit after 5 failures
+  resetTimeout: 30000,       // Try to close after 30 seconds
+  halfOpenMaxRequests: 1,    // Allow 1 request in half-open state
+};
+
+function openCircuit(waitTimeMs: number, now = Date.now()): void {
+  circuitBreaker.isOpen = true;
+  circuitBreaker.nextRetry = now + waitTimeMs;
+  circuitBreaker.halfOpenAttempts = 0;
+}
+
+function shouldBlockRequest(): boolean {
+  const now = Date.now();
+
+  // If circuit is open, check if we should try half-open
+  if (circuitBreaker.isOpen) {
+    if (now >= circuitBreaker.nextRetry) {
+      if (circuitBreaker.halfOpenAttempts < CIRCUIT_BREAKER_CONFIG.halfOpenMaxRequests) {
+        circuitBreaker.halfOpenAttempts += 1;
+        console.log("[CircuitBreaker] Half-open: allowing test request");
+        return false;
+      }
+
+      // Half-open attempts exhausted, wait before trying again
+      openCircuit(CIRCUIT_BREAKER_CONFIG.resetTimeout, now);
+      console.log("[CircuitBreaker] Half-open attempts exhausted, scheduling next retry window");
+      return true;
+    }
+    console.log(`[CircuitBreaker] OPEN - blocking request. Retry in ${Math.round((circuitBreaker.nextRetry - now) / 1000)}s`);
+    return true;
+  }
+
+  return false;
+}
+
+function recordFailure(retryAfterSeconds?: number): void {
+  const now = Date.now();
+
+  const hasRetryAfter = typeof retryAfterSeconds === "number" && Number.isFinite(retryAfterSeconds);
+  if (hasRetryAfter) {
+    circuitBreaker.failures = CIRCUIT_BREAKER_CONFIG.failureThreshold;
+    circuitBreaker.lastFailure = now;
+    openCircuit(retryAfterSeconds * 1000, now);
+    console.log(`[CircuitBreaker] OPENED - Retry-After enforced (${retryAfterSeconds}s)`);
+    return;
+  }
+
+  circuitBreaker.failures += 1;
+  circuitBreaker.lastFailure = now;
+
+  if (circuitBreaker.isOpen) {
+    openCircuit(CIRCUIT_BREAKER_CONFIG.resetTimeout, now);
+    return;
+  }
+
+  if (circuitBreaker.failures >= CIRCUIT_BREAKER_CONFIG.failureThreshold) {
+    openCircuit(CIRCUIT_BREAKER_CONFIG.resetTimeout, now);
+    console.log(`[CircuitBreaker] OPENED - too many failures. Will retry in ${CIRCUIT_BREAKER_CONFIG.resetTimeout / 1000}s`);
+  }
+}
+
+function recordSuccess(): void {
+  if (circuitBreaker.isOpen) {
+    console.log("[CircuitBreaker] Request succeeded - closing circuit");
+  }
+  circuitBreaker.failures = 0;
+  circuitBreaker.lastFailure = 0;
+  circuitBreaker.isOpen = false;
+  circuitBreaker.nextRetry = 0;
+  circuitBreaker.halfOpenAttempts = 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CIRCUIT BREAKER LINK
+// ═══════════════════════════════════════════════════════════════
+
+const circuitBreakerLink = new ApolloLink((operation, forward) => {
+  if (shouldBlockRequest()) {
+    const now = Date.now();
+    const retryInSeconds = Math.max(0, Math.round((circuitBreaker.nextRetry - now) / 1000));
+    return new Observable((observer) => {
+      observer.error(new Error(`API temporarily unavailable. Retry in ${retryInSeconds}s`));
+    });
+  }
+  return forward(operation);
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ERROR HANDLING LINK - Proper 429 handling with Retry-After
+// ═══════════════════════════════════════════════════════════════
+
+function parseRetryAfterSeconds(value?: string | null): number | undefined {
+  if (!value) return undefined;
+  const asInt = parseInt(value, 10);
+  if (!Number.isNaN(asInt)) return asInt;
+  const asDate = Date.parse(value);
+  if (!Number.isNaN(asDate)) {
+    return Math.max(0, Math.round((asDate - Date.now()) / 1000));
+  }
+  return undefined;
+}
+
+const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
+  if (networkError) {
+    // Handle 429 Too Many Requests
+    if ('statusCode' in networkError && networkError.statusCode === 429) {
+      // Extract Retry-After header if available
+      const retryAfterHeader = 'response' in networkError && networkError.response?.headers?.get('Retry-After');
+      const parsedRetry = parseRetryAfterSeconds(retryAfterHeader);
+      const retrySeconds = parsedRetry ?? 60;
+
+      console.warn(`[Apollo] Rate limited (429). Retry-After: ${retrySeconds}s`);
+      operation.setContext({ rateLimited: true });
+      recordFailure(retrySeconds);
+
+      // Don't retry immediately - let circuit breaker handle it
+      return;
+    }
+
+    // Record other network failures
+    if ('statusCode' in networkError && networkError.statusCode >= 500) {
+      recordFailure();
+    }
+
+    console.error(`[Apollo] Network error: ${networkError.message}`);
+  }
+
+  if (graphQLErrors) {
+    for (const error of graphQLErrors) {
+      // Check for rate limit errors in GraphQL responses
+      if (error.message.toLowerCase().includes('rate limit') ||
+        error.message.toLowerCase().includes('too many requests')) {
+        operation.setContext({ rateLimited: true });
+        recordFailure(60);
+        return;
+      }
+
+      console.error(`[Apollo GraphQL Error]: ${error.message}`);
+    }
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// RETRY LINK - Exponential backoff for transient errors
+// ═══════════════════════════════════════════════════════════════
+
+const retryLink = new RetryLink({
+  delay: {
+    initial: 1000,        // Start with 1 second delay
+    max: 30000,           // Max 30 seconds between retries
+    jitter: true,         // Add randomness to prevent thundering herd
+  },
+  attempts: {
+    max: 3,               // Maximum 3 retry attempts
+    retryIf: (error, _operation) => {
+      // Don't retry if circuit breaker is open
+      if (circuitBreaker.isOpen) {
+        return false;
+      }
+
+      // Don't retry 429 errors - let circuit breaker handle
+      if (error?.statusCode === 429) {
+        return false;
+      }
+
+      // Only retry on network errors and 5xx server errors
+      const isNetworkError = !error?.statusCode;
+      const isServerError = error?.statusCode >= 500;
+
+      return isNetworkError || isServerError;
+    },
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════
+// SUCCESS TRACKING LINK
+// ═══════════════════════════════════════════════════════════════
+
+const successLink = new ApolloLink((operation, forward) => {
+  return forward(operation).map((response) => {
+    const context = operation.getContext();
+    if (!context.rateLimited) {
+      recordSuccess();
+    }
+    return response;
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// WEBSOCKET CLIENT
+// ═══════════════════════════════════════════════════════════════
+
 export type ConnectionStatus = "connecting" | "connected" | "disconnected" | "error";
 
-// Create WebSocket client with automatic reconnection
 function createWsClient() {
   if (typeof window === "undefined") return null;
 
-  // Check if WebSocket endpoint is reachable (don't block on failure)
   try {
     return createClient({
       url: WS_ENDPOINT,
       connectionParams: () => {
-        // Add auth token if available
         const token = typeof window !== "undefined"
           ? localStorage.getItem("auth_token")
           : null;
         return token ? { authorization: `Bearer ${token}` } : {};
       },
-      // Retry configuration for enterprise reliability
       retryAttempts: 5,
       retryWait: async (retries) => {
         // Exponential backoff: 1s, 2s, 4s, 8s... max 30s
@@ -37,12 +250,14 @@ function createWsClient() {
       },
       shouldRetry: (errOrCloseEvent) => {
         // Don't retry on auth errors
-        if (errOrCloseEvent && typeof errOrCloseEvent === 'object' && 'code' in (errOrCloseEvent as object) && (errOrCloseEvent as { code?: number }).code === 4401) {
+        if (errOrCloseEvent && typeof errOrCloseEvent === 'object' &&
+          'code' in (errOrCloseEvent as object) &&
+          (errOrCloseEvent as { code?: number }).code === 4401) {
           return false;
         }
         return true;
       },
-      lazy: true, // Only connect when subscription is made
+      lazy: true,
       lazyCloseTimeout: 3000,
       on: {
         connecting: () => {
@@ -50,17 +265,22 @@ function createWsClient() {
         },
         connected: () => {
           console.log("[Apollo WS] Connected to subscription server");
-          window.dispatchEvent(new CustomEvent("ws-status", { detail: "connected" }));
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("ws-status", { detail: "connected" }));
+          }
         },
         closed: (event) => {
           console.log("[Apollo WS] Connection closed", event);
-          window.dispatchEvent(new CustomEvent("ws-status", { detail: "disconnected" }));
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("ws-status", { detail: "disconnected" }));
+          }
         },
         error: (error) => {
-          // Log error details for debugging
           console.warn("[Apollo WS] Connection error (subscriptions unavailable):",
             error instanceof Error ? error.message : JSON.stringify(error));
-          window.dispatchEvent(new CustomEvent("ws-status", { detail: "error" }));
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("ws-status", { detail: "error" }));
+          }
         },
       },
     });
@@ -70,11 +290,15 @@ function createWsClient() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// APOLLO CLIENT FACTORY
+// ═══════════════════════════════════════════════════════════════
+
 function createApolloClient() {
   const httpLink = new HttpLink({
     uri: GRAPHQL_ENDPOINT,
     fetchOptions: { cache: "no-store" },
-    credentials: "include", // For cookie-based auth
+    credentials: "include",
   });
 
   // Create WebSocket link for subscriptions (client-side only)
@@ -82,7 +306,7 @@ function createApolloClient() {
   const wsLink = wsClient ? new GraphQLWsLink(wsClient) : null;
 
   // Split traffic between HTTP and WebSocket based on operation type
-  const splitLink = wsLink
+  const transportLink = wsLink
     ? split(
       ({ query }) => {
         const definition = getMainDefinition(query);
@@ -96,8 +320,17 @@ function createApolloClient() {
     )
     : httpLink;
 
+  // Chain links: CircuitBreaker -> Error -> Retry -> Success -> Transport
+  const link = from([
+    circuitBreakerLink,
+    successLink,
+    errorLink,
+    retryLink,
+    transportLink,
+  ]);
+
   return new ApolloClient({
-    link: splitLink,
+    link,
     cache: new InMemoryCache({
       typePolicies: {
         Query: {
@@ -115,18 +348,16 @@ function createApolloClient() {
                 };
               },
             },
-            // Real-time event queries merge new events at the front
             liveEvents: {
               keyArgs: false,
               merge(existing = [], incoming) {
-                // Dedupe by id, newest first
                 const merged = [...incoming, ...existing];
                 const seen = new Set<string>();
                 return merged.filter((event) => {
                   if (seen.has(event.__ref || event.id)) return false;
                   seen.add(event.__ref || event.id);
                   return true;
-                }).slice(0, 100); // Keep max 100 events in cache
+                }).slice(0, 100);
               },
             },
           },
@@ -134,7 +365,6 @@ function createApolloClient() {
         Package: {
           keyFields: ["id"],
         },
-        // Type policies for subscription data
         LiveEvent: {
           keyFields: ["id"],
         },
@@ -144,7 +374,7 @@ function createApolloClient() {
         Subscription: {
           fields: {
             packagePublished: {
-              merge: false, // Always use incoming
+              merge: false,
             },
             breakingChangeDetected: {
               merge: false,
@@ -159,7 +389,8 @@ function createApolloClient() {
     defaultOptions: {
       watchQuery: {
         fetchPolicy: "cache-and-network",
-        nextFetchPolicy: "cache-first",
+        nextFetchPolicy: "cache-first", // Use cache after initial fetch
+        errorPolicy: "all",
       },
       query: {
         fetchPolicy: "cache-first",
@@ -175,14 +406,17 @@ function createApolloClient() {
   });
 }
 
-// Hook to track WebSocket connection status
+// ═══════════════════════════════════════════════════════════════
+// HOOKS
+// ═══════════════════════════════════════════════════════════════
+
 export function useConnectionStatus(): ConnectionStatus {
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<ConnectionStatus>).detail;
-      setStatus(detail);
+      const customEvent = event as CustomEvent<ConnectionStatus>;
+      setStatus(customEvent.detail);
     };
 
     window.addEventListener("ws-status", handler);
@@ -191,6 +425,36 @@ export function useConnectionStatus(): ConnectionStatus {
 
   return status;
 }
+
+// Hook to get circuit breaker status for UI
+export function useCircuitBreakerStatus() {
+  const [status, setStatus] = useState({
+    isOpen: false,
+    failures: 0,
+    nextRetryIn: 0,
+  });
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
+      setStatus({
+        isOpen: circuitBreaker.isOpen,
+        failures: circuitBreaker.failures,
+        nextRetryIn: circuitBreaker.isOpen
+          ? Math.max(0, Math.round((circuitBreaker.nextRetry - now) / 1000))
+          : 0,
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return status;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROVIDER
+// ═══════════════════════════════════════════════════════════════
 
 export function ApolloWrapper({ children }: React.PropsWithChildren) {
   const client = useMemo(() => createApolloClient(), []);

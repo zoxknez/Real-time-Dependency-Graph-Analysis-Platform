@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import { useFavoritesStore, useHistoryStore } from "@/lib/stores";
 import { formatEcosystemName, getEcosystemColor } from "@/lib/utils";
+import { useFocusTrap } from "@/components/ui/accessibility";
+import { useEffect } from "react";
 
 interface FavoritesPanelProps {
   isOpen: boolean;
@@ -24,11 +26,23 @@ export function FavoritesPanel({ isOpen, onClose }: FavoritesPanelProps) {
   const router = useRouter();
   const { favorites, removeFavorite } = useFavoritesStore();
   const { recentPackages, clearHistoryByType } = useHistoryStore();
+  const focusTrapRef = useFocusTrap(isOpen);
 
   const navigateTo = (path: string) => {
     router.push(path);
     onClose();
   };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
 
   return (
     <AnimatePresence>
@@ -49,6 +63,10 @@ export function FavoritesPanel({ isOpen, onClose }: FavoritesPanelProps) {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -300 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Favorites and recent items"
+            ref={focusTrapRef}
             className="fixed left-0 top-0 h-full w-80 glass-card rounded-none border-l-0 border-t-0 border-b-0 z-50 overflow-hidden"
           >
             {/* Header */}
@@ -60,6 +78,7 @@ export function FavoritesPanel({ isOpen, onClose }: FavoritesPanelProps) {
               <button
                 onClick={onClose}
                 className="p-2 rounded-lg theme-interactive transition-colors"
+                aria-label="Close favorites panel"
               >
                 <X className="w-5 h-5" />
               </button>

@@ -2,21 +2,20 @@
 
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useLazyQuery } from "@apollo/client";
 import {
   Search,
   Loader2,
   Sparkles,
 } from "lucide-react";
-import { GET_PACKAGE, GET_REVERSE_DEPENDENTS, SEARCH_PACKAGES, SEMANTIC_SEARCH_PACKAGES } from "@/lib/graphql/queries";
+import { GET_PACKAGE, SEARCH_PACKAGES, SEMANTIC_SEARCH_PACKAGES } from "@/lib/graphql/queries";
 import { PackageCard } from "@/components/explore/package-card";
-import { PackageDetail } from "@/components/explore/package-detail";
 import { EcosystemFilter } from "@/components/explore/ecosystem-filter";
 import { SearchInput } from "@/components/ui/search-input";
 import { QueryError } from "@/components/ui/error-display";
 
-import { cn } from "@/lib/utils";
+import { cn, parsePackageId } from "@/lib/utils";
 
 export default function ExplorePage() {
   return (
@@ -42,7 +41,6 @@ function ExplorePageContent() {
 
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [selectedEcosystem, setSelectedEcosystem] = useState(initialEcosystem);
-  const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
   const [isLoadingMoreSearch, setIsLoadingMoreSearch] = useState(false);
 
   const useSemanticSearch =
@@ -59,9 +57,6 @@ function ExplorePageContent() {
   const [searchPackagesSemantic, { data: semanticSearchData, loading: semanticSearchLoading, error: semanticSearchError, fetchMore: fetchMoreSemanticSearch }] =
     useLazyQuery(SEMANTIC_SEARCH_PACKAGES);
 
-  const [getReverseDeps, { data: reverseDepsData, loading: reverseDepsLoading, fetchMore }] =
-    useLazyQuery(GET_REVERSE_DEPENDENTS);
-
   const foundPackage = packageData?.package;
   const searchConnection = useSemanticSearch
     ? semanticSearchData?.semanticSearchPackages
@@ -76,24 +71,12 @@ function ExplorePageContent() {
   const isLoading = packageLoading || nameSearchLoading || semanticSearchLoading;
   const error = packageError || nameSearchError || semanticSearchError;
 
-  // Handle selecting a package from reverse deps list
-  const handleSelectPackage = useCallback((packageId: string) => {
-    setSearchQuery(packageId);
-    setSelectedPackageId(packageId);
-    router.push(`/explore?q=${encodeURIComponent(packageId)}`);
-    getPackage({ variables: { id: packageId } });
-  }, [router, getPackage]);
-
-  // Load more reverse deps handler
-  const handleLoadMore = useCallback(() => {
-    if (reverseDepsData?.reverseDependents?.pageInfo.endCursor && fetchMore) {
-      fetchMore({
-        variables: {
-          after: reverseDepsData.reverseDependents.pageInfo.endCursor,
-        },
-      });
-    }
-  }, [reverseDepsData, fetchMore]);
+  const openPackageDetail = useCallback((packageId: string) => {
+    const { ecosystem, name } = parsePackageId(packageId);
+    const ecoSlug = encodeURIComponent(ecosystem.toLowerCase());
+    const nameSlug = encodeURIComponent(name);
+    router.push(`/package/${ecoSlug}/${nameSlug}`);
+  }, [router]);
 
   // Search handler - uses fuzzy search or direct lookup
   const handleSearch = useCallback((query: string, options?: { replace?: boolean }) => {
@@ -222,19 +205,6 @@ function ExplorePageContent() {
     }
   }, [initialQuery, initialEcosystem, getPackage, searchPackagesByName, searchPackagesSemantic, useSemanticSearch]);
 
-  // Load reverse deps when package is selected
-  useEffect(() => {
-    if (selectedPackageId) {
-      getReverseDeps({
-        variables: {
-          packageId: selectedPackageId,
-          maxDepth: 2,
-          first: 20
-        }
-      });
-    }
-  }, [selectedPackageId, getReverseDeps]);
-
   return (
     <div className="min-h-screen bg-surface-950 text-white selection:bg-primary-500/30 font-sans">
       {/* Deep Blue Background */}
@@ -303,10 +273,9 @@ function ExplorePageContent() {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
-            className={cn(
-              "lg:col-span-7 space-y-6",
-              selectedPackageId ? "lg:block" : "lg:col-span-12"
-            )}
+            data-testid="search-results"
+            data-search-results
+            className={cn("lg:col-span-12 space-y-6")}
           >
             {/* Loading State */}
             {isLoading && (
@@ -397,8 +366,7 @@ function ExplorePageContent() {
               >
                 <PackageCard
                   package={foundPackage}
-                  onClick={() => setSelectedPackageId(foundPackage.id)}
-                  isSelected={selectedPackageId === foundPackage.id}
+                  onClick={() => openPackageDetail(foundPackage.id)}
                 />
               </motion.div>
             )}
@@ -422,8 +390,7 @@ function ExplorePageContent() {
                     >
                       <PackageCard
                         package={{ ...node, ecosystem: node.ecosystem as "NPM" | "PY_PI" | "CARGO" | "MAVEN" | "NU_GET" | "GO" }}
-                        onClick={() => setSelectedPackageId(node.id)}
-                        isSelected={selectedPackageId === node.id}
+                        onClick={() => openPackageDetail(node.id)}
                         score={useSemanticSearch ? score : undefined}
                       />
                     </motion.div>
@@ -450,31 +417,6 @@ function ExplorePageContent() {
               </div>
             )}
           </motion.div>
-
-          {/* Details Column */}
-          <AnimatePresence>
-            {selectedPackageId && (
-              <motion.div
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                transition={{ type: "spring", damping: 30, stiffness: 300 }}
-                className="lg:col-span-5 relative"
-              >
-                <div className="sticky top-24">
-                  <PackageDetail
-                    key={selectedPackageId}
-                    packageId={selectedPackageId}
-                    reverseDeps={reverseDepsData?.reverseDependents}
-                    loading={reverseDepsLoading}
-                    onClose={() => setSelectedPackageId(null)}
-                    onSelectPackage={handleSelectPackage}
-                    onLoadMore={handleLoadMore}
-                  />
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
       </div>
     </div >

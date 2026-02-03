@@ -171,6 +171,9 @@ export function Sidebar() {
       {/* Collapse Toggle */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
+        aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        data-testid="mobile-menu"
         className="absolute -right-3 top-1/2 transform -translate-y-1/2 w-6 h-6 
                    rounded-full theme-bg-tertiary theme-border-strong border
                    flex items-center justify-center theme-text-muted 

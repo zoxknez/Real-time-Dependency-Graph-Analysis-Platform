@@ -41,7 +41,9 @@ cp .env.example .env
 - `GF_SECURITY_ADMIN_PASSWORD` - Grafana admin password
 - `EXTERNAL_HOST` - Set to your public IP/domain for remote access
 - `GEMINI_API_KEY` - Your Gemini API key
-- `GEMINI_MODEL` - Model to use (default: `gemini-2.0-flash-thinking-exp`)
+- `GEMINI_FLASH_MODEL` - Fast model (default: `gemini-3-flash-preview`)
+- `GEMINI_THINKING_MODEL` - Reasoning model (default: `gemini-3-pro-preview`)
+- `GEMINI_LIVE_EPHEMERAL_TOKEN` - Optional. Pre-generated token for Live API demo endpoint (`/live/token`)
 
 ## Services
 

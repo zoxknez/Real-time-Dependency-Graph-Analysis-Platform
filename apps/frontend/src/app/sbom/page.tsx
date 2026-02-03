@@ -783,14 +783,61 @@ function VulnerabilitiesTab({ components }: VulnerabilitiesTabProps) {
 // SBOM PARSING HELPERS
 // ═══════════════════════════════════════════════════════════════
 
+type CycloneDxLicenseEntry = {
+  license?: {
+    id?: string;
+    name?: string;
+  };
+};
+
+type CycloneDxComponent = {
+  name?: string;
+  version?: string;
+  purl?: string;
+  vulnerabilityCount?: number;
+  licenses?: CycloneDxLicenseEntry[];
+};
+
+type CycloneDxDependency = {
+  ref?: string;
+  dependsOn?: unknown;
+};
+
+type CycloneDxBom = {
+  bomFormat?: string;
+  components?: CycloneDxComponent[];
+  dependencies?: CycloneDxDependency[];
+};
+
+type SpdxPackage = {
+  SPDXID?: string;
+  name?: string;
+  versionInfo?: string;
+  purl?: string;
+  licenseConcluded?: string;
+};
+
+type SpdxBom = {
+  spdxVersion?: string;
+  packages?: SpdxPackage[];
+};
+
+function isCycloneDxBom(data: unknown): data is CycloneDxBom {
+  return typeof data === "object" && data !== null && (data as CycloneDxBom).bomFormat === "CycloneDX";
+}
+
+function isSpdxBom(data: unknown): data is SpdxBom {
+  return typeof data === "object" && data !== null && typeof (data as SpdxBom).spdxVersion === "string";
+}
+
 function parseSbomComponents(content?: string | null): SbomComponent[] {
   if (!content) return [];
   try {
-    const data = JSON.parse(content);
-    if (data?.bomFormat === "CycloneDX") {
+    const data = JSON.parse(content) as unknown;
+    if (isCycloneDxBom(data)) {
       return parseCycloneDxComponents(data);
     }
-    if (data?.spdxVersion) {
+    if (isSpdxBom(data)) {
       return parseSpdxComponents(data);
     }
   } catch {
@@ -799,21 +846,20 @@ function parseSbomComponents(content?: string | null): SbomComponent[] {
   return [];
 }
 
-function parseCycloneDxComponents(data: any): SbomComponent[] {
-  const components = Array.isArray(data?.components) ? data.components : [];
+function parseCycloneDxComponents(data: CycloneDxBom): SbomComponent[] {
+  const components = Array.isArray(data.components) ? data.components : [];
   const dependencyMap = new Set<string>();
 
-  if (Array.isArray(data?.dependencies)) {
-    const rootDep = data.dependencies.find((d: any) => d?.ref === "root");
-    if (rootDep?.dependsOn) {
-      for (const dep of rootDep.dependsOn) {
-        if (typeof dep === "string") dependencyMap.add(dep);
-      }
+  if (Array.isArray(data.dependencies)) {
+    const rootDep = data.dependencies.find((dep) => dep?.ref === "root");
+    const dependsOn = Array.isArray(rootDep?.dependsOn) ? rootDep?.dependsOn : [];
+    for (const dep of dependsOn) {
+      if (typeof dep === "string") dependencyMap.add(dep);
     }
   }
 
   return components
-    .map((component: any) => {
+    .map((component) => {
       const purl = typeof component?.purl === "string" ? component.purl : "";
       const { ecosystem } = parsePurl(purl);
       const license = extractCycloneDxLicense(component) || "Unknown";
@@ -838,11 +884,11 @@ function parseCycloneDxComponents(data: any): SbomComponent[] {
     .filter((component) => component.name);
 }
 
-function parseSpdxComponents(data: any): SbomComponent[] {
-  const packages = Array.isArray(data?.packages) ? data.packages : [];
+function parseSpdxComponents(data: SpdxBom): SbomComponent[] {
+  const packages = Array.isArray(data.packages) ? data.packages : [];
   return packages
-    .filter((pkg: any) => pkg?.SPDXID !== "SPDXRef-Root")
-    .map((pkg: any) => {
+    .filter((pkg) => pkg?.SPDXID !== "SPDXRef-Root")
+    .map((pkg) => {
       const purl = typeof pkg?.purl === "string" ? pkg.purl : "";
       const { ecosystem } = parsePurl(purl);
       const license = typeof pkg?.licenseConcluded === "string" && pkg.licenseConcluded !== "NOASSERTION"
@@ -863,7 +909,7 @@ function parseSpdxComponents(data: any): SbomComponent[] {
     .filter((component) => component.name);
 }
 
-function extractCycloneDxLicense(component: any): string | null {
+function extractCycloneDxLicense(component: CycloneDxComponent): string | null {
   const licenses = component?.licenses;
   if (Array.isArray(licenses) && licenses.length > 0) {
     const entry = licenses[0];

@@ -75,6 +75,35 @@ impl QueryRoot {
         }))
     }
 
+    /// Fetch package metadata (latest version, license, repository)
+    #[instrument(skip(self, _ctx))]
+    async fn package_metadata(&self, _ctx: &Context<'_>, package_id: ID) -> Result<PackageMetadataResult> {
+        let (eco_raw, name_raw, _version_raw) = osv::parse_package_id(&package_id.to_string());
+        let ecosystem = eco_raw.ok_or_else(|| async_graphql::Error::new("Invalid packageId"))?;
+        let name = name_raw.ok_or_else(|| async_graphql::Error::new("Invalid packageId"))?;
+
+        let (latest_version, license, repository_url) = tokio::join!(
+            package_metadata::PackageMetadata::fetch_latest_version(&ecosystem, &name),
+            package_metadata::PackageMetadata::fetch_license(&ecosystem, &name),
+            package_metadata::PackageMetadata::fetch_repository_url(&ecosystem, &name),
+        );
+
+        let latest_version = latest_version.ok().flatten();
+        let license = license.ok().flatten();
+        let repository_url = repository_url.ok().flatten();
+
+        let scorecard_target = repository_url
+            .as_ref()
+            .and_then(|repo| package_metadata::normalize_repository_for_scorecard(repo).ok());
+
+        Ok(PackageMetadataResult {
+            latest_version,
+            license,
+            repository_url,
+            scorecard_target,
+        })
+    }
+
     async fn reverse_dependents(
         &self,
         ctx: &Context<'_>,
@@ -2372,50 +2401,75 @@ impl QueryRoot {
         };
 
         let mut qb = QueryBuilder::new(
-            "SELECT id, tenant_id, user_id, action, resource_type, resource_id, metadata, ip_address, user_agent, request_id, duration_ms, status_code, created_at FROM audit_log WHERE 1=1",
+            "SELECT id::TEXT, tenant_id::TEXT, user_id::TEXT, action, resource_type, resource_id, metadata, ip_address::TEXT, user_agent, request_id::TEXT, duration_ms, status_code, created_at FROM audit_log WHERE 1=1",
         );
+
+        let mut tenant_uuid: Option<sqlx::types::Uuid> = None;
+        let mut actor_uuid: Option<sqlx::types::Uuid> = None;
+        let mut start_dt: Option<chrono::DateTime<chrono::Utc>> = None;
+        let mut end_dt: Option<chrono::DateTime<chrono::Utc>> = None;
 
         if let Some(filter) = filter.as_ref() {
             if let Some(tenant_id) = filter.tenant_id.as_ref() {
-                qb.push(" AND tenant_id = ").push_bind(tenant_id);
+                tenant_uuid = Some(sqlx::types::Uuid::parse_str(tenant_id)
+                    .map_err(|_| async_graphql::Error::new("Invalid tenant_id"))?);
             }
             if let Some(actor_id) = filter.actor_id.as_ref() {
-                qb.push(" AND user_id = ").push_bind(actor_id);
+                actor_uuid = Some(sqlx::types::Uuid::parse_str(actor_id)
+                    .map_err(|_| async_graphql::Error::new("Invalid actor_id"))?);
             }
-            if let Some(target_type) = filter.target_type.as_ref() {
+            if let Some(target_type) = filter.target_type.as_ref().filter(|s| !s.is_empty()) {
                 qb.push(" AND resource_type = ").push_bind(target_type);
             }
-            if let Some(target_id) = filter.target_id.as_ref() {
+            if let Some(target_id) = filter.target_id.as_ref().filter(|s| !s.is_empty()) {
                 qb.push(" AND resource_id = ").push_bind(target_id);
             }
             if let Some(start_time) = filter.start_time.as_ref() {
-                qb.push(" AND created_at >= ").push_bind(start_time);
+                start_dt = Some(chrono::DateTime::parse_from_rfc3339(start_time)
+                    .map_err(|_| async_graphql::Error::new("Invalid start_time (expected RFC3339)"))?
+                    .with_timezone(&chrono::Utc));
             }
             if let Some(end_time) = filter.end_time.as_ref() {
-                qb.push(" AND created_at <= ").push_bind(end_time);
+                end_dt = Some(chrono::DateTime::parse_from_rfc3339(end_time)
+                    .map_err(|_| async_graphql::Error::new("Invalid end_time (expected RFC3339)"))?
+                    .with_timezone(&chrono::Utc));
             }
+        }
+
+        if let Some(tenant_id) = tenant_uuid.as_ref() {
+            qb.push(" AND tenant_id = ").push_bind(tenant_id).push("::UUID");
+        }
+        if let Some(actor_id) = actor_uuid.as_ref() {
+            qb.push(" AND user_id = ").push_bind(actor_id).push("::UUID");
+        }
+        if let Some(start_time) = start_dt.as_ref() {
+            qb.push(" AND created_at >= ").push_bind(start_time).push("::TIMESTAMPTZ");
+        }
+        if let Some(end_time) = end_dt.as_ref() {
+            qb.push(" AND created_at <= ").push_bind(end_time).push("::TIMESTAMPTZ");
         }
 
         let mut count_qb = QueryBuilder::new("SELECT COUNT(*) as total FROM audit_log WHERE 1=1");
         if let Some(filter) = filter.as_ref() {
-            if let Some(tenant_id) = filter.tenant_id.as_ref() {
-                count_qb.push(" AND tenant_id = ").push_bind(tenant_id);
-            }
-            if let Some(actor_id) = filter.actor_id.as_ref() {
-                count_qb.push(" AND user_id = ").push_bind(actor_id);
-            }
-            if let Some(target_type) = filter.target_type.as_ref() {
+            if let Some(target_type) = filter.target_type.as_ref().filter(|s| !s.is_empty()) {
                 count_qb.push(" AND resource_type = ").push_bind(target_type);
             }
-            if let Some(target_id) = filter.target_id.as_ref() {
+            if let Some(target_id) = filter.target_id.as_ref().filter(|s| !s.is_empty()) {
                 count_qb.push(" AND resource_id = ").push_bind(target_id);
             }
-            if let Some(start_time) = filter.start_time.as_ref() {
-                count_qb.push(" AND created_at >= ").push_bind(start_time);
-            }
-            if let Some(end_time) = filter.end_time.as_ref() {
-                count_qb.push(" AND created_at <= ").push_bind(end_time);
-            }
+        }
+
+        if let Some(tenant_id) = tenant_uuid.as_ref() {
+            count_qb.push(" AND tenant_id = ").push_bind(tenant_id).push("::UUID");
+        }
+        if let Some(actor_id) = actor_uuid.as_ref() {
+            count_qb.push(" AND user_id = ").push_bind(actor_id).push("::UUID");
+        }
+        if let Some(start_time) = start_dt.as_ref() {
+            count_qb.push(" AND created_at >= ").push_bind(start_time).push("::TIMESTAMPTZ");
+        }
+        if let Some(end_time) = end_dt.as_ref() {
+            count_qb.push(" AND created_at <= ").push_bind(end_time).push("::TIMESTAMPTZ");
         }
 
         qb.push(" ORDER BY created_at DESC");
@@ -2447,7 +2501,7 @@ impl QueryRoot {
             };
 
             let event = AuditEvent {
-                id,
+                id: id.clone(),
                 sequence: offset as i64 + idx as i64 + 1,
                 timestamp: created_at.to_rfc3339(),
                 event_type: action.clone(),
@@ -2520,10 +2574,20 @@ impl QueryRoot {
         qb.push("SUM(CASE WHEN action ILIKE '%POLICY%' THEN 1 ELSE 0 END) as policy, ");
         qb.push("SUM(CASE WHEN action ILIKE '%COMPLIANCE%' THEN 1 ELSE 0 END) as compliance, ");
         qb.push("SUM(CASE WHEN status_code >= 400 THEN 1 ELSE 0 END) as violations ");
-        qb.push("FROM audit_log WHERE created_at >= ").push_bind(&start_date);
-        qb.push(" AND created_at <= ").push_bind(&end_date);
-        if let Some(tenant_id) = tenant_id.as_ref() {
-            qb.push(" AND tenant_id = ").push_bind(tenant_id);
+        let start_dt = chrono::DateTime::parse_from_rfc3339(&start_date)
+            .map_err(|_| async_graphql::Error::new("Invalid startDate (expected RFC3339)"))?
+            .with_timezone(&chrono::Utc);
+        let end_dt = chrono::DateTime::parse_from_rfc3339(&end_date)
+            .map_err(|_| async_graphql::Error::new("Invalid endDate (expected RFC3339)"))?
+            .with_timezone(&chrono::Utc);
+        if end_dt < start_dt {
+            return Err(async_graphql::Error::new("endDate must be after startDate"));
+        }
+
+        qb.push("FROM audit_log WHERE created_at >= ").push_bind(start_dt).push("::TIMESTAMPTZ");
+        qb.push(" AND created_at <= ").push_bind(end_dt).push("::TIMESTAMPTZ");
+        if let Some(tenant_id) = tenant_id.as_ref().and_then(|id| sqlx::types::Uuid::parse_str(id).ok()) {
+            qb.push(" AND tenant_id = ").push_bind(tenant_id).push("::UUID");
         }
 
         let row = qb.build().fetch_one(pool).await?;

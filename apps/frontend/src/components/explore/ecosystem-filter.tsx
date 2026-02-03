@@ -12,7 +12,7 @@ interface EcosystemFilterProps {
 
 export function EcosystemFilter({ selected, onSelect }: EcosystemFilterProps) {
   return (
-    <div className="flex items-center gap-2 flex-wrap">
+    <div className="flex items-center gap-2 flex-wrap" data-testid="ecosystem-filter">
       <span className="text-sm theme-text-muted mr-2">Filter by:</span>
       {ecosystems.map((eco) => {
         const isSelected = selected === eco;

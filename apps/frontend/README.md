@@ -43,7 +43,11 @@ NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8000/graphql
 NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=http://localhost:8000/agent/stream
 NEXT_PUBLIC_LIVE_TOKEN_ENDPOINT=http://localhost:8000/live/token
 NEXT_PUBLIC_LIVE_WS_ENDPOINT=wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent
+NEXT_PUBLIC_LIVE_MODEL=models/gemini-2.5-flash-native-audio-preview-12-2025
+NEXT_PUBLIC_WS_ENDPOINT=ws://localhost:8000/graphql/ws
 ```
+
+The Live API demo is optional and uses a native audio model for streaming. Configure `NEXT_PUBLIC_LIVE_MODEL` if you want to swap models.
 
 ## 🖥️ Development
 

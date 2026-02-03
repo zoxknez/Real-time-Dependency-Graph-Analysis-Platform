@@ -175,7 +175,7 @@ pub fn get_security_agent_tools() -> Vec<FunctionDeclaration> {
         // Tool 7: Get OpenSSF Scorecard
         FunctionDeclaration {
             name: "get_scorecard".to_string(),
-            description: "Get OpenSSF Scorecard security metrics for a package's repository. Includes scores for code review, branch protection, CI/CD, etc.".to_string(),
+            description: "Get OpenSSF Scorecard security metrics for a package's repository (GitHub repos). Uses package metadata to resolve the repo, then calls the Scorecard API.".to_string(),
             parameters: FunctionParameters {
                 param_type: "object".to_string(),
                 properties: {
@@ -193,7 +193,7 @@ pub fn get_security_agent_tools() -> Vec<FunctionDeclaration> {
         // Tool 8: Get package license info
         FunctionDeclaration {
             name: "get_license_info".to_string(),
-            description: "Get license information for a package including SPDX ID, copyleft status, and OSI approval.".to_string(),
+            description: "Get license information for a package using registry metadata (best-effort). SPDX ID and flags may be unknown.".to_string(),
             parameters: FunctionParameters {
                 param_type: "object".to_string(),
                 properties: {

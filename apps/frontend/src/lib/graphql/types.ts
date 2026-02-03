@@ -16,6 +16,13 @@ export interface Version {
   yanked: boolean;
 }
 
+export interface PackageMetadata {
+  latestVersion?: string;
+  license?: string;
+  repositoryUrl?: string;
+  scorecardTarget?: string;
+}
+
 export interface PackageEdge {
   node: Package;
   cursor: string;
@@ -192,6 +199,10 @@ export interface GetPackageVariables {
   id: string;
 }
 
+export interface GetPackageMetadataVariables {
+  packageId: string;
+}
+
 export interface GetReverseDependentsVariables {
   packageId: string;
   maxDepth?: number;
@@ -266,6 +277,10 @@ export interface GetVulnerabilitiesResponse {
 // Query Response Types
 export interface GetPackageResponse {
   package: Package | null;
+}
+
+export interface GetPackageMetadataResponse {
+  packageMetadata: PackageMetadata;
 }
 
 export interface GetReverseDependentsResponse {

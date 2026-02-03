@@ -36,12 +36,11 @@ export function useUpdateRecommendations(
     {
       variables: { packageId },
       skip: skip || !packageId,
-      fetchPolicy: "cache-and-network",
     }
   );
 
   const summary = data?.updateRecommendations;
-  
+
   const allRecommendations = useMemo(
     () => summary?.recommendations ?? [],
     [summary?.recommendations]
@@ -94,7 +93,7 @@ export function useUpdateRecommendations(
 
   // Security updates only
   const securityUpdates = useMemo(
-    () => recommendations.filter((r: UpdateRecommendation) => 
+    () => recommendations.filter((r: UpdateRecommendation) =>
       r.reasons.includes("SECURITY_VULNERABILITY")
     ),
     [recommendations]
@@ -152,7 +151,7 @@ export function useBatchUpdateRecommendations(packageIds: string[]) {
   // This hook would batch multiple queries in production
   // For now, we'll use the first package ID as a demo
   const primaryId = packageIds[0] ?? "";
-  
+
   const result = useUpdateRecommendations(primaryId, {
     skip: packageIds.length === 0,
   });
@@ -270,12 +269,12 @@ export const UpdateUtils = {
       const urgencyDiff =
         this.getUrgencyPriority(a.urgency) - this.getUrgencyPriority(b.urgency);
       if (urgencyDiff !== 0) return urgencyDiff;
-      
+
       // Then by security fixes first
       const aHasSecurity = a.reasons.includes("SECURITY_VULNERABILITY");
       const bHasSecurity = b.reasons.includes("SECURITY_VULNERABILITY");
       if (aHasSecurity !== bHasSecurity) return aHasSecurity ? -1 : 1;
-      
+
       // Then by number of fixed vulnerabilities
       return (b.vulnerabilitiesFixed ?? 0) - (a.vulnerabilitiesFixed ?? 0);
     });
@@ -347,7 +346,7 @@ export const UpdateUtils = {
     try {
       const currParts = currentVersion.split(".").map((n) => parseInt(n, 10));
       const recParts = recommendedVersion.split(".").map((n) => parseInt(n, 10));
-      
+
       const currMajor = currParts[0] ?? 0;
       const currMinor = currParts[1] ?? 0;
       const currPatch = currParts[2] ?? 0;

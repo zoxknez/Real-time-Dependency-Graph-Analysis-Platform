@@ -82,6 +82,8 @@ export function NotificationCenter() {
       {/* Bell Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
+        aria-label="Notifications"
+        title="Notifications"
         className="relative p-2.5 rounded-xl theme-interactive transition-all duration-200"
       >
         <Bell className="w-5 h-5" />
@@ -117,6 +119,7 @@ export function NotificationCenter() {
                 {unreadCount > 0 && (
                   <button
                     onClick={markAllAsRead}
+                    aria-label="Mark all notifications as read"
                     className="p-1.5 rounded-lg theme-interactive transition-colors"
                     title="Mark all as read"
                   >
@@ -126,6 +129,7 @@ export function NotificationCenter() {
                 {notifications.length > 0 && (
                   <button
                     onClick={clearAll}
+                    aria-label="Clear all notifications"
                     className="p-1.5 rounded-lg theme-interactive transition-colors text-danger"
                     title="Clear all"
                   >

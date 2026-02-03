@@ -21,7 +21,7 @@ const actions = [
     color: "primary",
   },
   {
-    title: "Explore Graph",
+    title: "View Graph",
     description: "Visualize dependency relationships",
     href: "/graph",
     icon: GitBranch,

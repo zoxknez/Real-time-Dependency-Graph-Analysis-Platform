@@ -32,6 +32,7 @@
 ## Optional 20s Extension (Live API)
 - Open /agent-live and show Live API demo page.
 - Mention ephemeral tokens and real‑time voice agent as bonus wow‑factor.
+- Note: Live API demo uses a native audio model (Gemini 2.5) and is optional.
 
 ## Backup Prompts
 - “Find all critical vulnerabilities in my project and list prioritized fixes.”

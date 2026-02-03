@@ -202,6 +202,7 @@ export function SearchInput({
           aria-autocomplete="list"
           aria-expanded={showDropdown}
           role="combobox"
+          data-testid="search-input"
           className={cn(
             "input-search !pl-16 pr-20 transition-all duration-300",
             isFocused ? "ring-2 ring-primary-500/30 border-primary-500/50" : "",
@@ -219,6 +220,8 @@ export function SearchInput({
                 onChange("");
                 inputRef.current?.focus();
               }}
+              aria-label="Clear search"
+              title="Clear search"
               className="theme-text-muted theme-hover-text transition-colors"
             >
               <X className="w-5 h-5" />
@@ -236,6 +239,7 @@ export function SearchInput({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.15 }}
+            data-testid="autocomplete"
             className="absolute z-50 w-full glass-card border-t-0 
                        rounded-b-xl rounded-t-none shadow-xl overflow-hidden"
           >
@@ -294,7 +298,7 @@ export function SearchInput({
             </div>
             <div className="px-4 py-2 border-t theme-border text-xs theme-text-faint flex items-center justify-between">
               <span>
-                <kbd className="px-1.5 py-0.5 theme-inner-card rounded theme-text-muted">↑↓</kbd>
+                <kbd className="px-1.5 py-0.5 theme-inner-card rounded theme-text-muted">Up/Down</kbd>
                 {" "}to navigate
               </span>
               <span>

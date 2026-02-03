@@ -4,7 +4,8 @@ use anyhow::Result;
 use serde_json::{json, Value};
 
 use crate::graph::{GraphClient, GraphQueries};
-use crate::services::osv;
+use crate::services::{osv, package_metadata, scorecard};
+use crate::services::package_metadata::PackageMetadata;
 use models::tenant::TenantContext;
 
 /// Execute a security agent tool call using real graph queries where available.
@@ -264,35 +265,124 @@ pub async fn execute_security_agent_tool(
 
         "get_scorecard" => {
             let package_id = args.get("package_id").and_then(|v| v.as_str()).unwrap_or("");
+            let (eco_raw, name_raw, _) = osv::parse_package_id(package_id);
+            let ecosystem_raw = args
+                .get("ecosystem")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or(eco_raw);
+            let name_raw = args
+                .get("package_name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or(name_raw)
+                .unwrap_or_default();
+            let (name, _) = split_name_version(&name_raw);
+
+            let Some(ecosystem) = ecosystem_raw
+                .as_deref()
+                .and_then(normalize_metadata_ecosystem)
+            else {
+                return Ok(json!({
+                    "package_id": package_id,
+                    "error": "Unsupported or missing ecosystem"
+                }));
+            };
+            if name.is_empty() {
+                return Ok(json!({
+                    "package_id": package_id,
+                    "error": "Missing package name"
+                }));
+            }
+
+            let repo_url = PackageMetadata::fetch_repository_url(ecosystem, &name).await?;
+            let Some(repo_url) = repo_url else {
+                return Ok(json!({
+                    "package_id": package_id,
+                    "package_name": name,
+                    "ecosystem": ecosystem,
+                    "error": "Repository URL not found for package"
+                }));
+            };
+
+            let normalized_repo = match package_metadata::normalize_repository_for_scorecard(&repo_url) {
+                Ok(r) => r,
+                Err(e) => {
+                    return Ok(json!({
+                        "package_id": package_id,
+                        "package_name": name,
+                        "ecosystem": ecosystem,
+                        "repository_url": repo_url,
+                        "error": e.to_string()
+                    }));
+                }
+            };
+
+            let result = scorecard::fetch_scorecard(&normalized_repo).await?;
 
             Ok(json!({
                 "package_id": package_id,
-                "aggregate_score": 7.4,
-                "checks": {
-                    "code_review": 8,
-                    "maintained": 10,
-                    "vulnerabilities": 6,
-                    "branch_protection": 7,
-                    "signed_releases": 5,
-                    "security_policy": 9,
-                    "pinned_dependencies": 6,
-                    "token_permissions": 8
-                },
-                "last_analyzed": "2024-01-20T10:30:00Z"
+                "package_name": name,
+                "ecosystem": ecosystem,
+                "repository_url": repo_url,
+                "target": result.target,
+                "aggregate_score": result.aggregate_score,
+                "scorecard_version": result.scorecard_version,
+                "generated_at": result.generated_at,
+                "critical_findings_count": result.critical_findings_count,
+                "failed_checks": result.failed_checks
             }))
         }
 
         "get_license_info" => {
             let package_id = args.get("package_id").and_then(|v| v.as_str()).unwrap_or("");
+            let (eco_raw, name_raw, _) = osv::parse_package_id(package_id);
+            let ecosystem_raw = args
+                .get("ecosystem")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or(eco_raw);
+            let name_raw = args
+                .get("package_name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or(name_raw)
+                .unwrap_or_default();
+            let (name, _) = split_name_version(&name_raw);
+
+            let Some(ecosystem) = ecosystem_raw
+                .as_deref()
+                .and_then(normalize_metadata_ecosystem)
+            else {
+                return Ok(json!({
+                    "package_id": package_id,
+                    "error": "Unsupported or missing ecosystem"
+                }));
+            };
+            if name.is_empty() {
+                return Ok(json!({
+                    "package_id": package_id,
+                    "error": "Missing package name"
+                }));
+            }
+
+            let license = PackageMetadata::fetch_license(ecosystem, &name).await?;
+            let spdx_id = license
+                .as_deref()
+                .and_then(spdx_from_license)
+                .map(|s| s.to_string());
 
             Ok(json!({
                 "package_id": package_id,
-                "license": "MIT",
-                "spdx_id": "MIT",
-                "osi_approved": true,
-                "copyleft": false,
-                "commercial_use": true,
-                "patent_grant": false
+                "package_name": name,
+                "ecosystem": ecosystem,
+                "license": license,
+                "spdx_id": spdx_id,
+                "osi_approved": null,
+                "copyleft": null,
+                "commercial_use": null,
+                "patent_grant": null,
+                "source": "registry metadata"
             }))
         }
 
@@ -300,4 +390,44 @@ pub async fn execute_security_agent_tool(
             "error": format!("Unknown tool: {}", name)
         })),
     }
+}
+
+fn normalize_metadata_ecosystem(raw: &str) -> Option<&'static str> {
+    match raw.to_ascii_lowercase().as_str() {
+        "npm" => Some("npm"),
+        "pypi" | "py_pi" => Some("pypi"),
+        "cargo" | "crates" | "crates.io" => Some("cargo"),
+        _ => None,
+    }
+}
+
+fn split_name_version(raw: &str) -> (String, Option<String>) {
+    if raw.is_empty() {
+        return (String::new(), None);
+    }
+    if raw.starts_with('@') {
+        if let Some(idx) = raw.rfind('@') {
+            if idx > 0 && idx + 1 < raw.len() {
+                return (raw[..idx].to_string(), Some(raw[idx + 1..].to_string()));
+            }
+        }
+        return (raw.to_string(), None);
+    }
+    if let Some((name, version)) = raw.rsplit_once('@') {
+        if !version.is_empty() {
+            return (name.to_string(), Some(version.to_string()));
+        }
+    }
+    (raw.to_string(), None)
+}
+
+fn spdx_from_license(license: &str) -> Option<&str> {
+    let trimmed = license.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '+') {
+        return Some(trimmed);
+    }
+    None
 }
