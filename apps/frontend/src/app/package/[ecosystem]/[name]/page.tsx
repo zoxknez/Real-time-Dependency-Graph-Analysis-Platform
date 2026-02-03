@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@apollo/client";
-import { AlertTriangle, ExternalLink, GitBranch, Shield, Zap } from "lucide-react";
+import { AlertTriangle, Check, Copy, ExternalLink, GitBranch, Loader2, Shield, Zap } from "lucide-react";
 import {
   GET_PACKAGE,
   GET_PACKAGE_METADATA,
@@ -30,6 +30,16 @@ const registryLinks: Record<string, (name: string) => string> = {
   maven: (name) => `https://mvnrepository.com/artifact/${name}`,
   nuget: (name) => `https://www.nuget.org/packages/${name}`,
   go: (name) => `https://pkg.go.dev/${name}`,
+};
+
+const installCommands: Record<string, (name: string) => string> = {
+  npm: (name) => `npm install ${name}`,
+  pypi: (name) => `pip install ${name}`,
+  py_pi: (name) => `pip install ${name}`,
+  cargo: (name) => `cargo add ${name}`,
+  maven: (name) => `mvn dependency:get -Dartifact=${name}`,
+  nuget: (name) => `dotnet add package ${name}`,
+  go: (name) => `go get ${name}`,
 };
 
 type PackageTab = "overview" | "graph" | "scorecard" | "supply";
@@ -65,6 +75,8 @@ export default function PackageDetailPage() {
   const registryLink = registryLinks[ecosystemParam.toLowerCase()]?.(nameParam);
   const accent = getEcosystemColor(ecosystemKey);
   const [activeTab, setActiveTab] = useState<PackageTab>("overview");
+  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState(false);
 
   const { data: packageData, loading: packageLoading } = useQuery<GetPackageResponse>(
     GET_PACKAGE,
@@ -74,7 +86,7 @@ export default function PackageDetailPage() {
     }
   );
 
-  const { data: metadataData } = useQuery<GetPackageMetadataResponse>(
+  const { data: metadataData, loading: metadataLoading } = useQuery<GetPackageMetadataResponse>(
     GET_PACKAGE_METADATA,
     {
       variables: { packageId },
@@ -93,7 +105,7 @@ export default function PackageDetailPage() {
     skip: !scorecardTarget,
   });
 
-  const { data: reverseData } = useQuery<GetReverseDependentsResponse>(
+  const { data: reverseData, loading: reverseLoading } = useQuery<GetReverseDependentsResponse>(
     GET_REVERSE_DEPENDENTS,
     {
       variables: { packageId, maxDepth: 1, first: 1 },
@@ -109,7 +121,7 @@ export default function PackageDetailPage() {
     }
   );
 
-  const { data: vulnData } = useQuery<GetVulnerabilityCountsResponse>(
+  const { data: vulnData, loading: vulnLoading } = useQuery<GetVulnerabilityCountsResponse>(
     GET_VULNERABILITY_COUNTS,
     {
       variables: { packageId, includeTransitive: true },
@@ -117,8 +129,11 @@ export default function PackageDetailPage() {
     }
   );
 
-  const latestVersion = metadataData?.packageMetadata?.latestVersion || "0.0.0";
-  const license = metadataData?.packageMetadata?.license || "Unknown";
+  const scorecardSummary = scorecardData?.scorecardSummary;
+  const latestVersion = metadataData?.packageMetadata?.latestVersion ?? "";
+  const license = metadataData?.packageMetadata?.license ?? "";
+  const displayVersion = latestVersion || (metadataLoading ? "..." : "--");
+  const displayLicense = license || (metadataLoading ? "..." : "Unknown");
   const repositoryUrl = metadataData?.packageMetadata?.repositoryUrl;
   const reverseCount = reverseData?.reverseDependents?.totalCount ?? 0;
   const vulnCounts = vulnData?.vulnerabilityCounts ?? {
@@ -129,11 +144,24 @@ export default function PackageDetailPage() {
   };
   const totalVulns =
     vulnCounts.critical + vulnCounts.high + vulnCounts.medium + vulnCounts.low;
-
-  const scorecardSummary = scorecardData?.scorecardSummary;
+  const totalChecks = scorecardSummary
+    ? scorecardSummary.passedChecks + scorecardSummary.failedChecks
+    : 0;
+  const scoreProgress = scorecardSummary
+    ? Math.min(100, Math.max(0, scorecardSummary.aggregateScore * 10))
+    : 0;
   const scorecardViewerUrl = scorecardTarget
     ? `https://scorecard.dev/viewer/?uri=${encodeURIComponent(scorecardTarget)}`
     : "";
+  const scorecardChipLabel = scorecardSummary
+    ? `Scorecard ${scorecardSummary.aggregateScore.toFixed(1)}/10`
+    : scorecardTarget
+      ? "Scorecard pending"
+      : "Scorecard unavailable";
+  const scorecardChipClass = scorecardSummary
+    ? scorecardRiskStyles[scorecardSummary.riskLevel] ??
+      "bg-white/5 text-white/70 border border-white/10"
+    : "bg-white/5 text-white/70 border border-white/10";
 
   const rootRiskLevel = useMemo<GraphData["nodes"][number]["riskLevel"]>(() => {
     if (vulnCounts.critical > 0) return "CRITICAL";
@@ -199,6 +227,52 @@ export default function PackageDetailPage() {
   }, [graphData]);
 
   const graphHasEdges = graphEdges.length > 0;
+  const isLoading = packageLoading || metadataLoading || reverseLoading || vulnLoading;
+
+  const vulnRiskLabel = useMemo(() => {
+    if (vulnCounts.critical > 0) return "Critical risk";
+    if (vulnCounts.high > 0) return "High risk";
+    if (vulnCounts.medium > 0) return "Medium risk";
+    if (vulnCounts.low > 0) return "Low risk";
+    return "No known vulns";
+  }, [vulnCounts]);
+
+  const vulnChipStyle = useMemo(() => {
+    if (vulnCounts.critical > 0) return "bg-red-500/15 text-red-200 border border-red-500/40";
+    if (vulnCounts.high > 0) return "bg-orange-500/15 text-orange-200 border border-orange-500/40";
+    if (vulnCounts.medium > 0) return "bg-amber-500/15 text-amber-200 border border-amber-500/40";
+    if (vulnCounts.low > 0) return "bg-emerald-500/15 text-emerald-200 border border-emerald-500/40";
+    return "bg-white/5 text-white/70 border border-white/10";
+  }, [vulnCounts]);
+
+  const installCommand = useMemo(() => {
+    if (!nameParam && !packageId) return "";
+    const targetName = nameParam || packageId;
+    const build = installCommands[ecosystemParam.toLowerCase()];
+    return build ? build(targetName) : `install ${targetName}`;
+  }, [ecosystemParam, nameParam, packageId]);
+
+  const copyInstallCommand = async () => {
+    if (!installCommand) return;
+    try {
+      await navigator.clipboard.writeText(installCommand);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const copyPackageId = async () => {
+    if (!packageId) return;
+    try {
+      await navigator.clipboard.writeText(packageId);
+      setCopiedId(true);
+      window.setTimeout(() => setCopiedId(false), 1600);
+    } catch {
+      setCopiedId(false);
+    }
+  };
 
   const showNotFound = !packageLoading && packageId && !packageData?.package;
   const supplyChainUrl = packageId
@@ -218,9 +292,21 @@ export default function PackageDetailPage() {
                 >
                   {formatEcosystemName(ecosystemKey)}
                 </span>
-                <span className="theme-text-faint font-mono">
-                  {packageId || "unknown"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="theme-text-faint font-mono">
+                    {packageId || "unknown"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={copyPackageId}
+                    disabled={!packageId}
+                    data-testid="copy-package-id"
+                    title={copiedId ? "Copied" : "Copy package id"}
+                    className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50"
+                  >
+                    {copiedId ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
+                  </button>
+                </div>
               </div>
               <h1 data-testid="package-name" className="text-3xl font-bold mt-3">
                 {nameParam || "Unknown package"}
@@ -244,14 +330,17 @@ export default function PackageDetailPage() {
               <div className="text-xs theme-text-faint uppercase tracking-widest">Latest Version</div>
               <span
                 data-testid="package-version"
-                className="text-xl font-semibold theme-text-primary"
+                className={`text-xl font-semibold theme-text-primary ${metadataLoading ? "animate-pulse" : ""}`}
               >
-                {latestVersion}
+                {displayVersion}
               </span>
               <div className="text-xs theme-text-muted">
                 License: {" "}
-                <span data-testid="package-license" className="theme-text-primary">
-                  {license}
+                <span
+                  data-testid="package-license"
+                  className={`theme-text-primary ${metadataLoading ? "animate-pulse" : ""}`}
+                >
+                  {displayLicense}
                 </span>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -279,6 +368,16 @@ export default function PackageDetailPage() {
             </div>
           </div>
         </div>
+
+        {isLoading && (
+          <div
+            data-testid="loading"
+            className="glass-card px-4 py-3 border theme-border flex items-center gap-3 text-sm theme-text-muted"
+          >
+            <Loader2 className="w-4 h-4 animate-spin text-primary-400" />
+            Loading package intelligence...
+          </div>
+        )}
 
         <div className="glass-card p-2 border theme-border">
           <div role="tablist" aria-label="Package sections" className="flex flex-wrap gap-2">
@@ -314,62 +413,172 @@ export default function PackageDetailPage() {
           className="glass-card p-6 border theme-border"
         >
           {activeTab === "overview" && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="glass-card p-5 border theme-border">
-                <h2 className="text-sm font-semibold theme-text-primary mb-2 flex items-center gap-2">
-                  <GitBranch className="w-4 h-4 text-accent-400" />
-                  Reverse Dependents
-                </h2>
-                <p className="text-2xl font-bold theme-text-primary">{reverseCount}</p>
-                <p className="text-xs theme-text-faint mt-1">Total packages depending on this package.</p>
-              </div>
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_0.6fr] gap-4">
+                <div className="glass-card p-5 border theme-border">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h2 className="text-lg font-semibold theme-text-primary">Highlights</h2>
+                      <p className="text-sm theme-text-muted">
+                        Snapshot of the most important package signals.
+                      </p>
+                    </div>
+                    {registryLink && (
+                      <a
+                        href={registryLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-primary-400 hover:text-primary-300 transition-colors inline-flex items-center gap-1"
+                      >
+                        Registry page <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
 
-              <div className="glass-card p-5 border theme-border">
-                <h2 className="text-sm font-semibold theme-text-primary mb-2 flex items-center gap-2">
-                  <Shield className="w-4 h-4 text-danger" />
-                  Vulnerabilities
-                </h2>
-                <p className="text-2xl font-bold theme-text-primary">{totalVulns}</p>
-                <div className="mt-2 text-xs theme-text-faint grid grid-cols-2 gap-y-1">
-                  <span>Critical: {vulnCounts.critical}</span>
-                  <span>High: {vulnCounts.high}</span>
-                  <span>Medium: {vulnCounts.medium}</span>
-                  <span>Low: {vulnCounts.low}</span>
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                    <span className="px-2 py-1 rounded-full border border-white/10 bg-white/5">
+                      Latest {displayVersion}
+                    </span>
+                    <span className="px-2 py-1 rounded-full border border-white/10 bg-white/5">
+                      License {displayLicense}
+                    </span>
+                    <span className={`px-2 py-1 rounded-full ${vulnChipStyle}`}>
+                      {vulnRiskLabel}
+                    </span>
+                    <span className={`px-2 py-1 rounded-full ${scorecardChipClass}`}>
+                      {scorecardChipLabel}
+                    </span>
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <div className="text-xs theme-text-faint uppercase">Repository</div>
+                      {repositoryUrl ? (
+                        <a
+                          href={repositoryUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-sm text-primary-300 hover:text-primary-200 transition-colors inline-flex items-center gap-1"
+                        >
+                          Open repository <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        <div className="text-sm theme-text-muted">Not detected</div>
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-xs theme-text-faint uppercase">Scorecard target</div>
+                      <div
+                        className="text-sm theme-text-muted break-all"
+                        title={scorecardTarget ?? "Awaiting repository metadata"}
+                      >
+                        {scorecardTarget ?? "Awaiting repository metadata"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs theme-text-faint uppercase">Dependents</div>
+                      <div className="text-sm theme-text-primary font-semibold">{reverseCount}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs theme-text-faint uppercase">Total vulns</div>
+                      <div className="text-sm theme-text-primary font-semibold">{totalVulns}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="glass-card p-5 border theme-border">
+                  <h2 className="text-lg font-semibold theme-text-primary">Quick Start</h2>
+                  <ol className="mt-3 space-y-2 text-sm theme-text-muted">
+                    <li className="flex gap-2">
+                      <span className="text-primary-300 font-semibold">1.</span>
+                      Open the Graph tab to map reverse dependents.
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-primary-300 font-semibold">2.</span>
+                      Review Scorecard to verify repo security checks.
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-primary-300 font-semibold">3.</span>
+                      Jump to Supply Chain for SBOM and SLSA.
+                    </li>
+                  </ol>
+                  <div className="mt-4 text-xs theme-text-faint">
+                    Tip: Use the copy buttons to share IDs or commands quickly.
+                  </div>
                 </div>
               </div>
 
-              <div className="glass-card p-5 border theme-border">
-                <h2 className="text-sm font-semibold theme-text-primary mb-2 flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-warning" />
-                  Install Command
-                </h2>
-                <p className="text-xs font-mono theme-text-muted break-all">
-                  {ecosystemParam.toLowerCase() === "npm" ? "npm install " : "install "}
-                  {nameParam || packageId}
-                </p>
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="glass-card p-5 border theme-border">
+                  <h2 className="text-sm font-semibold theme-text-primary mb-2 flex items-center gap-2">
+                    <GitBranch className="w-4 h-4 text-accent-400" />
+                    Reverse Dependents
+                  </h2>
+                  <p className="text-2xl font-bold theme-text-primary">{reverseCount}</p>
+                  <p className="text-xs theme-text-faint mt-1">Total packages depending on this package.</p>
+                </div>
 
-              <div className="glass-card p-5 border theme-border">
-                <h2 className="text-sm font-semibold theme-text-primary mb-3">Actions</h2>
-                <div className="flex flex-col gap-2 text-sm">
-                  <Link
-                    href={packageId ? `/graph?pkg=${encodeURIComponent(packageId)}` : "/graph"}
-                    className="theme-text-muted theme-hover-text transition-colors"
-                  >
-                    View dependency graph
-                  </Link>
-                  <Link
-                    href={packageId ? `/impact?pkg=${encodeURIComponent(packageId)}` : "/impact"}
-                    className="theme-text-muted theme-hover-text transition-colors"
-                  >
-                    Impact analysis
-                  </Link>
-                  <Link
-                    href={supplyChainUrl}
-                    className="theme-text-muted theme-hover-text transition-colors"
-                  >
-                    Supply chain dashboard
-                  </Link>
+                <div className="glass-card p-5 border theme-border">
+                  <h2 className="text-sm font-semibold theme-text-primary mb-2 flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-danger" />
+                    Vulnerabilities
+                  </h2>
+                  <p className="text-2xl font-bold theme-text-primary">{totalVulns}</p>
+                  <div className="mt-2 text-xs theme-text-faint grid grid-cols-2 gap-y-1">
+                    <span>Critical: {vulnCounts.critical}</span>
+                    <span>High: {vulnCounts.high}</span>
+                    <span>Medium: {vulnCounts.medium}</span>
+                    <span>Low: {vulnCounts.low}</span>
+                  </div>
+                </div>
+
+                <div className="glass-card p-5 border theme-border">
+                  <h2 className="text-sm font-semibold theme-text-primary mb-2 flex items-center gap-2">
+                    <Zap className="w-4 h-4 text-warning" />
+                    Install Command
+                  </h2>
+                  <p className="text-xs font-mono theme-text-muted break-all">
+                    {installCommand || "install <package>"}
+                  </p>
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="copy-install"
+                      onClick={copyInstallCommand}
+                      disabled={!installCommand}
+                      className="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-md border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50"
+                    >
+                      {copied ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                    <span className="text-[11px] theme-text-faint" aria-live="polite">
+                      {copied ? "Command copied to clipboard." : "Use in your terminal."}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="glass-card p-5 border theme-border">
+                  <h2 className="text-sm font-semibold theme-text-primary mb-3">Actions</h2>
+                  <div className="flex flex-col gap-2 text-sm">
+                    <Link
+                      href={packageId ? `/graph?pkg=${encodeURIComponent(packageId)}` : "/graph"}
+                      className="theme-text-muted theme-hover-text transition-colors"
+                    >
+                      View dependency graph
+                    </Link>
+                    <Link
+                      href={packageId ? `/impact?pkg=${encodeURIComponent(packageId)}` : "/impact"}
+                      className="theme-text-muted theme-hover-text transition-colors"
+                    >
+                      Impact analysis
+                    </Link>
+                    <Link
+                      href={supplyChainUrl}
+                      className="theme-text-muted theme-hover-text transition-colors"
+                    >
+                      Supply chain dashboard
+                    </Link>
+                  </div>
                 </div>
               </div>
             </div>
@@ -412,6 +621,7 @@ export default function PackageDetailPage() {
                     <span>Nodes: {graphStats?.nodes ?? graphData.nodes.length}</span>
                     <span>Edges: {graphStats?.links ?? graphData.links.length}</span>
                     {graphStats && <span>Max depth: {graphStats.maxDepth}</span>}
+                    <span>Showing up to 60 dependents</span>
                   </div>
                   <DependencyGraph
                     data={graphData}
@@ -487,9 +697,24 @@ export default function PackageDetailPage() {
                       <span className="text-sm theme-text-faint">out of 10</span>
                     </div>
                   )}
+
+                  {scorecardTarget && !scorecardLoading && scorecardSummary && (
+                    <div className="mt-4">
+                      <div className="flex items-center justify-between text-xs theme-text-faint mb-2">
+                        <span>Score health</span>
+                        <span>{scoreProgress.toFixed(0)}%</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-emerald-500"
+                          style={{ width: `${scoreProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                   <div className="glass-card p-4 border theme-border">
                     <div className="text-xs theme-text-faint uppercase">Checks passed</div>
                     <div className="text-2xl font-bold theme-text-primary">
@@ -506,6 +731,12 @@ export default function PackageDetailPage() {
                     <div className="text-xs theme-text-faint uppercase">Critical issues</div>
                     <div className="text-2xl font-bold theme-text-primary">
                       {scorecardSummary?.criticalIssues ?? "-"}
+                    </div>
+                  </div>
+                  <div className="glass-card p-4 border theme-border">
+                    <div className="text-xs theme-text-faint uppercase">Total checks</div>
+                    <div className="text-2xl font-bold theme-text-primary">
+                      {scorecardSummary ? totalChecks : "-"}
                     </div>
                   </div>
                 </div>
