@@ -281,7 +281,7 @@ export default function PackageDetailPage() {
 
   return (
     <div className="min-h-screen bg-surface-950 text-white selection:bg-primary-500/30 font-sans">
-      <div className="max-w-6xl mx-auto px-6 py-10 space-y-6">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6">
         <div className="glass-card p-6 border theme-border">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -302,18 +302,19 @@ export default function PackageDetailPage() {
                     disabled={!packageId}
                     data-testid="copy-package-id"
                     title={copiedId ? "Copied" : "Copy package id"}
+                    aria-label={copiedId ? "Package id copied" : "Copy package id"}
                     className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50"
                   >
                     {copiedId ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
                   </button>
                 </div>
               </div>
-              <h1 data-testid="package-name" className="text-3xl font-bold mt-3">
+              <h1 data-testid="package-name" className="text-2xl sm:text-3xl font-bold mt-3">
                 {nameParam || "Unknown package"}
               </h1>
               <p
                 data-testid="package-description"
-                className="text-sm theme-text-muted mt-2 max-w-2xl"
+                className="text-sm sm:text-base theme-text-muted mt-2 max-w-2xl leading-relaxed"
               >
                 Package overview for {packageId || "this package"}. Use the links below
                 to drill into dependency graphs, impact analysis, and supply-chain posture.
@@ -380,7 +381,11 @@ export default function PackageDetailPage() {
         )}
 
         <div className="glass-card p-2 border theme-border">
-          <div role="tablist" aria-label="Package sections" className="flex flex-wrap gap-2">
+          <div
+            role="tablist"
+            aria-label="Package sections"
+            className="flex gap-2 overflow-x-auto sm:flex-wrap"
+          >
             {tabs.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
@@ -392,14 +397,16 @@ export default function PackageDetailPage() {
                   aria-selected={isActive}
                   aria-controls={`tab-panel-${tab.id}`}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex flex-col gap-1 px-4 py-2 rounded-lg border text-left transition-colors ${
+                  className={`flex flex-col gap-1 px-4 py-2 rounded-lg border text-left transition-colors min-w-[140px] ${
                     isActive
                       ? "border-primary-500/40 bg-primary-500/15 text-primary-200"
                       : "border-transparent theme-text-muted hover:text-white hover:border-white/10 hover:bg-white/5"
                   }`}
                 >
                   <span className="text-sm font-semibold">{tab.label}</span>
-                  <span className="text-[11px] theme-text-faint">{tab.description}</span>
+                  <span className="hidden sm:block text-[11px] theme-text-faint">
+                    {tab.description}
+                  </span>
                 </button>
               );
             })}
@@ -418,10 +425,10 @@ export default function PackageDetailPage() {
                 <div className="glass-card p-5 border theme-border">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <h2 className="text-lg font-semibold theme-text-primary">Highlights</h2>
-                      <p className="text-sm theme-text-muted">
-                        Snapshot of the most important package signals.
-                      </p>
+                  <h2 className="text-base sm:text-lg font-semibold theme-text-primary">Highlights</h2>
+                  <p className="text-sm theme-text-muted">
+                    Snapshot of the most important package signals.
+                  </p>
                     </div>
                     {registryLink && (
                       <a
@@ -487,7 +494,7 @@ export default function PackageDetailPage() {
                 </div>
 
                 <div className="glass-card p-5 border theme-border">
-                  <h2 className="text-lg font-semibold theme-text-primary">Quick Start</h2>
+                  <h2 className="text-base sm:text-lg font-semibold theme-text-primary">Quick Start</h2>
                   <ol className="mt-3 space-y-2 text-sm theme-text-muted">
                     <li className="flex gap-2">
                       <span className="text-primary-300 font-semibold">1.</span>
@@ -546,6 +553,8 @@ export default function PackageDetailPage() {
                       data-testid="copy-install"
                       onClick={copyInstallCommand}
                       disabled={!installCommand}
+                      aria-label={copied ? "Install command copied" : "Copy install command"}
+                      title={copied ? "Copied" : "Copy install command"}
                       className="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-md border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50"
                     >
                       {copied ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
@@ -870,7 +879,7 @@ export default function PackageDetailPage() {
                   <p className="text-sm theme-text-muted mt-2">
                     OpenSSF Scorecard, OSV, SLSA, and SBOM views.
                   </p>
-                  <div className="mt-4 text-xs theme-text-faint">
+                  <div className="mt-4 text-xs theme-text-faint leading-relaxed">
                     Best for executive-ready posture summaries.
                   </div>
                 </Link>
@@ -896,7 +905,7 @@ export default function PackageDetailPage() {
                   <p className="text-sm theme-text-muted mt-2">
                     Produce CycloneDX or SPDX for audit readiness.
                   </p>
-                  <div className="mt-4 text-xs theme-text-faint">
+                  <div className="mt-4 text-xs theme-text-faint leading-relaxed">
                     Export inventory and share with compliance teams.
                   </div>
                 </Link>
@@ -926,7 +935,7 @@ export default function PackageDetailPage() {
                   <p className="text-sm theme-text-muted mt-2">
                     Review build provenance, signatures, and policy gaps.
                   </p>
-                  <div className="mt-4 text-xs theme-text-faint">
+                  <div className="mt-4 text-xs theme-text-faint leading-relaxed">
                     Validate build integrity before deployment.
                   </div>
                 </Link>
