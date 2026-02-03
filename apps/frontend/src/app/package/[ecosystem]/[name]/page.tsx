@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useQuery } from "@apollo/client";
-import { AlertTriangle, Check, Copy, ExternalLink, GitBranch, Loader2, Shield, Zap } from "lucide-react";
+import { AlertTriangle, Check, Copy, ExternalLink, GitBranch, Loader2, Lock, Package, Shield, Zap } from "lucide-react";
 import {
   GET_PACKAGE,
   GET_PACKAGE_METADATA,
@@ -716,6 +716,19 @@ export default function PackageDetailPage() {
                     </p>
                   )}
 
+                  {!scorecardTarget && (
+                    <div className="mt-4 rounded-lg border border-white/10 bg-white/5 p-4 text-sm theme-text-muted">
+                      <div className="text-xs uppercase tracking-widest theme-text-faint mb-2">
+                        How to enable scorecard
+                      </div>
+                      <ul className="space-y-1">
+                        <li>1. Add a repository URL in package metadata.</li>
+                        <li>2. Wait for the scorecard job to run.</li>
+                        <li>3. Refresh this page to see the results.</li>
+                      </ul>
+                    </div>
+                  )}
+
                   {scorecardTarget && scorecardLoading && (
                     <p className="text-sm theme-text-muted mt-4">Loading scorecard summary...</p>
                   )}
@@ -835,31 +848,57 @@ export default function PackageDetailPage() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <Link
                   href={supplyChainUrl}
-                  className="glass-card p-5 border theme-border theme-inner-card-hover transition-colors"
+                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-primary-500/40"
                 >
-                  <div className="text-xs theme-text-faint uppercase">Dashboard</div>
-                  <div className="text-lg font-semibold theme-text-primary mt-2">
+                  <div className="flex items-center justify-between text-xs theme-text-faint uppercase">
+                    <span>Dashboard</span>
+                    <span className="px-2 py-0.5 rounded-full border border-primary-500/30 text-primary-300">
+                      Recommended
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-center gap-3">
+                    <span className="w-9 h-9 rounded-lg bg-primary-500/10 border border-primary-500/20 flex items-center justify-center text-primary-300">
+                      <Shield className="w-4 h-4" />
+                    </span>
+                    <div className="text-lg font-semibold theme-text-primary">
                     Supply Chain Overview
+                  </div>
                   </div>
                   <p className="text-sm theme-text-muted mt-2">
                     OpenSSF Scorecard, OSV, SLSA, and SBOM views.
                   </p>
+                  <div className="mt-4 text-xs theme-text-faint">
+                    Best for executive-ready posture summaries.
+                  </div>
                 </Link>
 
                 <Link
                   href={packageId ? `/sbom?packageId=${encodeURIComponent(packageId)}` : "/sbom"}
-                  className="glass-card p-5 border theme-border theme-inner-card-hover transition-colors"
+                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-emerald-500/40"
                 >
-                  <div className="text-xs theme-text-faint uppercase">SBOM</div>
-                  <div className="text-lg font-semibold theme-text-primary mt-2">
+                  <div className="flex items-center justify-between text-xs theme-text-faint uppercase">
+                    <span>SBOM</span>
+                    <span className="px-2 py-0.5 rounded-full border border-emerald-500/30 text-emerald-300">
+                      CycloneDX / SPDX
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-center gap-3">
+                    <span className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-300">
+                      <Package className="w-4 h-4" />
+                    </span>
+                    <div className="text-lg font-semibold theme-text-primary">
                     Generate SBOM
+                  </div>
                   </div>
                   <p className="text-sm theme-text-muted mt-2">
                     Produce CycloneDX or SPDX for audit readiness.
                   </p>
+                  <div className="mt-4 text-xs theme-text-faint">
+                    Export inventory and share with compliance teams.
+                  </div>
                 </Link>
 
                 <Link
@@ -868,15 +907,28 @@ export default function PackageDetailPage() {
                       ? `/supply-chain?view=slsa&package=${encodeURIComponent(packageId)}`
                       : "/supply-chain?view=slsa"
                   }
-                  className="glass-card p-5 border theme-border theme-inner-card-hover transition-colors"
+                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-amber-500/40"
                 >
-                  <div className="text-xs theme-text-faint uppercase">SLSA</div>
-                  <div className="text-lg font-semibold theme-text-primary mt-2">
+                  <div className="flex items-center justify-between text-xs theme-text-faint uppercase">
+                    <span>SLSA</span>
+                    <span className="px-2 py-0.5 rounded-full border border-amber-500/30 text-amber-200">
+                      Provenance
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-center gap-3">
+                    <span className="w-9 h-9 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-200">
+                      <Lock className="w-4 h-4" />
+                    </span>
+                    <div className="text-lg font-semibold theme-text-primary">
                     Provenance Assessment
+                  </div>
                   </div>
                   <p className="text-sm theme-text-muted mt-2">
                     Review build provenance, signatures, and policy gaps.
                   </p>
+                  <div className="mt-4 text-xs theme-text-faint">
+                    Validate build integrity before deployment.
+                  </div>
                 </Link>
               </div>
             </div>
