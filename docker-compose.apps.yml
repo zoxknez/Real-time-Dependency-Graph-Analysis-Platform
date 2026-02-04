@@ -1,5 +1,11 @@
 # Docker Compose for IDP Application Services
 # Use alongside main docker-compose.yml: docker-compose -f docker-compose.yml -f docker-compose.apps.yml up
+
+x-logging-defaults: &logging_defaults
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
 services:
   # ═══════════════════════════════════════════════════════════════
   # API SERVICE - GraphQL Gateway
@@ -19,8 +25,6 @@ services:
       
       # Memgraph
       - MEMGRAPH_URI=bolt://memgraph:7687
-      - MEMGRAPH_USER=
-      - MEMGRAPH_PASSWORD=
       
       # Redis
       - REDIS_URL=redis://redis:6379
@@ -64,6 +68,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    logging: *logging_defaults
     networks:
       - default
     restart: unless-stopped
@@ -76,16 +81,18 @@ services:
       context: .
       dockerfile: deploy/docker/Dockerfile.frontend
       args:
-        - NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8000/graphql
-        - NEXT_PUBLIC_WS_ENDPOINT=ws://localhost:8000/graphql/ws
-        - NEXT_PUBLIC_SEARCH_MODE=semantic
+        - NEXT_PUBLIC_GRAPHQL_ENDPOINT=${PUBLIC_GRAPHQL_ENDPOINT:-http://localhost:8000/graphql}
+        - NEXT_PUBLIC_WS_ENDPOINT=${PUBLIC_WS_ENDPOINT:-ws://localhost:8000/graphql/ws}
+        - NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=${PUBLIC_AGENT_STREAM_ENDPOINT:-http://localhost:8000/agent/stream}
+        - NEXT_PUBLIC_SEARCH_MODE=${PUBLIC_SEARCH_MODE:-semantic}
     container_name: idp-frontend
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8000/graphql
-      - NEXT_PUBLIC_WS_ENDPOINT=ws://localhost:8000/graphql/ws
-      - NEXT_PUBLIC_SEARCH_MODE=semantic
+      - NEXT_PUBLIC_GRAPHQL_ENDPOINT=${PUBLIC_GRAPHQL_ENDPOINT:-http://localhost:8000/graphql}
+      - NEXT_PUBLIC_WS_ENDPOINT=${PUBLIC_WS_ENDPOINT:-ws://localhost:8000/graphql/ws}
+      - NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=${PUBLIC_AGENT_STREAM_ENDPOINT:-http://localhost:8000/agent/stream}
+      - NEXT_PUBLIC_SEARCH_MODE=${PUBLIC_SEARCH_MODE:-semantic}
       - NODE_ENV=production
     depends_on:
       - api
@@ -100,6 +107,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+    logging: *logging_defaults
     networks:
       - default
     restart: unless-stopped
@@ -134,6 +142,12 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *logging_defaults
     networks:
       - default
     restart: unless-stopped
@@ -150,18 +164,22 @@ services:
       - RUST_LOG=info,analysis=debug
       
       # Kafka
-      - KAFKA_BROKERS=redpanda:9092
-      - KAFKA_INPUT_TOPIC=domain.package.events.v1
-      - KAFKA_OUTPUT_TOPIC=domain.analysis.events.v1
-      - KAFKA_CONSUMER_GROUP=analysis-service-cg
+      - ANALYSIS__KAFKA__BROKERS=redpanda:9092
+      - ANALYSIS__KAFKA__INPUT_TOPIC=domain.package.events.v1
+      - ANALYSIS__KAFKA__OUTPUT_TOPIC=domain.analysis.events.v1
+      - ANALYSIS__KAFKA__CONSUMER_GROUP=analysis-service-cg
       
       # Workers
-      - ANALYSIS_WORKERS=4
-      - PARSE_TIMEOUT_SECS=30
+      - ANALYSIS__WORKERS__COUNT=4
+      - ANALYSIS__WORKERS__PARSE_TIMEOUT_SECS=30
+      
+      # Health/metrics
+      - ANALYSIS__SERVICE__METRICS_ENABLED=true
+      - ANALYSIS__SERVICE__METRICS_PORT=9091
       
       # Embeddings
-      - EMBEDDING_PROVIDER=local
-      - EMBEDDING_MODEL_PATH=/models/minilm
+      - ANALYSIS__EMBEDDING__PROVIDER=local
+      - ANALYSIS__EMBEDDING__MODEL_PATH=/models/minilm
       
       # Tracing
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
@@ -170,6 +188,12 @@ services:
     depends_on:
       redpanda:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *logging_defaults
     networks:
       - default
     restart: unless-stopped
@@ -191,18 +215,12 @@ services:
       - RUST_LOG=info,graph_writer=debug
       
       # Kafka
-      - KAFKA_BROKERS=redpanda:9092
-      - KAFKA_TOPIC=domain.package.events.v1
-      - KAFKA_CONSUMER_GROUP=graph-writer-cg
+      - GRAPH_WRITER__KAFKA__BROKERS=redpanda:9092
+      - GRAPH_WRITER__KAFKA__TOPIC=domain.package.events.v1
+      - GRAPH_WRITER__KAFKA__GROUP_ID=graph-writer-cg
       
       # Memgraph
-      - MEMGRAPH_URI=bolt://memgraph:7687
-      - MEMGRAPH_USER=
-      - MEMGRAPH_PASSWORD=
-      
-      # Batch settings
-      - BATCH_SIZE=100
-      - FLUSH_INTERVAL_SECS=5
+      - GRAPH_WRITER__MEMGRAPH__URI=bolt://memgraph:7687
       
       # Tracing
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
@@ -211,6 +229,12 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *logging_defaults
     networks:
       - default
     restart: unless-stopped
@@ -229,7 +253,7 @@ services:
       # Kafka
       - KAFKA_BROKERS=redpanda:9092
       - KAFKA_TOPIC=domain.analysis.events.v1
-      - KAFKA_CONSUMER_GROUP=vector-writer-cg
+      - KAFKA_GROUP_ID=vector-writer-cg
       
       # Qdrant
       - QDRANT_URL=http://qdrant:6334
@@ -241,11 +265,18 @@ services:
       
       # Tracing
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - HEALTH_PORT=9092
     depends_on:
       qdrant:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9092/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *logging_defaults
     networks:
       - default
     restart: unless-stopped
@@ -262,10 +293,10 @@ services:
       - RUST_LOG=info,syncer=debug
       
       # RisingWave
-      - RISINGWAVE_URI=postgres://root@risingwave:4566/dev
+      - RISINGWAVE_URL=postgres://root@risingwave:4566/dev
       
       # Memgraph
-      - MEMGRAPH_URI=bolt://memgraph:7687
+      - MEMGRAPH_URL=bolt://memgraph:7687
       
       # Qdrant
       - QDRANT_URL=http://qdrant:6334
@@ -275,6 +306,7 @@ services:
       
       # Tracing
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
+      - HEALTH_PORT=9093
     depends_on:
       risingwave:
         condition: service_healthy
@@ -282,11 +314,16 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9093/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *logging_defaults
     networks:
       - default
     restart: unless-stopped
 
 networks:
   default:
-    external: true
     name: idp-network

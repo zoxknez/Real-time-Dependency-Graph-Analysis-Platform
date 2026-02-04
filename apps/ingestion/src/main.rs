@@ -15,12 +15,19 @@ use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use config::AppConfig;
 use sqlx::postgres::PgPoolOptions;
-use std::{net::SocketAddr, time::Duration};
+use std::{
+    net::SocketAddr,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tracing::{info, warn, error};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use axum::{routing::get, Router};
 use store::PostgresCheckpointStore;
-use std::sync::Arc;
+use axum::http::StatusCode;
 use registries::npm::watcher::NpmWatcher;
 use registries::npm::worker::NpmWorker;
 use registries::npm::fetcher::NpmFetcher;
@@ -73,6 +80,8 @@ async fn main() -> Result<()> {
     });
 
     let builder = PrometheusBuilder::new();
+    let ready = Arc::new(AtomicBool::new(false));
+    let ready_for_server = ready.clone();
     let handle = match builder.install_recorder() {
         Ok(h) => h,
         Err(e) => {
@@ -82,7 +91,35 @@ async fn main() -> Result<()> {
     };
     
     tokio::spawn(async move {
-        let app = Router::new().route("/metrics", get(move || std::future::ready(handle.render())));
+        let app = Router::new()
+            .route("/metrics", get(move || std::future::ready(handle.render())))
+            .route("/health/live", get(|| async { "OK" }))
+            .route(
+                "/health/ready",
+                get({
+                    let ready = ready_for_server.clone();
+                    move || async move {
+                        if ready.load(Ordering::Relaxed) {
+                            (StatusCode::OK, "OK")
+                        } else {
+                            (StatusCode::SERVICE_UNAVAILABLE, "NOT_READY")
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/health",
+                get({
+                    let ready = ready_for_server.clone();
+                    move || async move {
+                        if ready.load(Ordering::Relaxed) {
+                            (StatusCode::OK, "OK")
+                        } else {
+                            (StatusCode::SERVICE_UNAVAILABLE, "NOT_READY")
+                        }
+                    }
+                }),
+            );
         let addr = SocketAddr::from(([0, 0, 0, 0], 9001));
         info!("Metrics server listening on {}", addr);
         match tokio::net::TcpListener::bind(addr).await {
@@ -105,6 +142,7 @@ async fn main() -> Result<()> {
 
     sqlx::migrate!("./migrations").run(&pool).await?;
     info!("Database migrations applied.");
+    ready.store(true, Ordering::Relaxed);
 
     // Handle different modes
     match cli.mode {

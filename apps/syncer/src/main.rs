@@ -10,9 +10,13 @@ mod memgraph_sink;
 mod qdrant_sink;
 mod risingwave_source;
 mod config;
+mod health;
 
 use anyhow::Result;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
@@ -89,6 +93,20 @@ async fn main() -> Result<()> {
     // Load configuration
     let config = Config::from_env()?;
     info!(?config, "Configuration loaded");
+
+    let ready = Arc::new(AtomicBool::new(false));
+    let health_port = std::env::var("HEALTH_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(9093);
+    {
+        let ready = ready.clone();
+        tokio::spawn(async move {
+            if let Err(e) = health::serve(health_port, ready).await {
+                error!(error = %e, "Health server failed");
+            }
+        });
+    }
     
     // Connect to RisingWave source
     let mut risingwave = RisingWaveSource::new(config.risingwave.clone()).await?;
@@ -116,6 +134,7 @@ async fn main() -> Result<()> {
     };
     
     info!("✅ All connections established");
+    ready.store(true, Ordering::Relaxed);
     
     // Create channel for sync events
     let (tx, mut rx) = mpsc::channel::<SyncEvent>(10000);

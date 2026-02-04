@@ -104,7 +104,7 @@ docker-logs:
 
 docker-build:
 	@echo "🔨 Building Docker images..."
-	docker-compose -f docker-compose.apps.yml build
+	docker-compose -f docker-compose.yml -f docker-compose.apps.yml build
 
 docker-pull:
 	@echo "📥 Pulling latest images..."
@@ -284,13 +284,13 @@ status:
 	@docker-compose -f docker-compose.yml ps
 	@echo ""
 	@echo "📊 Application Status:"
-	@docker-compose -f docker-compose.apps.yml ps 2>/dev/null || echo "App containers not running"
+	@docker-compose -f docker-compose.yml -f docker-compose.apps.yml ps 2>/dev/null || echo "App containers not running"
 
 logs-api:
-	docker-compose -f docker-compose.apps.yml logs -f api
+	docker-compose -f docker-compose.yml -f docker-compose.apps.yml logs -f api
 
 logs-analysis:
-	docker-compose -f docker-compose.apps.yml logs -f analysis
+	docker-compose -f docker-compose.yml -f docker-compose.apps.yml logs -f analysis
 
 logs-ingestion:
-	docker-compose -f docker-compose.apps.yml logs -f ingestion
+	docker-compose -f docker-compose.yml -f docker-compose.apps.yml logs -f ingestion

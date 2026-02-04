@@ -9,10 +9,14 @@
 mod config;
 mod consumer;
 mod dlq;
+mod health;
 mod writer;
 
 use anyhow::{Context, Result};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tokio::sync::watch;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -44,6 +48,20 @@ async fn main() -> Result<()> {
     // Create shutdown channel
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
+    let ready = Arc::new(AtomicBool::new(false));
+    let health_port = std::env::var("HEALTH_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(9092);
+    {
+        let ready = ready.clone();
+        tokio::spawn(async move {
+            if let Err(e) = health::serve(health_port, ready).await {
+                error!(error = %e, "Health server failed");
+            }
+        });
+    }
+
     // Initialize Vector Writer
     let writer_config = VectorWriterConfig {
         url: config.qdrant.url.clone(),
@@ -70,6 +88,8 @@ async fn main() -> Result<()> {
     let consumer = EventConsumer::new(&config.kafka, writer.clone(), dlq)
         .await
         .context("Failed to create Kafka consumer")?;
+
+    ready.store(true, Ordering::Relaxed);
 
     // Spawn consumer task
     let consumer_handle = {

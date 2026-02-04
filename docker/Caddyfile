@@ -1,0 +1,7 @@
+:80 {
+  encode zstd gzip
+
+  @graphql path /graphql* /agent/stream*
+  reverse_proxy @graphql api:8080
+  reverse_proxy frontend:3000
+}

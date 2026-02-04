@@ -26,12 +26,16 @@ mod config;
 mod consumer;
 mod embeddings;
 mod feature_extraction;
+mod health;
 mod onnx_model;
 
 use anyhow::{Context, Result};
 use config::Config;
 use consumer::{AnalysisEvent, EventConsumer, EventProducer, PackagePublishedEvent};
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
 use tokio::sync::{mpsc, watch, Mutex, Semaphore};
 use tokio::task::JoinSet;
@@ -69,6 +73,17 @@ async fn main() -> Result<()> {
     // Create shutdown channel for graceful shutdown
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
+    let ready = Arc::new(AtomicBool::new(false));
+    if config.service.metrics_enabled {
+        let port = config.service.metrics_port;
+        let ready = ready.clone();
+        tokio::spawn(async move {
+            if let Err(e) = health::serve(port, ready).await {
+                error!(error = %e, "Health server failed");
+            }
+        });
+    }
+
     // Spawn shutdown signal handler
     tokio::spawn(async move {
         tokio::signal::ctrl_c()
@@ -79,7 +94,7 @@ async fn main() -> Result<()> {
     });
 
     // Run the service
-    if let Err(e) = run_service(config, shutdown_rx).await {
+    if let Err(e) = run_service(config, shutdown_rx, ready).await {
         error!(error = %e, "Service failed");
         std::process::exit(1);
     }
@@ -111,7 +126,11 @@ fn init_tracing() {
 // SERVICE RUNNER
 // ═══════════════════════════════════════════════════════════════
 
-async fn run_service(config: Config, shutdown_rx: watch::Receiver<bool>) -> Result<()> {
+async fn run_service(
+    config: Config,
+    shutdown_rx: watch::Receiver<bool>,
+    ready: Arc<AtomicBool>,
+) -> Result<()> {
     // Initialize components
     info!("Initializing AST Parser Pool...");
     let parse_timeout = Duration::from_secs(config.workers.parse_timeout_secs);
@@ -148,8 +167,10 @@ async fn run_service(config: Config, shutdown_rx: watch::Receiver<bool>) -> Resu
     let producer = Arc::new(
         EventProducer::new(&config.kafka)
             .await
-            .context("Failed to create Kafka producer")?
+            .context("Failed to create Kafka producer")?,
     );
+
+    ready.store(true, Ordering::Relaxed);
 
     info!("Spawning worker pool...");
 

@@ -15,6 +15,9 @@ docker-compose up -d
 # Start with monitoring (Prometheus + Grafana)
 docker-compose --profile monitoring up -d
 
+# Start application services (requires infrastructure)
+docker-compose -f docker-compose.yml -f docker-compose.apps.yml up -d
+
 # Check service health
 docker-compose ps
 
@@ -40,6 +43,10 @@ cp .env.example .env
 - `POSTGRES_PASSWORD` - Change from default
 - `GF_SECURITY_ADMIN_PASSWORD` - Grafana admin password
 - `EXTERNAL_HOST` - Set to your public IP/domain for remote access
+- `PUBLIC_GRAPHQL_ENDPOINT` - Public GraphQL URL for the frontend
+- `PUBLIC_WS_ENDPOINT` - Public WebSocket URL for subscriptions
+- `PUBLIC_AGENT_STREAM_ENDPOINT` - Public agent stream endpoint
+- If using the bundled reverse proxy, set the public endpoints to `/graphql`, `/graphql/ws`, and `/agent/stream`
 - `GEMINI_API_KEY` - Your Gemini API key
 - `GEMINI_FLASH_MODEL` - Fast model (default: `gemini-3-flash-preview`)
 - `GEMINI_THINKING_MODEL` - Reasoning model (default: `gemini-3-pro-preview`)
@@ -146,12 +153,17 @@ For production/demo deployments:
 
 3. **Limit exposed ports** - Only expose what's needed externally
 
-4. **Enable monitoring**:
+4. **Start the production bundle** (includes reverse proxy):
+   ```bash
+   docker compose -f docker/docker-compose.prod.yml up -d
+   ```
+
+5. **Enable monitoring** (optional):
    ```bash
    docker-compose --profile monitoring up -d
    ```
 
-5. **Set up backups** for volumes:
+6. **Set up backups** for volumes:
    ```bash
    docker run --rm -v idp_postgres_data:/data -v $(pwd):/backup \
      alpine tar czf /backup/postgres-backup.tar.gz /data

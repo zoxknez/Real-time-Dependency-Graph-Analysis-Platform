@@ -44,7 +44,9 @@ docker-compose up -d
 docker-compose ps
 
 # Start all application services
-docker-compose -f docker-compose.apps.yml up -d
+docker-compose -f docker-compose.yml -f docker-compose.apps.yml up -d
+
+# Note: docker-compose.apps.yml must be combined with docker-compose.yml
 
 # Seed sample data (optional)
 python scripts/dev-seed.py

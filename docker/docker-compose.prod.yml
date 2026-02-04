@@ -3,6 +3,12 @@
 # ═══════════════════════════════════════════════════════════════
 # Usage: docker compose -f docker/docker-compose.prod.yml up -d
 
+x-logging-defaults: &logging_defaults
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # ═══════════════════════════════════════════════════════════════
   # API Service
@@ -14,7 +20,7 @@ services:
     image: realtime3u1/api:latest
     container_name: rt3u1-api
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       # Server
       - API_HOST=0.0.0.0
@@ -23,8 +29,6 @@ services:
 
       # Memgraph
       - MEMGRAPH_URI=bolt://memgraph:7687
-      - MEMGRAPH_USER=
-      - MEMGRAPH_PASSWORD=
 
       # Redis
       - REDIS_URL=redis://redis:6379
@@ -56,13 +60,24 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      redpanda:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     restart: unless-stopped
+    logging: *logging_defaults
     networks:
       - rt3u1-network
 
@@ -72,17 +87,116 @@ services:
   analysis:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.analysis
+      dockerfile: deploy/docker/Dockerfile.analysis
     image: realtime3u1/analysis:latest
     container_name: rt3u1-analysis
     environment:
       - RUST_LOG=info
       - ANALYSIS__KAFKA__BROKERS=redpanda:9092
+      - ANALYSIS__KAFKA__INPUT_TOPIC=domain.package.events.v1
+      - ANALYSIS__KAFKA__OUTPUT_TOPIC=domain.analysis.events.v1
+      - ANALYSIS__KAFKA__CONSUMER_GROUP=analysis-service-cg
+      - ANALYSIS__WORKERS__COUNT=4
+      - ANALYSIS__WORKERS__PARSE_TIMEOUT_SECS=30
       - ANALYSIS__EMBEDDING__PROVIDER=mock
+      - ANALYSIS__SERVICE__METRICS_ENABLED=true
+      - ANALYSIS__SERVICE__METRICS_PORT=9091
     depends_on:
       redpanda:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     restart: unless-stopped
+    logging: *logging_defaults
+    networks:
+      - rt3u1-network
+
+  # ═══════════════════════════════════════════════════════════════
+  # Ingestion Service
+  # ═══════════════════════════════════════════════════════════════
+  ingestion:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.ingestion
+    image: realtime3u1/ingestion:latest
+    container_name: rt3u1-ingestion
+    environment:
+      - RUST_LOG=info,ingestion=debug
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_TOPIC=domain.package.events.v1
+      - DATABASE_URL=postgres://${POSTGRES_USER:-idp}:${POSTGRES_PASSWORD:-idp_secret}@postgres:5432/${POSTGRES_DB:-inverse_deps}
+      - NPM_CRAWL_INTERVAL=300
+      - PYPI_CRAWL_INTERVAL=300
+      - CARGO_CRAWL_INTERVAL=300
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9001/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+    logging: *logging_defaults
+    networks:
+      - rt3u1-network
+
+  # ═══════════════════════════════════════════════════════════════
+  # Graph Writer Service
+  # ═══════════════════════════════════════════════════════════════
+  graph-writer:
+    build:
+      context: ..
+      dockerfile: deploy/docker/Dockerfile.graph-writer
+    image: realtime3u1/graph-writer:latest
+    container_name: rt3u1-graph-writer
+    environment:
+      - RUST_LOG=info,graph_writer=debug
+      - GRAPH_WRITER__KAFKA__BROKERS=redpanda:9092
+      - GRAPH_WRITER__KAFKA__TOPIC=domain.package.events.v1
+      - GRAPH_WRITER__KAFKA__GROUP_ID=graph-writer-cg
+      - GRAPH_WRITER__MEMGRAPH__URI=bolt://memgraph:7687
+    depends_on:
+      memgraph:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    restart: unless-stopped
+    logging: *logging_defaults
     networks:
       - rt3u1-network
 
@@ -92,19 +206,38 @@ services:
   vector-writer:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.vector-writer
+      dockerfile: deploy/docker/Dockerfile.vector-writer
     image: realtime3u1/vector-writer:latest
     container_name: rt3u1-vector-writer
     environment:
       - RUST_LOG=info
-      - KAFKA__BROKERS=redpanda:9092
-      - QDRANT__URL=http://qdrant:6334
+      - KAFKA_BROKERS=redpanda:9092
+      - KAFKA_TOPIC=domain.analysis.events.v1
+      - KAFKA_GROUP_ID=vector-writer-cg
+      - QDRANT_URL=http://qdrant:6334
+      - QDRANT_COLLECTION=package_embeddings
+      - QDRANT_DIMENSION=384
+      - HEALTH_PORT=9092
     depends_on:
       redpanda:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9092/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     restart: unless-stopped
+    logging: *logging_defaults
     networks:
       - rt3u1-network
 
@@ -114,7 +247,7 @@ services:
   syncer:
     build:
       context: ..
-      dockerfile: docker/Dockerfile.syncer
+      dockerfile: deploy/docker/Dockerfile.syncer
     image: realtime3u1/syncer:latest
     container_name: rt3u1-syncer
     environment:
@@ -122,6 +255,7 @@ services:
       - RISINGWAVE_URL=postgres://root@risingwave:4566/dev
       - MEMGRAPH_URL=bolt://memgraph:7687
       - QDRANT_URL=http://qdrant:6334
+      - HEALTH_PORT=9093
     depends_on:
       memgraph:
         condition: service_healthy
@@ -129,7 +263,21 @@ services:
         condition: service_healthy
       risingwave:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9093/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
     restart: unless-stopped
+    logging: *logging_defaults
     networks:
       - rt3u1-network
 
@@ -141,20 +289,49 @@ services:
       context: ..
       dockerfile: deploy/docker/Dockerfile.frontend
       args:
-        - NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8080/graphql
-        - NEXT_PUBLIC_WS_ENDPOINT=ws://localhost:8080/graphql/ws
-        - NEXT_PUBLIC_SEARCH_MODE=semantic
+        - NEXT_PUBLIC_GRAPHQL_ENDPOINT=${PUBLIC_GRAPHQL_ENDPOINT:-/graphql}
+        - NEXT_PUBLIC_WS_ENDPOINT=${PUBLIC_WS_ENDPOINT:-/graphql/ws}
+        - NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=${PUBLIC_AGENT_STREAM_ENDPOINT:-/agent/stream}
+        - NEXT_PUBLIC_SEARCH_MODE=${PUBLIC_SEARCH_MODE:-semantic}
     image: realtime3u1/frontend:latest
     container_name: rt3u1-frontend
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
-      - NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8080/graphql
-      - NEXT_PUBLIC_WS_ENDPOINT=ws://localhost:8080/graphql/ws
-      - NEXT_PUBLIC_SEARCH_MODE=semantic
+      - NEXT_PUBLIC_GRAPHQL_ENDPOINT=${PUBLIC_GRAPHQL_ENDPOINT:-/graphql}
+      - NEXT_PUBLIC_WS_ENDPOINT=${PUBLIC_WS_ENDPOINT:-/graphql/ws}
+      - NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=${PUBLIC_AGENT_STREAM_ENDPOINT:-/agent/stream}
+      - NEXT_PUBLIC_SEARCH_MODE=${PUBLIC_SEARCH_MODE:-semantic}
     depends_on:
       - api
+    init: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     restart: unless-stopped
+    logging: *logging_defaults
+    networks:
+      - rt3u1-network
+
+  # ----------------------------------------------------------------
+  # Edge Proxy (Caddy)
+  # ----------------------------------------------------------------
+  caddy:
+    image: caddy:2.8.4-alpine
+    container_name: rt3u1-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+      - frontend
+    restart: unless-stopped
+    logging: *logging_defaults
     networks:
       - rt3u1-network
 
@@ -162,27 +339,53 @@ services:
   # Infrastructure Services
   # ═══════════════════════════════════════════════════════════════
   memgraph:
-    image: memgraph/memgraph:latest
+    image: memgraph/memgraph-mage:latest
     container_name: rt3u1-memgraph
     ports:
-      - "7687:7687"
-      - "7444:7444"
+      - "127.0.0.1:7687:7687"
+      - "127.0.0.1:7444:7444"
     volumes:
       - memgraph-data:/var/lib/memgraph
+      - ../infra/memgraph/queries:/usr/lib/memgraph/query_modules:ro
+    environment:
+      - MEMGRAPH_QUERY_MODULES_DIRECTORY=/usr/lib/memgraph/query_modules
     healthcheck:
       test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    logging: *logging_defaults
+    networks:
+      - rt3u1-network
+
+  postgres:
+    image: postgres:16.2-alpine
+    container_name: rt3u1-postgres
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-idp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-idp_secret}
+      - POSTGRES_DB=${POSTGRES_DB:-inverse_deps}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-idp} -d ${POSTGRES_DB:-inverse_deps}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging: *logging_defaults
     networks:
       - rt3u1-network
 
   redis:
-    image: redis:7-alpine
+    image: redis:7.2.4-alpine
     container_name: rt3u1-redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     command: redis-server --appendonly yes
@@ -192,6 +395,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    logging: *logging_defaults
     networks:
       - rt3u1-network
 
@@ -199,8 +403,8 @@ services:
     image: qdrant/qdrant:v1.16.2
     container_name: rt3u1-qdrant
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     volumes:
       - qdrant-data:/qdrant/storage
     environment:
@@ -211,11 +415,12 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    logging: *logging_defaults
     networks:
       - rt3u1-network
 
   redpanda:
-    image: docker.redpanda.com/redpandadata/redpanda:latest
+    image: docker.redpanda.com/redpandadata/redpanda:v25.3.4
     container_name: rt3u1-redpanda
     command:
       - redpanda
@@ -224,40 +429,42 @@ services:
       - --memory 512M
       - --overprovisioned
       - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
-      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://${EXTERNAL_HOST:-localhost}:19092
       - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
-      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://${EXTERNAL_HOST:-localhost}:18082
     ports:
-      - "19092:19092"
-      - "18082:18082"
+      - "127.0.0.1:19092:19092"
+      - "127.0.0.1:18082:18082"
     volumes:
       - redpanda-data:/var/lib/redpanda/data
     healthcheck:
-      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      test: ["CMD", "rpk", "cluster", "health"]
       interval: 15s
       timeout: 10s
       retries: 5
       start_period: 30s
     restart: unless-stopped
+    logging: *logging_defaults
     networks:
       - rt3u1-network
 
   risingwave:
-    image: risingwavelabs/risingwave:v2.1.4-single
+    image: risingwavelabs/risingwave:v2.0.1
     container_name: rt3u1-risingwave
-    command: standalone --meta-opts=" --listen-addr 0.0.0.0:5690 --advertise-addr risingwave:5690 --dashboard-host 0.0.0.0:5691 --connector-rpc-endpoint 0.0.0.0:50051" --compute-opts=" --listen-addr 0.0.0.0:5688 --advertise-addr risingwave:5688 --async-stack-trace verbose" --frontend-opts=" --listen-addr 0.0.0.0:4566 --advertise-addr risingwave:4566" --compactor-opts=" --listen-addr 0.0.0.0:6660 --advertise-addr risingwave:6660"
+    command: playground
     ports:
-      - "4566:4566"
-      - "5691:5691"
+      - "127.0.0.1:4566:4566"
+      - "127.0.0.1:5691:5691"
     volumes:
       - risingwave-data:/risingwave/state_store
     healthcheck:
-      test: ["CMD", "psql", "-h", "localhost", "-p", "4566", "-U", "root", "-d", "dev", "-c", "SELECT 1"]
+      test: ["CMD-SHELL", "timeout 5 bash -c 'cat < /dev/null > /dev/tcp/localhost/4566' || exit 1"]
       interval: 15s
       timeout: 10s
       retries: 5
       start_period: 30s
     restart: unless-stopped
+    logging: *logging_defaults
     networks:
       - rt3u1-network
 
@@ -266,10 +473,13 @@ services:
 # ═══════════════════════════════════════════════════════════════
 volumes:
   memgraph-data:
+  postgres-data:
   redis-data:
   qdrant-data:
   redpanda-data:
   risingwave-data:
+  caddy-data:
+  caddy-config:
 
 # ═══════════════════════════════════════════════════════════════
 # Networks

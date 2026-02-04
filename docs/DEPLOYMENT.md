@@ -84,6 +84,17 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317
 ENVIRONMENT=production  # development, staging, production
 API_PORT=4001
 METRICS_PORT=9001
+
+# FRONTEND PUBLIC ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
+# If using the bundled Caddy reverse proxy, you can set:
+# PUBLIC_GRAPHQL_ENDPOINT=/graphql
+# PUBLIC_WS_ENDPOINT=/graphql/ws
+# PUBLIC_AGENT_STREAM_ENDPOINT=/agent/stream
+PUBLIC_GRAPHQL_ENDPOINT=https://your-domain.com/graphql
+PUBLIC_WS_ENDPOINT=wss://your-domain.com/graphql/ws
+PUBLIC_AGENT_STREAM_ENDPOINT=https://your-domain.com/agent/stream
+PUBLIC_SEARCH_MODE=semantic
 ```
 
 ### Optional Environment Variables
@@ -153,14 +164,11 @@ cargo watch -x 'run -p api'
 ### Production Docker Compose
 
 ```bash
-# Start all services
-docker-compose -f docker-compose.yml -f docker-compose.apps.yml up -d
-
-# With local embeddings (TEI)
-docker-compose -f docker-compose.yml -f docker-compose.apps.yml --profile embeddings up -d
+# Start all services (production bundle, includes reverse proxy)
+docker compose -f docker/docker-compose.prod.yml up -d
 
 # Check status
-docker-compose ps
+docker compose -f docker/docker-compose.prod.yml ps
 
 # View logs
 docker-compose logs -f api
@@ -170,7 +178,7 @@ docker-compose logs -f api
 
 ```bash
 # Build all images
-docker-compose -f docker-compose.apps.yml build
+docker-compose -f docker-compose.yml -f docker-compose.apps.yml build
 
 # Build specific image
 docker build -f deploy/docker/Dockerfile.api -t idp-api:latest .
