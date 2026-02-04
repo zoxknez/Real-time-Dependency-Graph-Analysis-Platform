@@ -4,4 +4,52 @@ services:
     environment:
       - ANALYSIS__EMBEDDING__PROVIDER=mock
       - ANALYSIS__EMBEDDING__MODEL_PATH=
+      - ANALYSIS__WORKERS__COUNT=1
     volumes: []
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+  api:
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+  frontend:
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+  ingestion:
+    environment:
+      - NPM_CRAWL_INTERVAL=3600
+      - PYPI_CRAWL_INTERVAL=3600
+      - CARGO_CRAWL_INTERVAL=3600
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+  graph-writer:
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+  vector-writer:
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+  syncer:
+    environment:
+      - SYNC_INTERVAL_SECS=300
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
