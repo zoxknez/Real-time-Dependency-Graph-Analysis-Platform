@@ -221,6 +221,7 @@ impl PackageLoader {
     }
 
     /// Load a single package by ID
+    #[allow(dead_code)]
     pub async fn load(&self, id: &str, tenant_id: &str) -> Option<Package> {
         let query = GraphQueries::get_package(tenant_id, id);
         match self.graph.query_one(query, None).await {

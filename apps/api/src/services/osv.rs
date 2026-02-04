@@ -55,6 +55,7 @@ pub struct OsvVulnerability {
 #[derive(Debug, Clone, Deserialize)]
 pub struct OsvReference {
     #[serde(default)]
+    #[allow(dead_code)]
     pub r#type: Option<String>,
     pub url: String,
 }
@@ -73,6 +74,7 @@ pub struct OsvPackageInfo {
     pub name: String,
     pub ecosystem: String,
     #[serde(default)]
+    #[allow(dead_code)]
     pub purl: Option<String>,
 }
 
