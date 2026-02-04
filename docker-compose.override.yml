@@ -1,0 +1,7 @@
+# Local overrides for quick testing (no model download required).
+services:
+  analysis:
+    environment:
+      - ANALYSIS__EMBEDDING__PROVIDER=mock
+      - ANALYSIS__EMBEDDING__MODEL_PATH=
+    volumes: []
