@@ -101,6 +101,7 @@ services:
       - "7444:7444" # HTTP API
     volumes:
       - memgraph_data:/var/lib/memgraph
+      - ./infra/memgraph/init:/usr/lib/memgraph/init-queries
       - ./infra/memgraph/queries:/usr/lib/memgraph/query_modules:ro
     environment:
       - MEMGRAPH_QUERY_MODULES_DIRECTORY=/usr/lib/memgraph/query_modules
@@ -282,39 +283,6 @@ services:
         max-file: "2"
     profiles:
       - monitoring
-
-  # ═══════════════════════════════════════════════════════════════
-  # 9. TEXT EMBEDDINGS INFERENCE (TEI) - HuggingFace
-  # ═══════════════════════════════════════════════════════════════
-  tei:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
-    container_name: idp-tei
-    restart: unless-stopped
-    ports:
-      - "8090:80"
-    volumes:
-      - ./models:/data:ro
-    environment:
-      - MODEL_ID=/data/all-MiniLM-L6-v2
-      - MAX_CONCURRENT_REQUESTS=128
-      - MAX_CLIENT_BATCH_SIZE=32
-    deploy:
-      resources:
-        limits:
-          memory: ${TEI_MEMORY_LIMIT:-1g}
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    healthcheck:
-      test: [ "CMD-SHELL", "curl -f http://localhost:80/health || exit 1" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-    profiles:
-      - embeddings
 
 volumes:
   redpanda_data:
