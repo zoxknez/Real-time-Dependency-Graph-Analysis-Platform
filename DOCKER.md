@@ -204,11 +204,11 @@ With monitoring profile enabled:
 | Component | Version | Notes |
 |-----------|---------|-------|
 | Redpanda | v25.3.4 | Kafka-compatible |
-| RisingWave | v2.7.0 | PostgreSQL protocol |
-| Memgraph | 3.0.0-mage-1.18 | Pinned for stability |
+| RisingWave | v2.0.1 | PostgreSQL protocol (playground mode) |
+| Memgraph | 2.18.1 | MAGE algorithms included |
 | Qdrant | v1.16.2 | Vector search |
-| PostgreSQL | 16-alpine | Latest stable |
-| Redis | 7-alpine | Latest stable |
+| PostgreSQL | 16.2-alpine | Latest stable |
+| Redis | 7.2.4-alpine | Latest stable |
 
 ## Support
 

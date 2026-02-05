@@ -36,4 +36,9 @@ COPY --from=builder /app/target/release/vector-writer /app/vector-writer
 RUN groupadd -r idp && useradd -r -g idp idp
 USER idp
 
+EXPOSE 9092
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:9092/health/ready || exit 1
+
 CMD ["/app/vector-writer"]

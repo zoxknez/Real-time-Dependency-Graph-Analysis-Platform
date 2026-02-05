@@ -250,15 +250,15 @@ docs-build:
 
 helm-lint:
 	@echo "🔍 Linting Helm charts..."
-	helm lint deploy/helm/depgraph
+	helm lint deploy/helm/idp
 
 helm-template:
 	@echo "📄 Rendering Helm templates..."
-	helm template depgraph deploy/helm/depgraph
+	helm template idp deploy/helm/idp
 
 helm-dry-run:
 	@echo "🔍 Helm dry run..."
-	helm install --dry-run --debug depgraph deploy/helm/depgraph
+	helm install --dry-run --debug idp deploy/helm/idp
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Utility Commands

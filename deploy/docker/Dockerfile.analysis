@@ -35,6 +35,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy binary
+
+# Copy binary
 COPY --from=builder /app/target/release/analysis /app/analysis
 
 # Create models directory
@@ -44,6 +46,11 @@ RUN mkdir -p /models
 RUN groupadd -r idp && useradd -r -g idp idp
 RUN chown -R idp:idp /app /models
 USER idp
+
+EXPOSE 9091
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:9091/health/ready || exit 1
 
 # Run
 CMD ["/app/analysis"]

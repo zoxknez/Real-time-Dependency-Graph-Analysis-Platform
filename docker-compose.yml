@@ -92,8 +92,8 @@ services:
   # 3. GRAPH DATABASE - Memgraph 2.14.1 + MAGE (Cypher)
   # ═══════════════════════════════════════════════════════════════
   memgraph:
-    # Latest tag is used because the specific 1.18-memgraph-2.14.1 tag is unavailable on Docker Hub.
-    image: memgraph/memgraph-mage:latest
+    # Memgraph 2.18.1 with MAGE algorithms (pinned for stability)
+    image: memgraph/memgraph-mage:2.18.1-memgraph-2.18.1
     container_name: idp-memgraph
     restart: unless-stopped
     ports:
@@ -114,7 +114,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole --host localhost --port 7687 || exit 1"]
+      test: [ "CMD-SHELL", "echo 'RETURN 1;' | mgconsole --host localhost --port 7687 || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -161,7 +161,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD-SHELL", "timeout 5 bash -c 'cat < /dev/null > /dev/tcp/localhost/6333' || exit 1"]
+      test: [ "CMD-SHELL", "timeout 5 bash -c 'cat < /dev/null > /dev/tcp/localhost/6333' || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -258,6 +258,7 @@ services:
       - "9090:9090"
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts:/etc/prometheus/alerts:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -307,7 +308,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:80/health || exit 1" ]
       interval: 10s
       timeout: 5s
       retries: 5
