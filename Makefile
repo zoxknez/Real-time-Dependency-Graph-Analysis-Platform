@@ -3,6 +3,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 
 .PHONY: help build test lint format clean docker-up docker-down seed quality-search quality-search-seeded
+APP_COMPOSE_FILES = -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.apps.yml
 
 # Default target
 help:
@@ -92,19 +93,19 @@ docker-up:
 
 docker-up-all:
 	@echo "🐳 Starting all services..."
-	docker-compose -f docker-compose.yml -f docker-compose.apps.yml up -d
+	docker-compose $(APP_COMPOSE_FILES) up -d
 
 docker-down:
 	@echo "🐳 Stopping all services..."
-	docker-compose -f docker-compose.yml -f docker-compose.apps.yml down
+	docker-compose $(APP_COMPOSE_FILES) down
 
 docker-logs:
 	@echo "📜 Tailing logs..."
-	docker-compose -f docker-compose.yml -f docker-compose.apps.yml logs -f
+	docker-compose $(APP_COMPOSE_FILES) logs -f
 
 docker-build:
 	@echo "🔨 Building Docker images..."
-	docker-compose -f docker-compose.yml -f docker-compose.apps.yml build
+	docker-compose $(APP_COMPOSE_FILES) build
 
 docker-pull:
 	@echo "📥 Pulling latest images..."
@@ -112,7 +113,7 @@ docker-pull:
 
 docker-ps:
 	@echo "📊 Service status..."
-	docker-compose -f docker-compose.yml -f docker-compose.apps.yml ps
+	docker-compose $(APP_COMPOSE_FILES) ps
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Database Commands
@@ -284,13 +285,13 @@ status:
 	@docker-compose -f docker-compose.yml ps
 	@echo ""
 	@echo "📊 Application Status:"
-	@docker-compose -f docker-compose.yml -f docker-compose.apps.yml ps 2>/dev/null || echo "App containers not running"
+	@docker-compose $(APP_COMPOSE_FILES) ps 2>/dev/null || echo "App containers not running"
 
 logs-api:
-	docker-compose -f docker-compose.yml -f docker-compose.apps.yml logs -f api
+	docker-compose $(APP_COMPOSE_FILES) logs -f api
 
 logs-analysis:
-	docker-compose -f docker-compose.yml -f docker-compose.apps.yml logs -f analysis
+	docker-compose $(APP_COMPOSE_FILES) logs -f analysis
 
 logs-ingestion:
-	docker-compose -f docker-compose.yml -f docker-compose.apps.yml logs -f ingestion
+	docker-compose $(APP_COMPOSE_FILES) logs -f ingestion

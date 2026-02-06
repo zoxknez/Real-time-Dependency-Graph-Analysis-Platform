@@ -339,7 +339,7 @@ services:
   # Infrastructure Services
   # ═══════════════════════════════════════════════════════════════
   memgraph:
-    image: memgraph/memgraph-mage:2.18.1-memgraph-2.18.1
+    image: memgraph/memgraph-mage:1.18.1-memgraph-2.18.1
     container_name: rt3u1-memgraph
     ports:
       - "127.0.0.1:7687:7687"

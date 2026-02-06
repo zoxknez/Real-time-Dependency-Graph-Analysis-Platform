@@ -22,6 +22,7 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY apps ./apps
 COPY packages ./packages
+COPY proto ./proto
 
 # Build in release mode
 RUN cargo build --release --bin syncer
@@ -32,6 +33,7 @@ FROM debian:bookworm-slim AS runtime
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    curl \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -54,9 +56,11 @@ ENV RISINGWAVE_URL=postgres://root@risingwave:4566/dev
 ENV MEMGRAPH_URL=bolt://memgraph:7687
 ENV QDRANT_URL=http://qdrant:6334
 
+EXPOSE 9093
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f http://localhost:9093/health/ready || exit 1
 
 # Run the service
 ENTRYPOINT ["/app/syncer"]

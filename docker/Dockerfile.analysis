@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y \
 COPY Cargo.toml Cargo.lock ./
 COPY apps ./apps
 COPY packages ./packages
+COPY proto ./proto
 
 # Build release binary
 RUN cargo build --release --bin analysis

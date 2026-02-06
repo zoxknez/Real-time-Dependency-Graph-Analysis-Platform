@@ -16,7 +16,7 @@ docker-compose up -d
 docker-compose --profile monitoring up -d
 
 # Start application services (requires infrastructure)
-docker-compose -f docker-compose.yml -f docker-compose.apps.yml up -d
+docker-compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.apps.yml up -d
 
 # Check service health
 docker-compose ps
@@ -57,11 +57,11 @@ cp .env.example .env
 | Service | Port(s) | Purpose | Health Check |
 |---------|---------|---------|--------------|
 | **Redpanda** | 19092, 18082, 18081 | Kafka-compatible messaging | `rpk cluster health` |
-| **Redpanda Console** | 8080 | Kafka UI | - |
+| **Redpanda Console** | 18080 | Kafka UI | - |
 | **RisingWave** | 4566, 5691 | Stream processing SQL | Dashboard health endpoint |
 | **Memgraph** | 7687, 7444 | Graph database | HTTP API |
 | **Memgraph Lab** | 3002 | Graph UI | - |
-| **Qdrant** | 6333, 6334 | Vector database | `/readyz` endpoint |
+| **Qdrant** | 6333, 6334 | Vector database | TCP port check |
 | **PostgreSQL** | 5432 | Metadata & audit | `pg_isready` |
 | **Redis** | 6379 | Caching | `PING` |
 | **Jaeger** | 16686, 4317, 4318 | Distributed tracing | - |
@@ -94,7 +94,7 @@ docker-compose logs -f --tail=100 memgraph
 
 All core services have robust healthchecks:
 - **Memgraph**: HTTP API check (port 7444)
-- **Qdrant**: `/readyz` endpoint
+- **Qdrant**: TCP health check on port 6333
 - **RisingWave**: Dashboard health endpoint
 - **Redpanda**: `rpk cluster health`
 - **PostgreSQL**: `pg_isready`
@@ -196,7 +196,7 @@ With monitoring profile enabled:
 - **Prometheus**: http://localhost:9090
 - **Grafana**: http://localhost:3001 (admin / [your password])
 - **Jaeger UI**: http://localhost:16686
-- **Redpanda Console**: http://localhost:8080
+- **Redpanda Console**: http://localhost:18080
 - **Memgraph Lab**: http://localhost:3002
 
 ## Version Compatibility

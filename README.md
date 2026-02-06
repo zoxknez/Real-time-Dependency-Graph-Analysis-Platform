@@ -44,7 +44,7 @@ docker-compose up -d
 docker-compose ps
 
 # Start all application services
-docker-compose -f docker-compose.yml -f docker-compose.apps.yml up -d
+docker-compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.apps.yml up -d
 
 # Note: docker-compose.apps.yml must be combined with docker-compose.yml
 
@@ -56,7 +56,7 @@ python scripts/dev-seed.py
 - 🌐 **GraphQL Playground**: http://localhost:8000/graphql
 - 📊 **Grafana Dashboards**: http://localhost:3001 (admin/admin)
 - 🗄️ **Memgraph Lab**: http://localhost:3002
-- 📬 **Redpanda Console**: http://localhost:8080
+- 📬 **Redpanda Console**: http://localhost:18080
 
 ### Option 2: Development Mode
 
@@ -195,7 +195,7 @@ query ImpactAnalysis {
 | Port  | Service           | URL                          |
 |-------|-------------------|------------------------------|
 | 19092 | Redpanda (Kafka)  | -                            |
-| 8080  | Redpanda Console  | http://localhost:8080        |
+| 18080 | Redpanda Console  | http://localhost:18080       |
 | 4566  | RisingWave        | postgres://root@localhost    |
 | 5691  | RisingWave Dashboard | http://localhost:5691     |
 | 7687  | Memgraph (Bolt)   | bolt://localhost:7687        |

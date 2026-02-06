@@ -21,6 +21,7 @@ FROM chef AS planner
 COPY Cargo.toml Cargo.lock ./
 COPY packages packages
 COPY apps apps
+COPY proto proto
 COPY tests tests
 
 RUN cargo chef prepare --recipe-path recipe.json
@@ -28,6 +29,7 @@ RUN cargo chef prepare --recipe-path recipe.json
 FROM chef AS cacher
 
 COPY --from=planner /app/recipe.json recipe.json
+COPY --from=planner /app/proto /app/proto
 RUN cargo chef cook --release --recipe-path recipe.json
 
 FROM chef AS builder
@@ -40,6 +42,7 @@ COPY --from=cacher /usr/local/cargo /usr/local/cargo
 COPY Cargo.toml Cargo.lock ./
 COPY packages packages
 COPY apps apps
+COPY proto proto
 COPY tests tests
 
 RUN cargo build --release -p api

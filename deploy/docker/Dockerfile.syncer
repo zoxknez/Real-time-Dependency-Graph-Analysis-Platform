@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y \
 COPY Cargo.toml Cargo.lock ./
 COPY packages packages
 COPY apps apps
+COPY proto proto
 COPY tests tests
 
 RUN cargo build --release -p syncer

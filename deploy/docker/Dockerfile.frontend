@@ -5,15 +5,13 @@ WORKDIR /tmp/app
 
 # Avoid permission errors writing npm cache
 ENV NPM_CONFIG_CACHE=/tmp/.npm
-ENV PNPM_HOME=/tmp/.pnpm
-ENV PNPM_STORE_PATH=/tmp/.pnpm-store
-RUN mkdir -p /tmp/.pnpm /tmp/.pnpm-store && chmod -R 777 /tmp/.pnpm /tmp/.pnpm-store
 
 # Copy package files
-COPY apps/frontend/package.json apps/frontend/pnpm-lock.yaml* ./
+COPY apps/frontend/package.json ./
+COPY apps/frontend/package-lock.json* ./
 
-# Install dependencies (store in /tmp to avoid permission issues) including devDeps for build
-RUN NODE_ENV=development npx -y pnpm@9 install --store-dir /tmp/.pnpm-store --frozen-lockfile || NODE_ENV=development npx -y pnpm@9 install --store-dir /tmp/.pnpm-store
+# Install dependencies (including devDeps needed for Next.js build)
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 # Copy source (excluding node_modules via .dockerignore)
 COPY apps/frontend/src ./src
@@ -22,6 +20,7 @@ COPY apps/frontend/next.config.js ./
 COPY apps/frontend/tailwind.config.ts ./
 COPY apps/frontend/postcss.config.js ./
 COPY apps/frontend/tsconfig.json ./
+COPY apps/frontend/next-env.d.ts ./
 
 # Public env (must be set at build time for Next.js client bundles)
 # Provide safe defaults so CI builds don't produce empty endpoints.
@@ -35,9 +34,9 @@ ENV NEXT_PUBLIC_WS_ENDPOINT=$NEXT_PUBLIC_WS_ENDPOINT
 ENV NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=$NEXT_PUBLIC_AGENT_STREAM_ENDPOINT
 ENV NEXT_PUBLIC_SEARCH_MODE=$NEXT_PUBLIC_SEARCH_MODE
 
-# Build (store-dir not needed here to avoid EACCES)
+# Build
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN npx -y pnpm@9 run build
+RUN npm run build
 
 # Runtime stage
 FROM node:20-alpine

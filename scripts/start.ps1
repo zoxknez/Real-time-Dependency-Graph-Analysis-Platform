@@ -8,7 +8,13 @@ param(
 $ErrorActionPreference = "Stop"
 
 $COMPOSE_FILE = "docker-compose.yml"
+$OVERRIDE_COMPOSE_FILE = "docker-compose.override.yml"
 $APPS_COMPOSE_FILE = "docker-compose.apps.yml"
+$AppComposeArgs = @("-f", $COMPOSE_FILE)
+if (Test-Path $OVERRIDE_COMPOSE_FILE) {
+    $AppComposeArgs += @("-f", $OVERRIDE_COMPOSE_FILE)
+}
+$AppComposeArgs += @("-f", $APPS_COMPOSE_FILE)
 
 Write-Host "🚀 Starting IDP Platform in $Mode mode..." -ForegroundColor Cyan
 
@@ -29,7 +35,7 @@ switch ($Mode) {
         Write-Host "  cd apps\api; cargo run"
         Write-Host ""
         Write-Host "  # Terminal 2: Frontend"
-        Write-Host "  cd apps\frontend; pnpm dev"
+        Write-Host "  cd apps\frontend; npm run dev"
         Write-Host ""
         Write-Host "  # Terminal 3: Ingestion (optional)"
         Write-Host "  cd apps\ingestion; cargo run"
@@ -38,12 +44,12 @@ switch ($Mode) {
     
     "prod" {
         Write-Host "Starting full production stack..." -ForegroundColor Blue
-        docker-compose -f $COMPOSE_FILE -f $APPS_COMPOSE_FILE up -d --build
+        docker-compose @AppComposeArgs up -d --build
     }
     
     "monitoring" {
         Write-Host "Starting with monitoring stack..." -ForegroundColor Blue
-        docker-compose -f $COMPOSE_FILE --profile monitoring -f $APPS_COMPOSE_FILE up -d --build
+        docker-compose @AppComposeArgs --profile monitoring up -d --build
     }
     
     default {
@@ -60,7 +66,7 @@ Write-Host "📊 Service URLs:" -ForegroundColor Cyan
 Write-Host "  - API:              http://localhost:8000/graphql"
 Write-Host "  - GraphQL Playground: http://localhost:8000/graphql"
 Write-Host "  - Frontend:         http://localhost:3000"
-Write-Host "  - Redpanda Console: http://localhost:8080"
+Write-Host "  - Redpanda Console: http://localhost:18080"
 Write-Host '  - Memgraph Lab:     http://localhost:3002'
 Write-Host "  - RisingWave:       http://localhost:5691"
 Write-Host "  - Qdrant:           http://localhost:6333"

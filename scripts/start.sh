@@ -6,7 +6,15 @@ set -e
 
 MODE="${1:-dev}"
 COMPOSE_FILE="docker-compose.yml"
+OVERRIDE_COMPOSE_FILE="docker-compose.override.yml"
 APPS_COMPOSE_FILE="docker-compose.apps.yml"
+APP_COMPOSE_ARGS=(-f "$COMPOSE_FILE")
+
+if [ -f "$OVERRIDE_COMPOSE_FILE" ]; then
+    APP_COMPOSE_ARGS+=(-f "$OVERRIDE_COMPOSE_FILE")
+fi
+
+APP_COMPOSE_ARGS+=(-f "$APPS_COMPOSE_FILE")
 
 echo "🚀 Starting IDP Platform in $MODE mode..."
 
@@ -33,7 +41,7 @@ case $MODE in
         echo "  cd apps/api && cargo run"
         echo ""
         echo "  # Terminal 2: Frontend"
-        echo "  cd apps/frontend && pnpm dev"
+        echo "  cd apps/frontend && npm run dev"
         echo ""
         echo "  # Terminal 3: Ingestion (optional)"
         echo "  cd apps/ingestion && cargo run"
@@ -42,12 +50,12 @@ case $MODE in
     
     "prod")
         echo -e "${BLUE}Starting full production stack...${NC}"
-        docker-compose -f $COMPOSE_FILE -f $APPS_COMPOSE_FILE up -d --build
+        docker-compose "${APP_COMPOSE_ARGS[@]}" up -d --build
         ;;
     
     "monitoring")
         echo -e "${BLUE}Starting with monitoring stack...${NC}"
-        docker-compose -f $COMPOSE_FILE --profile monitoring -f $APPS_COMPOSE_FILE up -d --build
+        docker-compose "${APP_COMPOSE_ARGS[@]}" --profile monitoring up -d --build
         ;;
     
     *)
@@ -64,7 +72,7 @@ echo "📊 Service URLs:"
 echo "  - API:              http://localhost:8000/graphql"
 echo "  - GraphQL Playground: http://localhost:8000/graphql"
 echo "  - Frontend:         http://localhost:3000"
-echo "  - Redpanda Console: http://localhost:8080"
+echo "  - Redpanda Console: http://localhost:18080"
 echo "  - Memgraph Lab:     http://localhost:3002"
 echo "  - RisingWave:       http://localhost:5691"
 echo "  - Qdrant:           http://localhost:6333"

@@ -93,7 +93,7 @@ services:
   # ═══════════════════════════════════════════════════════════════
   memgraph:
     # Memgraph 2.18.1 with MAGE algorithms (pinned for stability)
-    image: memgraph/memgraph-mage:2.18.1-memgraph-2.18.1
+    image: memgraph/memgraph-mage:1.18.1-memgraph-2.18.1
     container_name: idp-memgraph
     restart: unless-stopped
     ports:
