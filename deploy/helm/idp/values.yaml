@@ -1,38 +1,60 @@
-# ═══════════════════════════════════════════════════════════════
-# INVERSE DEPENDENCY PLATFORM - HELM VALUES
-# ═══════════════════════════════════════════════════════════════
+# Default values for IDP Platform
+# This is a YAML-formatted file.
 
+# Global configuration
 global:
-  environment: production
-  image:
-    registry: ghcr.io/example/idp
-    pullPolicy: IfNotPresent
-    tag: latest
-  imagePullSecrets:
-    - name: ghcr-pull-secret
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+  
+  # Multi-region configuration
+  multiRegion:
+    enabled: false
+    regions:
+      - name: us-east-1
+        primary: true
+        endpoint: https://api-us.idp.com
+      - name: eu-west-1
+        primary: false
+        endpoint: https://api-eu.idp.com
 
-# ═══════════════════════════════════════════════════════════════
-# API SERVICE
-# ═══════════════════════════════════════════════════════════════
+# API Gateway
 api:
   enabled: true
   replicaCount: 3
   
   image:
-    repository: api
-    tag: ""  # Uses global.image.tag if empty
+    repository: idp/api
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
   
   service:
     type: ClusterIP
     port: 8080
-    annotations: {}
+    targetPort: 8080
+  
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/rate-limit: "100"
+    hosts:
+      - host: api.idp.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: api-tls
+        hosts:
+          - api.idp.com
   
   resources:
     requests:
-      cpu: 250m
+      cpu: 500m
       memory: 512Mi
     limits:
-      cpu: 1000m
+      cpu: 2000m
       memory: 2Gi
   
   autoscaling:
@@ -43,90 +65,235 @@ api:
     targetMemoryUtilizationPercentage: 80
   
   env:
-    RUST_LOG: "info,api=debug"
-    RUST_BACKTRACE: "1"
+    - name: RUST_LOG
+      value: "info,api=debug"
+    - name: ENVIRONMENT
+      value: "production"
+    - name: RATE_LIMIT_RPM
+      value: "1000"
+    - name: MAX_COMPLEXITY
+      value: "1000"
+    - name: QUERY_TIMEOUT_SECS
+      value: "30"
   
-  # Health checks
-  livenessProbe:
-    httpGet:
-      path: /health
-      port: http
-    initialDelaySeconds: 10
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 3
-  
-  readinessProbe:
-    httpGet:
-      path: /health
-      port: http
-    initialDelaySeconds: 5
-    periodSeconds: 5
-    timeoutSeconds: 3
-    failureThreshold: 3
-  
-  # Pod disruption budget
-  podDisruptionBudget:
+  # Advanced features configuration
+  cache:
     enabled: true
-    minAvailable: 2
+    l1MaxSize: 10000
+    l2Ttl: 300
+    strategy: "WriteAround"
+    compression: true
   
-  # Node affinity and tolerations
-  nodeSelector: {}
-  tolerations: []
-  affinity:
-    podAntiAffinity:
-      preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
-          podAffinityTerm:
-            labelSelector:
-              matchLabels:
-                app.kubernetes.io/name: api
-            topologyKey: kubernetes.io/hostname
+  circuitBreaker:
+    enabled: true
+    failureThreshold: 0.5
+    timeout: 30
+    successThreshold: 5
+    maxConcurrent: 100
+  
+  streaming:
+    enabled: true
+    batchSize: 100
+    maxItems: 10000
+    bufferSize: 1000
 
-# ═══════════════════════════════════════════════════════════════
-# FRONTEND SERVICE
-# ═══════════════════════════════════════════════════════════════
+# Ingestion Service
+ingestion:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: idp/ingestion
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 1Gi
+    limits:
+      cpu: 4000m
+      memory: 4Gi
+  
+  env:
+    - name: RUST_LOG
+      value: "info,ingestion=debug"
+    - name: CRAWLER_WORKERS
+      value: "10"
+    - name: BATCH_SIZE
+      value: "100"
+
+# Graph Writer
+graphWriter:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: idp/graph-writer
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  
+  env:
+    - name: RUST_LOG
+      value: "info,graph_writer=debug"
+    - name: BATCH_SIZE
+      value: "100"
+
+# Vector Writer
+vectorWriter:
+  enabled: true
+  replicaCount: 2
+  
+  image:
+    repository: idp/vector-writer
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  
+  env:
+    - name: RUST_LOG
+      value: "info,vector_writer=debug"
+
+# Syncer
+syncer:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: idp/syncer
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  
+  env:
+    - name: RUST_LOG
+      value: "info,syncer=debug"
+
+# Frontend
 frontend:
   enabled: true
   replicaCount: 2
   
   image:
-    repository: frontend
-    tag: ""
+    repository: idp/frontend
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
   
   service:
     type: ClusterIP
     port: 3000
+    targetPort: 3000
+  
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: idp.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: frontend-tls
+        hosts:
+          - idp.com
   
   resources:
     requests:
-      cpu: 100m
+      cpu: 200m
       memory: 256Mi
     limits:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 1000m
+      memory: 1Gi
   
   autoscaling:
     enabled: true
     minReplicas: 2
     maxReplicas: 5
     targetCPUUtilizationPercentage: 70
-  
-  env:
-    NEXT_PUBLIC_GRAPHQL_ENDPOINT: ""  # Set via ingress
-    NEXT_PUBLIC_WS_ENDPOINT: ""
 
-# ═══════════════════════════════════════════════════════════════
-# INGESTION SERVICE
-# ═══════════════════════════════════════════════════════════════
-ingestion:
+# Redis (for caching and rate limiting)
+redis:
   enabled: true
-  replicaCount: 2
-  
-  image:
-    repository: ingestion
-    tag: ""
-  
+  architecture: replication
+  auth:
+    enabled: true
+    password: "changeme"
+  master:
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+  replica:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      size: 8Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+
+# PostgreSQL (for audit logs)
+postgresql:
+  enabled: true
+  auth:
+    username: idp
+    password: "changeme"
+    database: idp
+  primary:
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+
+# Kafka (for event streaming)
+kafka:
+  enabled: true
+  replicaCount: 3
+  auth:
+    clientProtocol: plaintext
+  persistence:
+    enabled: true
+    size: 50Gi
   resources:
     requests:
       cpu: 500m
@@ -134,63 +301,62 @@ ingestion:
     limits:
       cpu: 2000m
       memory: 4Gi
-  
-  env:
-    RUST_LOG: "info,ingestion=debug"
-    CRAWL_INTERVAL_SECONDS: "300"
+  zookeeper:
+    enabled: true
+    replicaCount: 3
+    persistence:
+      enabled: true
+      size: 8Gi
 
-# ═══════════════════════════════════════════════════════════════
-# GRAPH WRITER SERVICE
-# ═══════════════════════════════════════════════════════════════
-graphWriter:
-  enabled: true
-  replicaCount: 2
-  
-  image:
-    repository: graph-writer
-    tag: ""
-  
-  resources:
-    requests:
-      cpu: 250m
-      memory: 512Mi
-    limits:
-      cpu: 1000m
-      memory: 2Gi
-  
-  env:
-    RUST_LOG: "info,graph_writer=debug"
-    BATCH_SIZE: "1000"
-
-# ═══════════════════════════════════════════════════════════════
-# VECTOR WRITER SERVICE
-# ═══════════════════════════════════════════════════════════════
-vectorWriter:
+# Memgraph (graph database)
+memgraph:
   enabled: true
   replicaCount: 1
   
   image:
-    repository: vector-writer
-    tag: ""
+    repository: memgraph/memgraph
+    tag: "2.14.0"
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 7687
+  
+  persistence:
+    enabled: true
+    size: 100Gi
+    storageClass: ""
   
   resources:
     requests:
-      cpu: 500m
-      memory: 1Gi
-    limits:
       cpu: 2000m
       memory: 4Gi
+    limits:
+      cpu: 8000m
+      memory: 16Gi
+  
+  env:
+    - name: MEMGRAPH_LOG_LEVEL
+      value: "INFO"
 
-# ═══════════════════════════════════════════════════════════════
-# ANALYSIS SERVICE
-# ═══════════════════════════════════════════════════════════════
-analysis:
+# Qdrant (vector database)
+qdrant:
   enabled: true
-  replicaCount: 2
+  replicaCount: 1
   
   image:
-    repository: analysis
-    tag: ""
+    repository: qdrant/qdrant
+    tag: "v1.7.0"
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 6333
+  
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: ""
   
   resources:
     requests:
@@ -200,140 +366,116 @@ analysis:
       cpu: 4000m
       memory: 8Gi
 
-# ═══════════════════════════════════════════════════════════════
-# SYNCER SERVICE
-# ═══════════════════════════════════════════════════════════════
-syncer:
+# RisingWave (streaming SQL)
+risingwave:
   enabled: true
   replicaCount: 1
   
   image:
-    repository: syncer
-    tag: ""
+    repository: risingwavelabs/risingwave
+    tag: "v1.5.0"
+    pullPolicy: IfNotPresent
+  
+  service:
+    type: ClusterIP
+    port: 4566
+  
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: ""
   
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
-    limits:
       cpu: 1000m
       memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
 
-# ═══════════════════════════════════════════════════════════════
-# INGRESS
-# ═══════════════════════════════════════════════════════════════
-ingress:
+# Monitoring
+monitoring:
   enabled: true
-  className: nginx
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    nginx.ingress.kubernetes.io/websocket-services: "api"
-    cert-manager.io/cluster-issuer: letsencrypt-prod
   
-  hosts:
-    - host: idp.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-          service: frontend
-        - path: /graphql
-          pathType: Prefix
-          service: api
-        - path: /health
-          pathType: Exact
-          service: api
-  
-  tls:
-    - secretName: idp-tls
-      hosts:
-        - idp.example.com
-
-# ═══════════════════════════════════════════════════════════════
-# EXTERNAL DEPENDENCIES
-# ═══════════════════════════════════════════════════════════════
-
-# Redis (Bitnami chart)
-redis:
-  enabled: true
-  architecture: standalone
-  auth:
+  prometheus:
     enabled: true
-    existingSecret: redis-secret
-    existingSecretPasswordKey: password
-  master:
+    retention: 15d
+    storageSize: 50Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 8Gi
+  
+  grafana:
+    enabled: true
+    adminPassword: "changeme"
     persistence:
       enabled: true
       size: 10Gi
     resources:
       requests:
-        cpu: 100m
+        cpu: 200m
         memory: 256Mi
       limits:
-        cpu: 500m
+        cpu: 1000m
         memory: 1Gi
+  
+  alertmanager:
+    enabled: true
+    config:
+      global:
+        resolve_timeout: 5m
+      route:
+        group_by: ['alertname', 'cluster', 'service']
+        group_wait: 10s
+        group_interval: 10s
+        repeat_interval: 12h
+        receiver: 'slack'
+      receivers:
+        - name: 'slack'
+          slack_configs:
+            - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+              channel: '#alerts'
+              title: 'IDP Platform Alert'
 
-# Memgraph (external or in-cluster)
-memgraph:
-  enabled: false  # Usually external for production
-  external:
-    host: memgraph.example.com
-    port: 7687
-    username: memgraph
-    existingSecret: memgraph-secret
-
-# Qdrant (external or in-cluster)
-qdrant:
+# Service Mesh (optional)
+serviceMesh:
   enabled: false
-  external:
-    host: qdrant.example.com
-    port: 6334
-    apiKey: ""
-    existingSecret: qdrant-secret
+  type: istio  # or linkerd
 
-# Kafka/Redpanda (external or in-cluster)
-kafka:
-  enabled: false
-  external:
-    brokers: "kafka.example.com:9092"
-    existingSecret: kafka-secret
-
-# RisingWave (external)
-risingwave:
-  enabled: false
-  external:
-    host: risingwave.example.com
-    port: 4566
-    existingSecret: risingwave-secret
-
-# ═══════════════════════════════════════════════════════════════
-# MONITORING
-# ═══════════════════════════════════════════════════════════════
-monitoring:
+# Network Policies
+networkPolicies:
   enabled: true
-  
-  serviceMonitor:
-    enabled: true
-    namespace: monitoring
-    interval: 30s
-    scrapeTimeout: 10s
-  
-  prometheusRule:
-    enabled: true
-    namespace: monitoring
 
-# ═══════════════════════════════════════════════════════════════
-# SECRETS (use external-secrets or sealed-secrets in production)
-# ═══════════════════════════════════════════════════════════════
-secrets:
-  # Create secrets from values (NOT recommended for production)
-  create: false
-  
-  # External secrets operator config
-  externalSecrets:
-    enabled: true
-    refreshInterval: 1h
-    secretStoreRef:
-      name: vault-backend
-      kind: ClusterSecretStore
+# Pod Security Policies
+podSecurityPolicy:
+  enabled: true
+
+# RBAC
+rbac:
+  create: true
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Node Selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Made with Bob

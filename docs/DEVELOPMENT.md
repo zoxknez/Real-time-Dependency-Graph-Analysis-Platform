@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Rust** 1.75+ with `rustup`
+- **Rust** 1.85+ with `rustup`
 - **Node.js** 20+ with `pnpm`
 - **Docker** & Docker Compose
 - **Protocol Buffers** compiler (`protoc`)

@@ -1,0 +1,477 @@
+{
+  "dashboard": {
+    "title": "IDP - Advanced Features",
+    "tags": ["idp", "cache", "circuit-breaker", "streaming"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Cache Hit Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [
+          {
+            "expr": "rate(cache_hits_total{tier=\"l1\"}[5m]) / (rate(cache_hits_total{tier=\"l1\"}[5m]) + rate(cache_misses_total{tier=\"l1\"}[5m])) * 100",
+            "legendFormat": "L1 Hit Rate",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(cache_hits_total{tier=\"l2\"}[5m]) / (rate(cache_hits_total{tier=\"l2\"}[5m]) + rate(cache_misses_total{tier=\"l2\"}[5m])) * 100",
+            "legendFormat": "L2 Hit Rate",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "percent",
+            "label": "Hit Rate",
+            "min": 0,
+            "max": 100
+          }
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [70],
+                "type": "lt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "params": [],
+                "type": "avg"
+              },
+              "type": "query"
+            }
+          ],
+          "executionErrorState": "alerting",
+          "frequency": "1m",
+          "handler": 1,
+          "name": "Low Cache Hit Rate",
+          "noDataState": "no_data",
+          "notifications": []
+        }
+      },
+      {
+        "id": 2,
+        "title": "Cache Size",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [
+          {
+            "expr": "cache_size_bytes{tier=\"l1\"}",
+            "legendFormat": "L1 Size",
+            "refId": "A"
+          },
+          {
+            "expr": "cache_size_bytes{tier=\"l2\"}",
+            "legendFormat": "L2 Size",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "bytes",
+            "label": "Size"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Cache Operations Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [
+          {
+            "expr": "rate(cache_operations_total{operation=\"get\"}[5m])",
+            "legendFormat": "Get - {{tier}}",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(cache_operations_total{operation=\"set\"}[5m])",
+            "legendFormat": "Set - {{tier}}",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(cache_operations_total{operation=\"delete\"}[5m])",
+            "legendFormat": "Delete - {{tier}}",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "ops",
+            "label": "Operations/sec"
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Circuit Breaker State",
+        "type": "stat",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {
+            "expr": "circuit_breaker_state",
+            "legendFormat": "{{service}}",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "background",
+          "justifyMode": "auto",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "type": "value",
+                "options": {
+                  "0": {
+                    "text": "CLOSED",
+                    "color": "green"
+                  },
+                  "1": {
+                    "text": "OPEN",
+                    "color": "red"
+                  },
+                  "2": {
+                    "text": "HALF-OPEN",
+                    "color": "yellow"
+                  }
+                }
+              }
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 1, "color": "red"},
+                {"value": 2, "color": "yellow"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Circuit Breaker Error Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+        "targets": [
+          {
+            "expr": "circuit_breaker_error_rate",
+            "legendFormat": "{{service}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "percentunit",
+            "label": "Error Rate",
+            "min": 0,
+            "max": 1
+          }
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {
+                "params": [0.5],
+                "type": "gt"
+              },
+              "operator": {
+                "type": "and"
+              },
+              "query": {
+                "params": ["A", "5m", "now"]
+              },
+              "reducer": {
+                "params": [],
+                "type": "avg"
+              },
+              "type": "query"
+            }
+          ],
+          "executionErrorState": "alerting",
+          "frequency": "1m",
+          "handler": 1,
+          "name": "High Error Rate",
+          "noDataState": "no_data",
+          "notifications": []
+        }
+      },
+      {
+        "id": 6,
+        "title": "Circuit Breaker Requests",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+        "targets": [
+          {
+            "expr": "rate(circuit_breaker_requests_total{result=\"success\"}[5m])",
+            "legendFormat": "Success - {{service}}",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(circuit_breaker_requests_total{result=\"failure\"}[5m])",
+            "legendFormat": "Failure - {{service}}",
+            "refId": "B"
+          },
+          {
+            "expr": "rate(circuit_breaker_rejected_requests[5m])",
+            "legendFormat": "Rejected - {{service}}",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "reqps",
+            "label": "Requests/sec"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Circuit Breaker Concurrent Requests",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+        "targets": [
+          {
+            "expr": "circuit_breaker_concurrent_requests",
+            "legendFormat": "{{service}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "Concurrent Requests"
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Circuit Breaker State Changes",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+        "targets": [
+          {
+            "expr": "increase(circuit_breaker_state_changes[1h])",
+            "legendFormat": "{{service}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "State Changes/hour"
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Stream Throughput",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+        "targets": [
+          {
+            "expr": "rate(stream_batches_total[5m])",
+            "legendFormat": "Batches/sec - {{query}}",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(stream_items_total[5m])",
+            "legendFormat": "Items/sec - {{query}}",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "Throughput"
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Stream Duration",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(stream_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95 - {{query}}",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(stream_duration_seconds_bucket[5m]))",
+            "legendFormat": "p99 - {{query}}",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "s",
+            "label": "Duration"
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Stream Memory Usage",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40},
+        "targets": [
+          {
+            "expr": "stream_memory_bytes",
+            "legendFormat": "{{query}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "bytes",
+            "label": "Memory"
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Stream Batch Size",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40},
+        "targets": [
+          {
+            "expr": "stream_batch_size",
+            "legendFormat": "{{query}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {
+            "format": "short",
+            "label": "Batch Size"
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "title": "Cache Compression Ratio",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 48},
+        "targets": [
+          {
+            "expr": "cache_compressed_bytes / cache_uncompressed_bytes",
+            "legendFormat": "Compression Ratio",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "textMode": "value"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percentunit",
+            "decimals": 2
+          }
+        }
+      },
+      {
+        "id": 14,
+        "title": "Cache Evictions",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 48},
+        "targets": [
+          {
+            "expr": "rate(cache_evictions_total[5m])",
+            "legendFormat": "Evictions/sec",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "justifyMode": "auto",
+          "textMode": "value"
+        }
+      },
+      {
+        "id": 15,
+        "title": "Circuit Breaker Health",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 48},
+        "targets": [
+          {
+            "expr": "sum(circuit_breaker_state == 0) / count(circuit_breaker_state) * 100",
+            "legendFormat": "Healthy %",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "background",
+          "justifyMode": "auto",
+          "textMode": "value"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 50, "color": "yellow"},
+                {"value": 80, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 16,
+        "title": "Stream Success Rate",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 48},
+        "targets": [
+          {
+            "expr": "rate(stream_success_total[5m]) / (rate(stream_success_total[5m]) + rate(stream_errors_total[5m])) * 100",
+            "legendFormat": "Success Rate",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "background",
+          "justifyMode": "auto",
+          "textMode": "value"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 95, "color": "yellow"},
+                {"value": 99, "color": "green"}
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}

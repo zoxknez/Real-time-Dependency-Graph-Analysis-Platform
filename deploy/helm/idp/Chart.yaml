@@ -1,24 +1,34 @@
 apiVersion: v2
 name: idp
-description: Inverse Dependency Platform - Enterprise Helm Chart
+description: Inverse Dependencies Platform - Real-time dependency graph analysis
 type: application
 version: 1.0.0
-appVersion: "0.1.0"
-
-home: https://github.com/example/idp
+appVersion: "1.0.0"
+keywords:
+  - dependency-analysis
+  - security
+  - supply-chain
+  - graph-database
+  - ai-agent
+home: https://github.com/your-org/idp
 sources:
-  - https://github.com/example/idp
-
+  - https://github.com/your-org/idp
 maintainers:
   - name: IDP Team
-    email: team@example.com
-
+    email: team@idp.com
+icon: https://idp.com/logo.png
 dependencies:
   - name: redis
     version: "18.x.x"
-    repository: "https://charts.bitnami.com/bitnami"
+    repository: https://charts.bitnami.com/bitnami
     condition: redis.enabled
-  - name: memgraph
-    version: "0.1.x"
-    repository: "file://../memgraph"
-    condition: memgraph.enabled
+  - name: postgresql
+    version: "13.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: kafka
+    version: "26.x.x"
+    repository: https://charts.bitnami.com/bitnami
+    condition: kafka.enabled
+
+# Made with Bob

@@ -27,8 +27,8 @@ This project includes an **Autonomous Security Agent** powered by Gemini 3 funct
 ### Prerequisites
 
 - Docker & Docker Compose v2.20+
-- Rust 1.75+ (for development)
-- Node.js 18+ (for frontend)
+- Rust 1.85+ (for development, edition 2024)
+- Node.js 22+ (for frontend)
 
 ### Option 1: Full Stack (Docker)
 
@@ -139,12 +139,12 @@ query ImpactAnalysis {
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │    Ingestion    │───▶│    Redpanda     │◀───│    Analysis     │
-│  (npm/PyPI/Cargo)│    │   (v25.3.4)     │    │  (Tree-sitter)  │
+│  (npm/PyPI/Cargo)│    │   (v26.1.5)     │    │  (Tree-sitter)  │
 └─────────────────┘    └────────┬────────┘    └─────────────────┘
                                 │
                        ┌────────▼────────┐
                        │   RisingWave    │
-                       │    (v2.7.0)     │
+                       │    (v2.8.1)     │
                        └────────┬────────┘
                                 │
          ┌──────────────────────┼──────────────────────┐
@@ -218,13 +218,18 @@ docker-compose --profile monitoring up -d
 
 | Layer | Technology | Version |
 |-------|------------|---------|
-| Messaging | Redpanda | v25.3.4 |
-| Stream SQL | RisingWave | v2.7.0 |
-| Graph DB | Memgraph | v3.0 |
-| Vector DB | Qdrant | v1.16.2 |
-| Metadata | PostgreSQL | 16 |
-| Tracing | Jaeger | 1.54 |
+| Messaging | Redpanda | v26.1.5 |
+| Stream SQL | RisingWave | v2.8.1 |
+| Graph DB | Memgraph | v3.9.0 |
+| Vector DB | Qdrant | v1.17.0 |
+| Metadata | PostgreSQL | 17 |
+| Caching | Redis | 8.6.0 |
+| Tracing | Jaeger | v2.17.0 |
+| Monitoring | Prometheus | v3.11.2 |
+| Dashboards | Grafana | 13.0.1 |
 | Backend | Rust + Axum | 0.8 |
+| Frontend | Next.js | 16.2.3 |
+
 ## 📁 Project Structure
 
 ```

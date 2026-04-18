@@ -1,9 +1,9 @@
 services:
   # ═══════════════════════════════════════════════════════════════
-  # 1. MESSAGING BACKBONE - Redpanda v25.3.4 (Kafka-compatible)
+  # 1. MESSAGING BACKBONE - Redpanda v26.1.5 (Kafka-compatible)
   # ═══════════════════════════════════════════════════════════════
   redpanda:
-    image: docker.redpanda.com/redpandadata/redpanda:v25.3.4
+    image: docker.redpanda.com/redpandadata/redpanda:v26.1.5
     container_name: idp-redpanda
     restart: unless-stopped
     command:
@@ -41,7 +41,7 @@ services:
       retries: 5
 
   redpanda-console:
-    image: docker.redpanda.com/redpandadata/console:v3.0.0
+    image: docker.redpanda.com/redpandadata/console:v3.7.1
     container_name: idp-redpanda-console
     restart: unless-stopped
     depends_on:
@@ -60,10 +60,10 @@ services:
         max-file: "3"
 
   # ═══════════════════════════════════════════════════════════════
-  # 2. STREAM PROCESSING - RisingWave v2.0.1 (Streaming SQL)
+  # 2. STREAM PROCESSING - RisingWave v2.8.1 (Streaming SQL)
   # ═══════════════════════════════════════════════════════════════
   risingwave:
-    image: risingwavelabs/risingwave:v2.0.1
+    image: risingwavelabs/risingwave:v2.8.1
     container_name: idp-risingwave
     restart: unless-stopped
     command: playground
@@ -89,11 +89,11 @@ services:
       start_period: 30s
 
   # ═══════════════════════════════════════════════════════════════
-  # 3. GRAPH DATABASE - Memgraph 2.14.1 + MAGE (Cypher)
+  # 3. GRAPH DATABASE - Memgraph 3.9.0 + MAGE (Cypher)
   # ═══════════════════════════════════════════════════════════════
   memgraph:
-    # Memgraph 2.18.1 with MAGE algorithms (pinned for stability)
-    image: memgraph/memgraph-mage:1.18.1-memgraph-2.18.1
+    # Memgraph 3.9.0 with MAGE algorithms (pinned for stability)
+    image: memgraph/memgraph-mage:3.9.0
     container_name: idp-memgraph
     restart: unless-stopped
     ports:
@@ -122,7 +122,7 @@ services:
       start_period: 30s
 
   memgraph-lab:
-    image: memgraph/lab:2.14.0
+    image: memgraph/lab:3.9.0
     container_name: idp-memgraph-lab
     restart: unless-stopped
     depends_on:
@@ -139,10 +139,10 @@ services:
         max-file: "2"
 
   # ═══════════════════════════════════════════════════════════════
-  # 4. VECTOR DATABASE - Qdrant v1.16.2
+  # 4. VECTOR DATABASE - Qdrant v1.17.0
   # ═══════════════════════════════════════════════════════════════
   qdrant:
-    image: qdrant/qdrant:v1.16.2
+    image: qdrant/qdrant:v1.17.0
     container_name: idp-qdrant
     restart: unless-stopped
     ports:
@@ -169,10 +169,10 @@ services:
       start_period: 10s
 
   # ═══════════════════════════════════════════════════════════════
-  # 5. METADATA & AUDIT - PostgreSQL 16.2
+  # 5. METADATA & AUDIT - PostgreSQL 17.9
   # ═══════════════════════════════════════════════════════════════
   postgres:
-    image: postgres:16.2-alpine
+    image: postgres:17.9-alpine
     container_name: idp-postgres
     restart: unless-stopped
     ports:
@@ -200,11 +200,11 @@ services:
       retries: 5
 
   # ═══════════════════════════════════════════════════════════════
-  # 6. CACHING - Redis 7.2.4
+  # 6. CACHING - Valkey 8.0 (Redis-compatible, BSD license)
   # ═══════════════════════════════════════════════════════════════
   redis:
-    image: redis:7.2.4-alpine
-    container_name: idp-redis
+    image: valkey/valkey:8.0-alpine
+    container_name: idp-valkey
     restart: unless-stopped
     ports:
       - "6379:6379"
@@ -227,18 +227,17 @@ services:
       retries: 5
 
   # ═══════════════════════════════════════════════════════════════
-  # 7. DISTRIBUTED TRACING - Jaeger (OpenTelemetry)
+  # 7. DISTRIBUTED TRACING - Jaeger v2 (OpenTelemetry native)
   # ═══════════════════════════════════════════════════════════════
   jaeger:
-    image: jaegertracing/all-in-one:1.54
+    image: jaegertracing/jaeger:2.17.0
     container_name: idp-jaeger
     restart: unless-stopped
     ports:
       - "16686:16686" # UI
       - "4317:4317" # OTLP gRPC
       - "4318:4318" # OTLP HTTP
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
+    # Jaeger v2 has OTLP enabled by default (OpenTelemetry Collector based)
     deploy:
       resources:
         limits:
@@ -253,7 +252,7 @@ services:
   # 8. MONITORING (Optional - use: docker-compose --profile monitoring up)
   # ═══════════════════════════════════════════════════════════════
   prometheus:
-    image: prom/prometheus:v3.0.1
+    image: prom/prometheus:v3.11.2
     container_name: idp-prometheus
     ports:
       - "9090:9090"
@@ -268,7 +267,7 @@ services:
       - monitoring
 
   grafana:
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:13.0.1
     container_name: idp-grafana
     ports:
       - "3001:3000"

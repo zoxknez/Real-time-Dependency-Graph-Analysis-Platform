@@ -339,7 +339,7 @@ services:
   # Infrastructure Services
   # ═══════════════════════════════════════════════════════════════
   memgraph:
-    image: memgraph/memgraph-mage:1.18.1-memgraph-2.18.1
+    image: memgraph/memgraph-mage:3.9.0
     container_name: rt3u1-memgraph
     ports:
       - "127.0.0.1:7687:7687"
@@ -360,7 +360,7 @@ services:
       - rt3u1-network
 
   postgres:
-    image: postgres:16.2-alpine
+    image: postgres:17.9-alpine
     container_name: rt3u1-postgres
     ports:
       - "127.0.0.1:5432:5432"
@@ -382,7 +382,7 @@ services:
       - rt3u1-network
 
   redis:
-    image: redis:7.2.4-alpine
+    image: redis:8.6.0-alpine
     container_name: rt3u1-redis
     ports:
       - "127.0.0.1:6379:6379"
@@ -400,7 +400,7 @@ services:
       - rt3u1-network
 
   qdrant:
-    image: qdrant/qdrant:v1.16.2
+    image: qdrant/qdrant:v1.17.0
     container_name: rt3u1-qdrant
     ports:
       - "127.0.0.1:6333:6333"
@@ -420,7 +420,7 @@ services:
       - rt3u1-network
 
   redpanda:
-    image: docker.redpanda.com/redpandadata/redpanda:v25.3.4
+    image: docker.redpanda.com/redpandadata/redpanda:v26.1.5
     container_name: rt3u1-redpanda
     command:
       - redpanda
@@ -449,7 +449,7 @@ services:
       - rt3u1-network
 
   risingwave:
-    image: risingwavelabs/risingwave:v2.0.1
+    image: risingwavelabs/risingwave:v2.8.1
     container_name: rt3u1-risingwave
     command: playground
     ports:

@@ -1,68 +1,85 @@
-# Build stage
-FROM node:20-alpine AS builder
+# Multi-stage build for Next.js Frontend
+# Based on Next.js Docker best practices: https://nextjs.org/docs/deployment#docker-image
 
-WORKDIR /tmp/app
+# ═══════════════════════════════════════════════════════════════
+# Stage 1: Dependencies
+# ═══════════════════════════════════════════════════════════════
+FROM node:22-alpine AS deps
 
-# Avoid permission errors writing npm cache
-ENV NPM_CONFIG_CACHE=/tmp/.npm
+# Install libc6-compat for Alpine compatibility
+RUN apk add --no-cache libc6-compat
+
+WORKDIR /app
 
 # Copy package files
-COPY apps/frontend/package.json ./
-COPY apps/frontend/package-lock.json* ./
+COPY apps/frontend/package.json apps/frontend/package-lock.json* ./
 
-# Install dependencies (including devDeps needed for Next.js build)
-RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
+# Install dependencies
+RUN npm ci --only=production
 
-# Copy source (excluding node_modules via .dockerignore)
-COPY apps/frontend/src ./src
-COPY apps/frontend/public ./public
-COPY apps/frontend/next.config.js ./
-COPY apps/frontend/tailwind.config.ts ./
-COPY apps/frontend/postcss.config.js ./
-COPY apps/frontend/tsconfig.json ./
-COPY apps/frontend/next-env.d.ts ./
+# ═══════════════════════════════════════════════════════════════
+# Stage 2: Builder
+# ═══════════════════════════════════════════════════════════════
+FROM node:22-alpine AS builder
 
-# Public env (must be set at build time for Next.js client bundles)
-# Provide safe defaults so CI builds don't produce empty endpoints.
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy application code
+COPY apps/frontend/ ./
+
+# Build arguments for environment variables
 ARG NEXT_PUBLIC_GRAPHQL_ENDPOINT=http://localhost:8000/graphql
 ARG NEXT_PUBLIC_WS_ENDPOINT=ws://localhost:8000/graphql/ws
 ARG NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=http://localhost:8000/agent/stream
-ARG NEXT_PUBLIC_SEARCH_MODE=name
+ARG NEXT_PUBLIC_SEARCH_MODE=semantic
 
+# Set environment variables for build
 ENV NEXT_PUBLIC_GRAPHQL_ENDPOINT=$NEXT_PUBLIC_GRAPHQL_ENDPOINT
 ENV NEXT_PUBLIC_WS_ENDPOINT=$NEXT_PUBLIC_WS_ENDPOINT
 ENV NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=$NEXT_PUBLIC_AGENT_STREAM_ENDPOINT
 ENV NEXT_PUBLIC_SEARCH_MODE=$NEXT_PUBLIC_SEARCH_MODE
-
-# Build
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+
+# Build Next.js application
 RUN npm run build
 
-# Runtime stage
-FROM node:20-alpine
+# ═══════════════════════════════════════════════════════════════
+# Stage 3: Runner
+# ═══════════════════════════════════════════════════════════════
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
-# Avoid permission errors writing npm cache
-ENV NPM_CONFIG_CACHE=/tmp/.npm
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
 
-# Copy built app into a subdir to avoid node_modules path conflicts
-COPY --from=builder /tmp/app/.next/standalone ./standalone
-COPY --from=builder /tmp/app/.next/static ./standalone/.next/static
-COPY --from=builder /tmp/app/public ./standalone/public
+# Copy necessary files from builder
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 
-WORKDIR /app/standalone
+# Set ownership
+RUN chown -R nextjs:nodejs /app
 
-# Use built-in non-root user from base image
-USER node
+# Switch to non-root user
+USER nextjs
 
 # Expose port
 EXPOSE 3000
 
-# Environment
+# Set environment variables
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
-# Run
+# Health check
+HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
+    CMD node -e "require('http').get('http://127.0.0.1:3000', r => process.exit(r.statusCode >= 200 && r.statusCode < 400 ? 0 : 1)).on('error', () => process.exit(1))"
+
+# Start the application
 CMD ["node", "server.js"]

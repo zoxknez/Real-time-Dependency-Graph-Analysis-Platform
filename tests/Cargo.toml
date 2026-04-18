@@ -1,12 +1,12 @@
 [package]
 name = "e2e-tests"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 publish = false
 
 [dependencies]
 # Async runtime
-tokio = { version = "1.43", features = ["full", "test-util"] }
+tokio = { version = "1.52", features = ["full", "test-util"] }
 
 # Testcontainers for integration testing
 testcontainers = "0.23"
@@ -27,11 +27,11 @@ assert_matches = "1.5"
 pretty_assertions = "1.4"
 
 # Kafka
-rdkafka = { version = "0.36", features = ["cmake-build"] }
+rdkafka = { version = "0.39", features = ["cmake-build"] }
 
 # Database clients
 neo4rs = "0.8"
-qdrant-client = "1.12"
+qdrant-client = "1.17"
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"] }
 
 # GraphQL client

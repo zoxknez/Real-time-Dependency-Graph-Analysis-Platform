@@ -145,7 +145,7 @@ sequenceDiagram
 
 ### Frontend (apps/frontend)
 
-**Technology:** Next.js 14, TypeScript, TailwindCSS
+**Technology:** Next.js 16, TypeScript, TailwindCSS
 
 **Responsibilities:**
 - Interactive dependency explorer

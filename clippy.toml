@@ -4,7 +4,7 @@
 # Documentation: https://rust-lang.github.io/rust-clippy/
 
 # Minimum Supported Rust Version
-msrv = "1.75"
+msrv = "1.85"
 
 # Cognitive complexity threshold
 cognitive-complexity-threshold = 25

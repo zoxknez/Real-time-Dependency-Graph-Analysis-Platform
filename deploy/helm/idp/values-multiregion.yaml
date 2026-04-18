@@ -1,0 +1,485 @@
+# Multi-Region Deployment Configuration for IDP Platform
+# This configuration enables active-active deployment across multiple regions
+
+global:
+  imageRegistry: "registry.idp.com"
+  
+  # Multi-region settings
+  multiRegion:
+    enabled: true
+    regions:
+      - name: us-east-1
+        primary: true
+        endpoint: https://api-us.idp.com
+        location: "Virginia, USA"
+        timezone: "America/New_York"
+      - name: eu-west-1
+        primary: false
+        endpoint: https://api-eu.idp.com
+        location: "Ireland, EU"
+        timezone: "Europe/Dublin"
+      - name: ap-southeast-1
+        primary: false
+        endpoint: https://api-ap.idp.com
+        location: "Singapore, APAC"
+        timezone: "Asia/Singapore"
+
+# API Gateway - Multi-region configuration
+api:
+  enabled: true
+  replicaCount: 5  # Higher for multi-region
+  
+  # Region-specific configuration
+  region:
+    name: "{{ .Values.global.region }}"
+    isPrimary: "{{ .Values.global.isPrimary }}"
+  
+  # Advanced caching with cross-region support
+  cache:
+    enabled: true
+    l1MaxSize: 20000  # Larger for multi-region
+    l2Ttl: 600  # 10 minutes
+    strategy: "WriteAround"  # Better for multi-region
+    compression: true
+    
+    # Cross-region cache invalidation
+    crossRegion:
+      enabled: true
+      pubsubChannel: "cache:invalidate"
+      propagationDelay: 5  # seconds
+  
+  # Circuit breaker with region awareness
+  circuitBreaker:
+    enabled: true
+    failureThreshold: 0.4  # More sensitive for multi-region
+    timeout: 45  # Longer timeout for cross-region
+    successThreshold: 7
+    maxConcurrent: 200  # Higher for distributed load
+    
+    # Region failover
+    failover:
+      enabled: true
+      healthCheckInterval: 10  # seconds
+      unhealthyThreshold: 3
+      healthyThreshold: 2
+  
+  # Streaming with region-aware batching
+  streaming:
+    enabled: true
+    batchSize: 150  # Larger batches for efficiency
+    maxItems: 50000
+    bufferSize: 2000
+    
+    # Cross-region streaming
+    crossRegion:
+      enabled: true
+      preferLocalData: true
+      fallbackRegions: ["us-east-1", "eu-west-1"]
+  
+  # Resource allocation for multi-region
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 1Gi
+    limits:
+      cpu: 4000m
+      memory: 4Gi
+  
+  autoscaling:
+    enabled: true
+    minReplicas: 5
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 70
+
+# Redis - Multi-region replication
+redis:
+  enabled: true
+  architecture: replication
+  
+  # Redis Sentinel for automatic failover
+  sentinel:
+    enabled: true
+    quorum: 2
+    downAfterMilliseconds: 5000
+    failoverTimeout: 10000
+    parallelSyncs: 1
+  
+  master:
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 8Gi
+  
+  replica:
+    replicaCount: 3  # More replicas for multi-region
+    persistence:
+      enabled: true
+      size: 20Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 2000m
+        memory: 8Gi
+  
+  # Cross-region replication
+  crossRegion:
+    enabled: true
+    replicationMode: "async"
+    lagThreshold: 10  # seconds
+    regions:
+      - name: us-east-1
+        endpoint: redis-us.idp.internal:6379
+      - name: eu-west-1
+        endpoint: redis-eu.idp.internal:6379
+      - name: ap-southeast-1
+        endpoint: redis-ap.idp.internal:6379
+
+# Memgraph - Multi-region graph replication
+memgraph:
+  enabled: true
+  replicaCount: 1
+  
+  persistence:
+    enabled: true
+    size: 200Gi  # Larger for multi-region
+  
+  resources:
+    requests:
+      cpu: 4000m
+      memory: 8Gi
+    limits:
+      cpu: 16000m
+      memory: 32Gi
+  
+  # Replication configuration
+  replication:
+    enabled: true
+    mode: "async"
+    lagThreshold: 5  # seconds
+    
+    # Primary-replica setup
+    primary:
+      region: us-east-1
+      endpoint: memgraph-us.idp.internal:7687
+    
+    replicas:
+      - region: eu-west-1
+        endpoint: memgraph-eu.idp.internal:7687
+        readOnly: true
+      - region: ap-southeast-1
+        endpoint: memgraph-ap.idp.internal:7687
+        readOnly: true
+  
+  # Backup and restore
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retention: 30  # days
+    crossRegion: true
+    destinations:
+      - s3://idp-backups-us/memgraph
+      - s3://idp-backups-eu/memgraph
+      - s3://idp-backups-ap/memgraph
+
+# Qdrant - Multi-region vector replication
+qdrant:
+  enabled: true
+  replicaCount: 1
+  
+  persistence:
+    enabled: true
+    size: 100Gi
+  
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 4Gi
+    limits:
+      cpu: 8000m
+      memory: 16Gi
+  
+  # Replication configuration
+  replication:
+    enabled: true
+    mode: "async"
+    consistency: "eventual"
+    
+    # Sharding for better distribution
+    sharding:
+      enabled: true
+      shardCount: 3
+      replicationFactor: 2
+    
+    # Cross-region setup
+    regions:
+      - name: us-east-1
+        endpoint: qdrant-us.idp.internal:6333
+        primary: true
+      - name: eu-west-1
+        endpoint: qdrant-eu.idp.internal:6333
+        primary: false
+      - name: ap-southeast-1
+        endpoint: qdrant-ap.idp.internal:6333
+        primary: false
+
+# Kafka - Multi-region event streaming
+kafka:
+  enabled: true
+  replicaCount: 5  # More brokers for multi-region
+  
+  persistence:
+    enabled: true
+    size: 100Gi
+  
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+  
+  # Multi-region configuration
+  multiRegion:
+    enabled: true
+    
+    # MirrorMaker 2 for cross-region replication
+    mirrorMaker:
+      enabled: true
+      replicaCount: 2
+      
+      # Source and target clusters
+      clusters:
+        - name: us-east-1
+          bootstrapServers: kafka-us.idp.internal:9092
+        - name: eu-west-1
+          bootstrapServers: kafka-eu.idp.internal:9092
+        - name: ap-southeast-1
+          bootstrapServers: kafka-ap.idp.internal:9092
+      
+      # Replication flows
+      replicationFlows:
+        - source: us-east-1
+          target: eu-west-1
+          topics: [".*"]
+        - source: us-east-1
+          target: ap-southeast-1
+          topics: [".*"]
+        - source: eu-west-1
+          target: us-east-1
+          topics: [".*"]
+        - source: ap-southeast-1
+          target: us-east-1
+          topics: [".*"]
+
+# PostgreSQL - Multi-region replication
+postgresql:
+  enabled: true
+  
+  auth:
+    username: idp
+    password: "changeme"
+    database: idp
+  
+  primary:
+    persistence:
+      enabled: true
+      size: 50Gi
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 2Gi
+      limits:
+        cpu: 4000m
+        memory: 8Gi
+  
+  # Streaming replication
+  replication:
+    enabled: true
+    numSynchronousReplicas: 1
+    synchronousCommit: "on"
+    
+    readReplicas:
+      - name: eu-west-1
+        replicaCount: 1
+      - name: ap-southeast-1
+        replicaCount: 1
+
+# Monitoring - Multi-region observability
+monitoring:
+  enabled: true
+  
+  prometheus:
+    enabled: true
+    retention: 30d
+    storageSize: 100Gi
+    
+    # Federation for cross-region metrics
+    federation:
+      enabled: true
+      regions:
+        - name: us-east-1
+          endpoint: http://prometheus-us.idp.internal:9090
+        - name: eu-west-1
+          endpoint: http://prometheus-eu.idp.internal:9090
+        - name: ap-southeast-1
+          endpoint: http://prometheus-ap.idp.internal:9090
+    
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 4Gi
+      limits:
+        cpu: 4000m
+        memory: 16Gi
+  
+  grafana:
+    enabled: true
+    adminPassword: "changeme"
+    
+    # Multi-region dashboards
+    dashboards:
+      multiRegion: true
+      regions: ["us-east-1", "eu-west-1", "ap-southeast-1"]
+    
+    persistence:
+      enabled: true
+      size: 20Gi
+  
+  # Distributed tracing
+  tracing:
+    enabled: true
+    backend: jaeger
+    
+    # Cross-region trace collection
+    collector:
+      regions:
+        - us-east-1
+        - eu-west-1
+        - ap-southeast-1
+
+# Load Balancing - Global traffic management
+loadBalancer:
+  enabled: true
+  type: "global"
+  
+  # GeoDNS configuration
+  geoDNS:
+    enabled: true
+    provider: "cloudflare"  # or route53, google-cloud-dns
+    
+    # Health checks
+    healthCheck:
+      enabled: true
+      interval: 30  # seconds
+      timeout: 10
+      unhealthyThreshold: 3
+      healthyThreshold: 2
+    
+    # Routing policy
+    routingPolicy: "geoproximity"  # or latency, weighted
+    
+    # Failover configuration
+    failover:
+      enabled: true
+      primaryRegion: us-east-1
+      secondaryRegions:
+        - eu-west-1
+        - ap-southeast-1
+
+# Disaster Recovery
+disasterRecovery:
+  enabled: true
+  
+  # Backup strategy
+  backup:
+    enabled: true
+    schedule: "0 */6 * * *"  # Every 6 hours
+    retention: 90  # days
+    
+    # Cross-region backup
+    crossRegion: true
+    regions:
+      - us-east-1
+      - eu-west-1
+      - ap-southeast-1
+  
+  # Recovery objectives
+  rto: 3600  # Recovery Time Objective: 1 hour
+  rpo: 300   # Recovery Point Objective: 5 minutes
+  
+  # Automated failover
+  autoFailover:
+    enabled: true
+    healthCheckInterval: 60  # seconds
+    failoverDelay: 300  # 5 minutes
+    notificationChannels:
+      - slack
+      - pagerduty
+      - email
+
+# Security - Multi-region security
+security:
+  enabled: true
+  
+  # TLS/SSL
+  tls:
+    enabled: true
+    provider: "cert-manager"
+    issuer: "letsencrypt-prod"
+    
+    # Cross-region certificate management
+    crossRegion: true
+  
+  # Network policies
+  networkPolicies:
+    enabled: true
+    
+    # Cross-region communication
+    allowCrossRegion: true
+    regions:
+      - us-east-1
+      - eu-west-1
+      - ap-southeast-1
+  
+  # Encryption at rest
+  encryption:
+    enabled: true
+    provider: "kms"  # AWS KMS, Google KMS, Azure Key Vault
+    
+    # Per-region keys
+    keys:
+      us-east-1: "arn:aws:kms:us-east-1:..."
+      eu-west-1: "arn:aws:kms:eu-west-1:..."
+      ap-southeast-1: "arn:aws:kms:ap-southeast-1:..."
+
+# Cost Optimization
+costOptimization:
+  enabled: true
+  
+  # Auto-scaling based on region load
+  regionalAutoScaling:
+    enabled: true
+    scaleDownDelay: 300  # 5 minutes
+    
+  # Spot instances for non-critical workloads
+  spotInstances:
+    enabled: true
+    percentage: 30  # 30% spot, 70% on-demand
+  
+  # Data transfer optimization
+  dataTransfer:
+    minimizeCrossRegion: true
+    compressionEnabled: true
+    cachingEnabled: true
+
+# Made with Bob

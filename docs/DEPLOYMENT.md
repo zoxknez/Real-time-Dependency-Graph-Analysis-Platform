@@ -25,7 +25,7 @@
 
 ### Required Software
 - Docker 24.0+ with Docker Compose v2
-- Rust 1.75+ (for local development)
+- Rust 1.85+ (for local development)
 - Node.js 20+ (for frontend)
 - kubectl (for Kubernetes deployment)
 - Helm 3.12+ (for Kubernetes deployment)

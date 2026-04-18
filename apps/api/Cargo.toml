@@ -41,7 +41,7 @@ semver = "1.0"
 
 # Rate limiting
 governor.workspace = true
-tower_governor = "0.5"
+tower_governor = "0.6"
 
 # Redis caching
 redis.workspace = true

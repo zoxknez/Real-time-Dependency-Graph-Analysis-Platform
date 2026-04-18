@@ -1,6 +1,6 @@
 # Inverse Dependency Platform - Frontend
 
-Modern, enterprise-grade frontend for the Inverse Dependency Platform built with Next.js 14, TypeScript, and TailwindCSS.
+Modern, enterprise-grade frontend for the Inverse Dependency Platform built with Next.js 16, TypeScript, and TailwindCSS.
 
 ## 🚀 Features
 
@@ -13,7 +13,7 @@ Modern, enterprise-grade frontend for the Inverse Dependency Platform built with
 
 ## 🛠️ Tech Stack
 
-- **Framework**: Next.js 14 (App Router)
+- **Framework**: Next.js 16 (App Router)
 - **Language**: TypeScript
 - **Styling**: TailwindCSS + Custom Design System
 - **State/Data**: Apollo Client (GraphQL)

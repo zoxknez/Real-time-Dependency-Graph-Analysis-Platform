@@ -1,0 +1,317 @@
+# ═══════════════════════════════════════════════════════════════
+# Prometheus Alerting Rules for IDP Platform
+# Based on Prometheus best practices: https://prometheus.io/docs/practices/alerting/
+# ═══════════════════════════════════════════════════════════════
+
+groups:
+  # ═══════════════════════════════════════════════════════════════
+  # API Gateway Alerts
+  # ═══════════════════════════════════════════════════════════════
+  - name: api_gateway
+    interval: 30s
+    rules:
+      # High error rate
+      - alert: APIHighErrorRate
+        expr: |
+          (
+            sum(rate(idp_graphql_requests_total{status="error"}[5m]))
+            /
+            sum(rate(idp_graphql_requests_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "High API error rate detected"
+          description: "API error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+          runbook_url: "https://github.com/your-org/idp/wiki/runbooks/api-high-error-rate"
+
+      # High latency
+      - alert: APIHighLatency
+        expr: |
+          histogram_quantile(0.99, 
+            sum(rate(idp_graphql_duration_seconds_bucket[5m])) by (le, operation)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "High API latency detected"
+          description: "P99 latency for {{ $labels.operation }} is {{ $value }}s (threshold: 2s)"
+          runbook_url: "https://github.com/your-org/idp/wiki/runbooks/api-high-latency"
+
+      # Service down
+      - alert: APIServiceDown
+        expr: up{job="api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "API service is down"
+          description: "API service has been down for more than 1 minute"
+          runbook_url: "https://github.com/your-org/idp/wiki/runbooks/service-down"
+
+      # High memory usage
+      - alert: APIHighMemoryUsage
+        expr: |
+          (
+            process_resident_memory_bytes{job="api"}
+            /
+            container_spec_memory_limit_bytes{container="api"}
+          ) > 0.90
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API service high memory usage"
+          description: "Memory usage is {{ $value | humanizePercentage }} (threshold: 90%)"
+
+      # Too many active subscriptions
+      - alert: APITooManySubscriptions
+        expr: idp_active_subscriptions > 10000
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "Too many active WebSocket subscriptions"
+          description: "Active subscriptions: {{ $value }} (capacity warning at 10000)"
+
+      # Cache hit rate too low
+      - alert: APICacheLowHitRate
+        expr: |
+          (
+            sum(rate(idp_cache_hits_total[5m]))
+            /
+            sum(rate(idp_cache_hits_total[5m]) + rate(idp_cache_misses_total[5m]))
+          ) < 0.70
+        for: 10m
+        labels:
+          severity: info
+          component: api
+        annotations:
+          summary: "Low cache hit rate"
+          description: "Cache hit rate is {{ $value | humanizePercentage }} (expected: >70%)"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Ingestion Service Alerts
+  # ═══════════════════════════════════════════════════════════════
+  - name: ingestion
+    interval: 30s
+    rules:
+      # Ingestion lag
+      - alert: IngestionHighLag
+        expr: |
+          kafka_consumer_lag{job="ingestion"} > 10000
+        for: 10m
+        labels:
+          severity: warning
+          component: ingestion
+        annotations:
+          summary: "High ingestion lag detected"
+          description: "Consumer lag is {{ $value }} messages (threshold: 10000)"
+
+      # Ingestion stopped
+      - alert: IngestionStopped
+        expr: |
+          rate(idp_packages_ingested_total[5m]) == 0
+        for: 15m
+        labels:
+          severity: critical
+          component: ingestion
+        annotations:
+          summary: "Package ingestion has stopped"
+          description: "No packages ingested in the last 15 minutes"
+
+      # High error rate
+      - alert: IngestionHighErrorRate
+        expr: |
+          (
+            sum(rate(idp_ingestion_errors_total[5m]))
+            /
+            sum(rate(idp_ingestion_attempts_total[5m]))
+          ) > 0.10
+        for: 5m
+        labels:
+          severity: warning
+          component: ingestion
+        annotations:
+          summary: "High ingestion error rate"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Storage Writers Alerts
+  # ═══════════════════════════════════════════════════════════════
+  - name: storage_writers
+    interval: 30s
+    rules:
+      # Graph writer lag
+      - alert: GraphWriterHighLag
+        expr: |
+          kafka_consumer_lag{job="graph-writer"} > 5000
+        for: 10m
+        labels:
+          severity: warning
+          component: graph-writer
+        annotations:
+          summary: "Graph writer has high lag"
+          description: "Consumer lag is {{ $value }} messages"
+
+      # Vector writer lag
+      - alert: VectorWriterHighLag
+        expr: |
+          kafka_consumer_lag{job="vector-writer"} > 5000
+        for: 10m
+        labels:
+          severity: warning
+          component: vector-writer
+        annotations:
+          summary: "Vector writer has high lag"
+          description: "Consumer lag is {{ $value }} messages"
+
+      # DLQ growing
+      - alert: DLQGrowing
+        expr: |
+          rate(idp_dlq_messages_total[10m]) > 10
+        for: 10m
+        labels:
+          severity: warning
+          component: writers
+        annotations:
+          summary: "Dead letter queue is growing"
+          description: "DLQ receiving {{ $value }} messages/sec"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Database Alerts
+  # ═══════════════════════════════════════════════════════════════
+  - name: databases
+    interval: 30s
+    rules:
+      # Memgraph memory pressure
+      - alert: MemgraphMemoryPressure
+        expr: |
+          memgraph_memory_usage_bytes / memgraph_memory_limit_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          component: memgraph
+        annotations:
+          summary: "Memgraph under memory pressure"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+
+      # Memgraph down
+      - alert: MemgraphDown
+        expr: up{job="memgraph"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: memgraph
+        annotations:
+          summary: "Memgraph is down"
+          description: "Memgraph has been unreachable for 1 minute"
+
+      # Qdrant down
+      - alert: QdrantDown
+        expr: up{job="qdrant"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: qdrant
+        annotations:
+          summary: "Qdrant is down"
+          description: "Qdrant has been unreachable for 1 minute"
+
+      # Redis down
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis has been unreachable for 1 minute"
+
+      # PostgreSQL down
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: postgres
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL has been unreachable for 1 minute"
+
+  # ═══════════════════════════════════════════════════════════════
+  # Kafka/Redpanda Alerts
+  # ═══════════════════════════════════════════════════════════════
+  - name: messaging
+    interval: 30s
+    rules:
+      # Kafka down
+      - alert: KafkaDown
+        expr: up{job="redpanda"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: kafka
+        annotations:
+          summary: "Kafka/Redpanda is down"
+          description: "Kafka has been unreachable for 1 minute"
+
+      # High disk usage
+      - alert: KafkaHighDiskUsage
+        expr: |
+          (
+            kafka_log_size_bytes
+            /
+            kafka_log_max_size_bytes
+          ) > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          component: kafka
+        annotations:
+          summary: "Kafka disk usage is high"
+          description: "Disk usage is {{ $value | humanizePercentage }}"
+
+  # ═══════════════════════════════════════════════════════════════
+  # System-wide Alerts
+  # ═══════════════════════════════════════════════════════════════
+  - name: system
+    interval: 30s
+    rules:
+      # Pod restarts
+      - alert: HighPodRestartRate
+        expr: |
+          rate(kube_pod_container_status_restarts_total[15m]) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          component: kubernetes
+        annotations:
+          summary: "High pod restart rate"
+          description: "Pod {{ $labels.pod }} is restarting frequently"
+
+      # Disk space low
+      - alert: DiskSpaceLow
+        expr: |
+          (
+            node_filesystem_avail_bytes{mountpoint="/"}
+            /
+            node_filesystem_size_bytes{mountpoint="/"}
+          ) < 0.15
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "Low disk space"
+          description: "Available disk space is {{ $value | humanizePercentage }}"
+
+# Made with Bob

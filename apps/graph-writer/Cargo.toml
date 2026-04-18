@@ -23,7 +23,7 @@ prost-types.workspace = true
 neo4rs.workspace = true
 
 # gRPC/Protobuf
-tonic = "0.12"
+tonic = "0.14"
 
 # Error Handling
 anyhow.workspace = true
@@ -49,6 +49,6 @@ async-trait.workspace = true
 models = { path = "../../packages/models" }
 
 [build-dependencies]
-tonic-build = "0.12"
+tonic-build = "0.14"
 protoc-bin-vendored = "3.0"
 

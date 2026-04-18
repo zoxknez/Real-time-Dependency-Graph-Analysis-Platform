@@ -30,7 +30,7 @@ literal-representation-threshold = 4
 single-char-binding-names-threshold = 4
 
 # MSRV for lint compatibility
-msrv = "1.75"
+msrv = "1.85"
 
 # Allowed script names in identifiers
 # allowed-scripts = ["Latin"]

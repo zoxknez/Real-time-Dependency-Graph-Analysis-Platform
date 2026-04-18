@@ -203,12 +203,12 @@ With monitoring profile enabled:
 
 | Component | Version | Notes |
 |-----------|---------|-------|
-| Redpanda | v25.3.4 | Kafka-compatible |
-| RisingWave | v2.0.1 | PostgreSQL protocol (playground mode) |
-| Memgraph | 2.18.1 | MAGE algorithms included |
-| Qdrant | v1.16.2 | Vector search |
-| PostgreSQL | 16.2-alpine | Latest stable |
-| Redis | 7.2.4-alpine | Latest stable |
+| Redpanda | v26.1.5 | Kafka-compatible |
+| RisingWave | v2.8.1 | PostgreSQL protocol (playground mode) |
+| Memgraph | 3.9.0 | MAGE algorithms included |
+| Qdrant | v1.17.0 | Vector search |
+| PostgreSQL | 17.9-alpine | Latest stable |
+| Redis | 8.6.0-alpine | Latest stable |
 
 ## Support
 
