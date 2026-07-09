@@ -16,9 +16,8 @@ on:
         required: true
         default: 'latest'
 
-  push:
-    tags:
-      - 'v*'
+  # Manual-only: automatic tag-triggered deploys are disabled until a real
+  # cluster (KUBECONFIG secret) and smoke-test URLs are configured.
 
 env:
   REGISTRY: ghcr.io

@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
 
@@ -72,7 +72,7 @@ jobs:
         ports:
           - 7687:7687
         options: >-
-          --health-cmd "echo 'RETURN 1;' | mgconsole"
+          --health-cmd "bash -c 'cat < /dev/null > /dev/tcp/localhost/7687'"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -97,7 +97,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install protoc
         uses: arduino/setup-protoc@v3
@@ -152,7 +152,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
 
@@ -304,7 +304,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          # arm64 dropped: Rust cross-builds under QEMU routinely exceed job time limits
+          platforms: linux/amd64
 
   # ═══════════════════════════════════════════════════════════════
   # Security Scan
@@ -318,19 +319,13 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        uses: taiki-e/install-action@cargo-audit
 
       - name: Run security audit
-        run: cargo audit --json > audit-results.json || true
-
-      - name: Upload audit results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: audit-results.json
+        run: cargo audit
         continue-on-error: true
 
   # ═══════════════════════════════════════════════════════════════
@@ -343,10 +338,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+        uses: taiki-e/install-action@cargo-deny
 
       - name: Check dependencies
         run: cargo deny check
@@ -365,7 +360,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-action@stable
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install cargo-sbom
         run: cargo install cargo-sbom --locked
