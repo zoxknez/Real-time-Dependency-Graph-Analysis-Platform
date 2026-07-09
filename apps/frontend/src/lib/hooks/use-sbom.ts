@@ -5,7 +5,7 @@
  * in SPDX 2.3 and CycloneDX 1.5 formats.
  */
 
-import { useLazyQuery } from "@apollo/client";
+import { useLazyQuery } from "@apollo/client/react";
 import { useCallback, useState } from "react";
 import { GENERATE_SBOM } from "../graphql/queries";
 import type {
@@ -53,22 +53,18 @@ export function useGenerateSbom(packageId: string): UseSbomResult {
     { packageId: string; options: SbomGenerationOptions }
   >(GENERATE_SBOM, {
     fetchPolicy: "network-only", // Always fetch fresh SBOM
-    onCompleted: (data) => {
-      if (data?.generateSbom) {
-        setSbomResult(data.generateSbom);
-        
-        // Create blob URL for download
-        if (data.generateSbom.content) {
-          const blob = new Blob([data.generateSbom.content], {
-            type: data.generateSbom.encoding === "JSON" 
-              ? "application/json" 
-              : "application/xml",
-          });
-          setDownloadUrl(URL.createObjectURL(blob));
-        }
-      }
-    },
   });
+
+  const storeSbom = useCallback((sbom: SbomResult) => {
+    setSbomResult(sbom);
+
+    if (sbom.content) {
+      const blob = new Blob([sbom.content], {
+        type: sbom.encoding === "JSON" ? "application/json" : "application/xml",
+      });
+      setDownloadUrl(URL.createObjectURL(blob));
+    }
+  }, []);
 
   const generate = useCallback(
     async (overrides?: Partial<SbomGenerationOptions>) => {
@@ -83,9 +79,14 @@ export function useGenerateSbom(packageId: string): UseSbomResult {
         variables: { packageId, options },
       });
 
-      return result.data?.generateSbom ?? null;
+      const generated = result.data?.generateSbom ?? null;
+      if (generated) {
+        storeSbom(generated);
+      }
+
+      return generated;
     },
-    [executeSbom, packageId]
+    [executeSbom, packageId, storeSbom]
   );
 
   const download = useCallback(() => {

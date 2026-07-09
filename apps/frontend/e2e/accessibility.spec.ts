@@ -189,32 +189,27 @@ test.describe('Accessibility - WCAG Compliance', () => {
   test('modals should trap focus', async ({ page }) => {
     await page.goto('/');
     
-    // Try to find and open a modal
-    const modalTrigger = page.getByRole('button', { name: /open|show|settings/i });
-    
-    if (await modalTrigger.isVisible()) {
-      await modalTrigger.click();
-      await page.waitForTimeout(300);
-      
-      // Tab should stay within modal
-      const modal = page.getByRole('dialog');
-      if (await modal.isVisible()) {
-        for (let i = 0; i < 20; i++) {
-          await page.keyboard.press('Tab');
-          
-          const focusedInModal = await page.evaluate(() => {
-            const modal = document.querySelector('[role="dialog"]');
-            return modal?.contains(document.activeElement);
-          });
-          
-          expect(focusedInModal).toBeTruthy();
-        }
-        
-        // Escape should close modal
-        await page.keyboard.press('Escape');
-        await expect(modal).not.toBeVisible();
-      }
+    const modalTrigger = page.getByRole('button', { name: 'Favorites and recent items' });
+    await modalTrigger.click();
+
+    const modal = page.getByRole('dialog', { name: 'Favorites and recent items' });
+    await expect(modal).toBeVisible();
+
+    // Tab should stay within modal
+    for (let i = 0; i < 20; i++) {
+      await page.keyboard.press('Tab');
+
+      const focusedInModal = await page.evaluate(() => {
+        const modal = document.querySelector('[role="dialog"]');
+        return modal?.contains(document.activeElement);
+      });
+
+      expect(focusedInModal).toBeTruthy();
     }
+
+    // Escape should close modal
+    await page.keyboard.press('Escape');
+    await expect(modal).not.toBeVisible();
   });
 });
 

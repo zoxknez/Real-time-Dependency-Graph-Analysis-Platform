@@ -1,6 +1,6 @@
 "use client";
 
-import { useSubscription } from "@apollo/client";
+import { useSubscription } from "@apollo/client/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   LIVE_PACKAGE_ACTIVITY,
@@ -20,11 +20,43 @@ import type {
   Ecosystem,
   EventType,
   BreakingSeverity,
-  LivePackageActivityVariables,
+  VersionEvent,
+  NewVersionVariables,
   BreakingChangeVariables,
   WatchPackagesVariables,
-  DependencyGraphUpdateVariables,
 } from "@/lib/graphql/types";
+
+function versionEventToLivePackageEvent(event: VersionEvent): LivePackageEvent {
+  return {
+    id: event.meta.eventId,
+    type: "PUBLISH",
+    timestamp: event.meta.occurredAt,
+    package: event.package,
+    version: event.version.version,
+    metadata: {
+      isPrerelease: event.version.version.includes("-"),
+    },
+  };
+}
+
+function versionEventToWatchedPackageEvent(event: VersionEvent): WatchedPackageEvent {
+  return {
+    id: event.meta.eventId,
+    event: "PUBLISH",
+    package: event.package,
+    version: event.version.version,
+    timestamp: event.meta.occurredAt,
+  };
+}
+
+function impactEventToGraphUpdate(event: DependencyImpactEvent): DependencyGraphUpdate {
+  return {
+    type: "UPDATE",
+    affectedPackage: event.package,
+    newVersion: event.version,
+    timestamp: event.timestamp,
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════
 // LIVE PACKAGE ACTIVITY HOOK
@@ -57,16 +89,19 @@ export function useLivePackageActivity(options: UseLivePackageActivityOptions = 
   const startTimeRef = useRef(Date.now());
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+  const ecosystem = ecosystems?.[0];
+  const skipForEventType = eventTypes?.length ? !eventTypes.includes("PUBLISH") : false;
 
   const { data: _data, loading, error } = useSubscription<
-    { livePackageActivity: LivePackageEvent },
-    LivePackageActivityVariables
+    { livePackageActivity: VersionEvent },
+    NewVersionVariables
   >(LIVE_PACKAGE_ACTIVITY, {
-    variables: { ecosystems, eventTypes },
-    skip: paused,
+    variables: { ecosystem },
+    skip: paused || skipForEventType,
     shouldResubscribe: true,
     onData: ({ data }) => {
-      const event = data.data?.livePackageActivity;
+      const versionEvent = data.data?.livePackageActivity;
+      const event = versionEvent ? versionEventToLivePackageEvent(versionEvent) : null;
       if (event) {
         setEvents((prev) => {
           const updated = [event, ...prev].slice(0, maxEvents);
@@ -278,16 +313,18 @@ export function useWatchPackages(options: UseWatchPackagesOptions) {
   const [updates, setUpdates] = useState<WatchedPackageEvent[]>([]);
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
+  const activePackageId = packageIds[0];
 
   const { data: _data, loading, error } = useSubscription<
-    { watchPackages: WatchedPackageEvent },
+    { watchPackages: VersionEvent },
     WatchPackagesVariables
   >(WATCH_PACKAGES, {
-    variables: { packageIds },
-    skip: paused || packageIds.length === 0,
+    variables: { packageId: activePackageId },
+    skip: paused || !activePackageId,
     shouldResubscribe: true,
     onData: ({ data }) => {
-      const event = data.data?.watchPackages;
+      const versionEvent = data.data?.watchPackages;
+      const event = versionEvent ? versionEventToWatchedPackageEvent(versionEvent) : null;
       if (event) {
         setUpdates((prev) => [event, ...prev].slice(0, 100));
         onUpdateRef.current?.(event);
@@ -320,20 +357,25 @@ interface UseDependencyGraphUpdatesOptions {
 }
 
 export function useDependencyGraphUpdates(options: UseDependencyGraphUpdatesOptions) {
-  const { rootPackageId, maxDepth, paused = false, onUpdate } = options;
+  const { rootPackageId, paused = false, onUpdate } = options;
   const [updates, setUpdates] = useState<DependencyGraphUpdate[]>([]);
   const onUpdateRef = useRef(onUpdate);
   onUpdateRef.current = onUpdate;
 
   const { data: _data, loading, error } = useSubscription<
-    { dependencyGraphUpdate: DependencyGraphUpdate },
-    DependencyGraphUpdateVariables
+    { dependencyGraphUpdate: DependencyImpactEvent },
+    { minImpactScore?: number }
   >(DEPENDENCY_GRAPH_UPDATES, {
-    variables: { rootPackageId, maxDepth },
+    variables: { minImpactScore: 0 },
     skip: paused || !rootPackageId,
     shouldResubscribe: true,
     onData: ({ data }) => {
-      const update = data.data?.dependencyGraphUpdate;
+      const impactEvent = data.data?.dependencyGraphUpdate;
+      if (impactEvent && impactEvent.package.id !== rootPackageId) {
+        return;
+      }
+
+      const update = impactEvent ? impactEventToGraphUpdate(impactEvent) : null;
       if (update) {
         setUpdates((prev) => [update, ...prev].slice(0, 50));
         onUpdateRef.current?.(update);

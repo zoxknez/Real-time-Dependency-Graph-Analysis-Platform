@@ -5,7 +5,7 @@
  * with security-based prioritization.
  */
 
-import { useQuery, useLazyQuery } from "@apollo/client";
+import { useQuery, useLazyQuery } from "@apollo/client/react";
 import { useMemo, useCallback } from "react";
 import { GET_UPDATE_RECOMMENDATIONS } from "../graphql/queries";
 import type {

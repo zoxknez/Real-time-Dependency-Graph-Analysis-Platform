@@ -5,7 +5,7 @@
  * results with 18+ security checks.
  */
 
-import { useQuery, useLazyQuery } from "@apollo/client";
+import { useQuery, useLazyQuery } from "@apollo/client/react";
 import { useMemo } from "react";
 import { GET_SCORECARD, GET_SCORECARD_SUMMARY } from "../graphql/queries";
 import type {

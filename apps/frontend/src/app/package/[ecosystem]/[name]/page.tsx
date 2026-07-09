@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useQuery } from "@apollo/client";
+import { useQuery } from "@apollo/client/react";
 import { AlertTriangle, Check, Copy, ExternalLink, GitBranch, Loader2, Lock, Package, Shield, Zap } from "lucide-react";
 import {
   GET_PACKAGE,
@@ -42,6 +42,35 @@ const installCommands: Record<string, (name: string) => string> = {
   go: (name) => `go get ${name}`,
 };
 
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fall through to the legacy copy path below.
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+
+  document.body.appendChild(textarea);
+  textarea.select();
+
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
+
 type PackageTab = "overview" | "graph" | "scorecard" | "supply";
 
 const tabs: { id: PackageTab; label: string; description: string }[] = [
@@ -52,10 +81,10 @@ const tabs: { id: PackageTab; label: string; description: string }[] = [
 ];
 
 const scorecardRiskStyles: Record<string, string> = {
-  CRITICAL: "bg-red-500/15 text-red-200 border border-red-500/40",
-  HIGH: "bg-orange-500/15 text-orange-200 border border-orange-500/40",
-  MEDIUM: "bg-amber-500/15 text-amber-200 border border-amber-500/40",
-  LOW: "bg-emerald-500/15 text-emerald-200 border border-emerald-500/40",
+  CRITICAL: "bg-red-500/10 text-red-700 dark:text-red-200 border border-red-500/30 dark:border-red-500/40",
+  HIGH: "bg-orange-500/10 text-orange-700 dark:text-orange-200 border border-orange-500/30 dark:border-orange-500/40",
+  MEDIUM: "bg-amber-500/10 text-amber-700 dark:text-amber-200 border border-amber-500/30 dark:border-amber-500/40",
+  LOW: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-200 border border-emerald-500/30 dark:border-emerald-500/40",
 };
 
 export default function PackageDetailPage() {
@@ -136,12 +165,14 @@ export default function PackageDetailPage() {
   const displayLicense = license || (metadataLoading ? "..." : "Unknown");
   const repositoryUrl = metadataData?.packageMetadata?.repositoryUrl;
   const reverseCount = reverseData?.reverseDependents?.totalCount ?? 0;
-  const vulnCounts = vulnData?.vulnerabilityCounts ?? {
-    critical: 0,
-    high: 0,
-    medium: 0,
-    low: 0,
-  };
+  const vulnCounts = useMemo(() => vulnData?.vulnerabilityCounts ?? {
+      critical: 0,
+      high: 0,
+      medium: 0,
+      low: 0,
+    },
+    [vulnData?.vulnerabilityCounts]
+  );
   const totalVulns =
     vulnCounts.critical + vulnCounts.high + vulnCounts.medium + vulnCounts.low;
   const totalChecks = scorecardSummary
@@ -160,8 +191,8 @@ export default function PackageDetailPage() {
       : "Scorecard unavailable";
   const scorecardChipClass = scorecardSummary
     ? scorecardRiskStyles[scorecardSummary.riskLevel] ??
-      "bg-white/5 text-white/70 border border-white/10"
-    : "bg-white/5 text-white/70 border border-white/10";
+      "theme-pill border theme-border"
+    : "theme-pill border theme-border";
 
   const rootRiskLevel = useMemo<GraphData["nodes"][number]["riskLevel"]>(() => {
     if (vulnCounts.critical > 0) return "CRITICAL";
@@ -171,7 +202,10 @@ export default function PackageDetailPage() {
     return undefined;
   }, [vulnCounts]);
 
-  const graphEdges = graphDataRaw?.reverseDependents?.edges ?? [];
+  const graphEdges = useMemo(
+    () => graphDataRaw?.reverseDependents?.edges ?? [],
+    [graphDataRaw?.reverseDependents?.edges]
+  );
   const graphData = useMemo<GraphData>(() => {
     if (!packageId) {
       return { nodes: [], links: [] };
@@ -240,11 +274,11 @@ export default function PackageDetailPage() {
   }, [vulnCounts]);
 
   const vulnChipStyle = useMemo(() => {
-    if (vulnCounts.critical > 0) return "bg-red-500/15 text-red-200 border border-red-500/40";
-    if (vulnCounts.high > 0) return "bg-orange-500/15 text-orange-200 border border-orange-500/40";
-    if (vulnCounts.medium > 0) return "bg-amber-500/15 text-amber-200 border border-amber-500/40";
-    if (vulnCounts.low > 0) return "bg-emerald-500/15 text-emerald-200 border border-emerald-500/40";
-    return "bg-white/5 text-white/70 border border-white/10";
+    if (vulnCounts.critical > 0) return "bg-red-500/10 text-red-700 dark:text-red-200 border border-red-500/30 dark:border-red-500/40";
+    if (vulnCounts.high > 0) return "bg-orange-500/10 text-orange-700 dark:text-orange-200 border border-orange-500/30 dark:border-orange-500/40";
+    if (vulnCounts.medium > 0) return "bg-amber-500/10 text-amber-700 dark:text-amber-200 border border-amber-500/30 dark:border-amber-500/40";
+    if (vulnCounts.low > 0) return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-200 border border-emerald-500/30 dark:border-emerald-500/40";
+    return "theme-pill border theme-border";
   }, [vulnCounts]);
 
   const installCommand = useMemo(() => {
@@ -256,22 +290,20 @@ export default function PackageDetailPage() {
 
   const copyInstallCommand = async () => {
     if (!installCommand) return;
-    try {
-      await navigator.clipboard.writeText(installCommand);
+    if (await copyTextToClipboard(installCommand)) {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1600);
-    } catch {
+    } else {
       setCopied(false);
     }
   };
 
   const copyPackageId = async () => {
     if (!packageId) return;
-    try {
-      await navigator.clipboard.writeText(packageId);
+    if (await copyTextToClipboard(packageId)) {
       setCopiedId(true);
       window.setTimeout(() => setCopiedId(false), 1600);
-    } catch {
+    } else {
       setCopiedId(false);
     }
   };
@@ -282,7 +314,7 @@ export default function PackageDetailPage() {
     : "/supply-chain";
 
   return (
-    <div className="min-h-screen bg-surface-950 text-white selection:bg-primary-500/30 font-sans">
+    <div className="min-h-screen theme-bg-primary theme-text-primary selection:bg-primary-500/30 font-sans">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-6">
         <div className="glass-card p-6 border theme-border">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
@@ -305,7 +337,7 @@ export default function PackageDetailPage() {
                     data-testid="copy-package-id"
                     title={copiedId ? "Copied" : "Copy package id"}
                     aria-label={copiedId ? "Package id copied" : "Copy package id"}
-                    className="inline-flex items-center justify-center w-6 h-6 rounded-md border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
+                    className="inline-flex items-center justify-center w-6 h-6 rounded-md border theme-border theme-text-muted theme-bg-hover theme-hover-text transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-50 dark:focus-visible:ring-offset-surface-950"
                   >
                     {copiedId ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
                   </button>
@@ -325,7 +357,7 @@ export default function PackageDetailPage() {
                 to drill into dependency graphs, impact analysis, and supply-chain posture.
               </p>
               {showNotFound && (
-                <div className="mt-4 inline-flex items-center gap-2 text-xs text-amber-200 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                <div className="mt-4 inline-flex items-center gap-2 text-xs text-amber-800 dark:text-amber-200 bg-amber-500/10 border border-amber-500/20 dark:border-amber-500/30 rounded-lg px-3 py-2">
                   <AlertTriangle className="w-4 h-4" />
                   Package not found in the graph yet. Showing registry metadata when available.
                 </div>
@@ -402,10 +434,10 @@ export default function PackageDetailPage() {
                   aria-selected={isActive}
                   aria-controls={`tab-panel-${tab.id}`}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex flex-col gap-1 px-4 py-2 rounded-lg border text-left transition-colors min-w-[140px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 ${
+                  className={`flex flex-col gap-1 px-4 py-2 rounded-lg border text-left transition-colors min-w-[140px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-50 dark:focus-visible:ring-offset-surface-950 ${
                     isActive
-                      ? "border-primary-500/40 bg-primary-500/15 text-primary-200"
-                      : "border-transparent theme-text-muted hover:text-white hover:border-white/10 hover:bg-white/5"
+                      ? "border-primary-500/40 bg-primary-500/15 text-primary-700 dark:text-primary-200"
+                      : "border-transparent theme-text-muted theme-hover-text hover:border-surface-200 dark:hover:border-white/10 hover:bg-surface-100 dark:hover:bg-white/5"
                   }`}
                 >
                   <span className="text-sm font-semibold">{tab.label}</span>
@@ -448,10 +480,10 @@ export default function PackageDetailPage() {
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                    <span className="px-2 py-1 rounded-full border border-white/10 bg-white/5">
+                    <span className="px-2 py-1 rounded-full border theme-border theme-pill">
                       Latest {displayVersion}
                     </span>
-                    <span className="px-2 py-1 rounded-full border border-white/10 bg-white/5">
+                    <span className="px-2 py-1 rounded-full border theme-border theme-pill">
                       License {displayLicense}
                     </span>
                     <span className={`px-2 py-1 rounded-full ${vulnChipStyle}`}>
@@ -564,7 +596,7 @@ export default function PackageDetailPage() {
                       disabled={!installCommand}
                       aria-label={copied ? "Install command copied" : "Copy install command"}
                       title={copied ? "Copied" : "Copy install command"}
-                      className="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-md border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
+                      className="inline-flex items-center gap-2 text-xs px-3 py-1 rounded-md border theme-border theme-text-muted theme-bg-hover theme-hover-text transition-colors disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-50 dark:focus-visible:ring-offset-surface-950"
                     >
                       {copied ? <Check className="w-3 h-3 text-emerald-300" /> : <Copy className="w-3 h-3" />}
                       {copied ? "Copied" : "Copy"}
@@ -580,19 +612,19 @@ export default function PackageDetailPage() {
                   <div className="flex flex-col gap-2 text-sm">
                     <Link
                       href={packageId ? `/graph?pkg=${encodeURIComponent(packageId)}` : "/graph"}
-                      className="theme-text-muted theme-hover-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 rounded-md"
+                      className="theme-text-muted theme-hover-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-50 dark:focus-visible:ring-offset-surface-950 rounded-md"
                     >
                       View dependency graph
                     </Link>
                     <Link
                       href={packageId ? `/impact?pkg=${encodeURIComponent(packageId)}` : "/impact"}
-                      className="theme-text-muted theme-hover-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 rounded-md"
+                      className="theme-text-muted theme-hover-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-50 dark:focus-visible:ring-offset-surface-950 rounded-md"
                     >
                       Impact analysis
                     </Link>
                     <Link
                       href={supplyChainUrl}
-                      className="theme-text-muted theme-hover-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950 rounded-md"
+                      className="theme-text-muted theme-hover-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-50 dark:focus-visible:ring-offset-surface-950 rounded-md"
                     >
                       Supply chain dashboard
                     </Link>
@@ -628,14 +660,14 @@ export default function PackageDetailPage() {
                 </div>
               )}
 
-              {!graphLoading && !graphHasEdges && (
+               {!graphLoading && !graphHasEdges && (
                 <div className="glass-card p-8 border theme-border text-center space-y-3">
-                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/5 border border-white/10 mx-auto">
-                    <GitBranch className="w-5 h-5 text-primary-300" />
+                  <div className="inline-flex items-center justify-center w-12 h-12 rounded-full theme-inner-card border theme-border mx-auto">
+                    <GitBranch className="w-5 h-5 text-primary-500" />
                   </div>
                   <div>
                     <h3 className="text-lg font-semibold theme-text-primary">
-                      Graph data not available yet
+                       Graph data not available yet
                     </h3>
                     <p className="text-sm theme-text-muted mt-1">
                       We did not find reverse dependents for this package yet. Try the full graph
@@ -645,13 +677,13 @@ export default function PackageDetailPage() {
                   <div className="flex flex-wrap gap-3 justify-center">
                     <Link
                       href={packageId ? `/graph?pkg=${encodeURIComponent(packageId)}` : "/graph"}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-primary-500/30 text-primary-300 hover:text-white hover:bg-primary-500/20 transition-colors text-sm"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-primary-500/30 text-primary-600 dark:text-primary-300 hover:text-white hover:bg-primary-500 transition-colors text-sm"
                     >
                       Open full graph
                     </Link>
                     <Link
                       href={supplyChainUrl}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors text-sm"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border theme-border theme-text-muted theme-bg-hover theme-hover-text transition-colors text-sm"
                     >
                       Supply chain view
                     </Link>
@@ -669,11 +701,11 @@ export default function PackageDetailPage() {
                   </div>
                   <div className="flex flex-wrap gap-4 text-xs theme-text-faint mb-4">
                     <div className="inline-flex items-center gap-2">
-                      <span className="w-4 h-0.5 bg-white/50" />
+                      <span className="w-4 h-0.5 bg-surface-400 dark:bg-white/50" />
                       Direct dependency
                     </div>
                     <div className="inline-flex items-center gap-2">
-                      <span className="w-4 h-0.5 border-t-2 border-dashed border-white/50" />
+                      <span className="w-4 h-0.5 border-t-2 border-dashed border-surface-400 dark:border-white/50" />
                       Transitive dependency
                     </div>
                     <div className="inline-flex items-center gap-2">
@@ -721,7 +753,7 @@ export default function PackageDetailPage() {
                       <span
                         className={`text-xs uppercase tracking-widest px-2 py-1 rounded-full ${
                           scorecardRiskStyles[scorecardSummary.riskLevel] ??
-                          "bg-white/5 text-white/70 border border-white/10"
+                          "theme-pill border theme-border"
                         }`}
                       >
                         {scorecardSummary.riskLevel}
@@ -743,7 +775,7 @@ export default function PackageDetailPage() {
                   )}
 
                   {!scorecardTarget && (
-                    <div className="mt-4 rounded-lg border border-white/10 bg-white/5 p-4 text-sm theme-text-muted">
+                    <div className="mt-4 rounded-lg border theme-border theme-inner-card p-4 text-sm theme-text-muted">
                       <div className="text-xs uppercase tracking-widest theme-text-faint mb-2">
                         How to enable scorecard
                       </div>
@@ -760,7 +792,7 @@ export default function PackageDetailPage() {
                   )}
 
                   {scorecardTarget && !scorecardLoading && scorecardError && (
-                    <p className="text-sm text-amber-200 mt-4">
+                    <p className="text-sm text-amber-600 dark:text-amber-300 mt-4">
                       Scorecard summary is temporarily unavailable.
                     </p>
                   )}
@@ -786,7 +818,7 @@ export default function PackageDetailPage() {
                         <span>Score health</span>
                         <span>{scoreProgress.toFixed(0)}%</span>
                       </div>
-                      <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                      <div className="h-2 rounded-full bg-surface-200 dark:bg-white/10 overflow-hidden">
                         <div
                           className="h-full rounded-full bg-emerald-500"
                           style={{ width: `${scoreProgress}%` }}
@@ -850,13 +882,13 @@ export default function PackageDetailPage() {
               <div className="flex flex-wrap gap-3">
                 <Link
                   href={supplyChainUrl}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-primary-500/30 text-primary-300 hover:text-white hover:bg-primary-500/20 transition-colors text-sm"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-primary-500/30 text-primary-600 dark:text-primary-300 hover:text-white hover:bg-primary-500 transition-colors text-sm"
                 >
                   Open supply chain dashboard
                 </Link>
                 <Link
                   href={packageId ? `/impact?pkg=${encodeURIComponent(packageId)}` : "/impact"}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-white/10 theme-text-muted hover:text-white hover:bg-white/5 transition-colors text-sm"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border theme-border theme-text-muted theme-bg-hover theme-hover-text transition-colors text-sm"
                 >
                   Run impact analysis
                 </Link>
@@ -877,16 +909,16 @@ export default function PackageDetailPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                 <Link
                   href={supplyChainUrl}
-                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-primary-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
+                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-primary-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-50 dark:focus-visible:ring-offset-surface-950"
                 >
                   <div className="flex items-center justify-between text-xs theme-text-faint uppercase">
                     <span>Dashboard</span>
-                    <span className="px-2 py-0.5 rounded-full border border-primary-500/30 text-primary-300">
+                    <span className="px-2 py-0.5 rounded-full border border-primary-500/30 text-primary-600 dark:text-primary-300">
                       Recommended
                     </span>
                   </div>
                   <div className="mt-3 flex items-center gap-3">
-                    <span className="w-9 h-9 rounded-lg bg-primary-500/10 border border-primary-500/20 flex items-center justify-center text-primary-300">
+                    <span className="w-9 h-9 rounded-lg bg-primary-500/10 border border-primary-500/20 flex items-center justify-center text-primary-600 dark:text-primary-300">
                       <Shield className="w-4 h-4" />
                     </span>
                     <div className="text-lg font-semibold theme-text-primary">
@@ -903,16 +935,16 @@ export default function PackageDetailPage() {
 
                 <Link
                   href={packageId ? `/sbom?packageId=${encodeURIComponent(packageId)}` : "/sbom"}
-                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-emerald-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
+                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-emerald-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-50 dark:focus-visible:ring-offset-surface-950"
                 >
                   <div className="flex items-center justify-between text-xs theme-text-faint uppercase">
                     <span>SBOM</span>
-                    <span className="px-2 py-0.5 rounded-full border border-emerald-500/30 text-emerald-300">
+                    <span className="px-2 py-0.5 rounded-full border border-emerald-500/30 text-emerald-600 dark:text-emerald-300">
                       CycloneDX / SPDX
                     </span>
                   </div>
                   <div className="mt-3 flex items-center gap-3">
-                    <span className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-300">
+                    <span className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-300">
                       <Package className="w-4 h-4" />
                     </span>
                     <div className="text-lg font-semibold theme-text-primary">
@@ -933,16 +965,16 @@ export default function PackageDetailPage() {
                       ? `/supply-chain?view=slsa&package=${encodeURIComponent(packageId)}`
                       : "/supply-chain?view=slsa"
                   }
-                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-amber-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-950"
+                  className="group glass-card p-5 border theme-border theme-inner-card-hover transition-all hover:-translate-y-0.5 hover:border-amber-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-50 dark:focus-visible:ring-offset-surface-950"
                 >
                   <div className="flex items-center justify-between text-xs theme-text-faint uppercase">
                     <span>SLSA</span>
-                    <span className="px-2 py-0.5 rounded-full border border-amber-500/30 text-amber-200">
+                    <span className="px-2 py-0.5 rounded-full border border-amber-500/30 text-amber-700 dark:text-amber-200">
                       Provenance
                     </span>
                   </div>
                   <div className="mt-3 flex items-center gap-3">
-                    <span className="w-9 h-9 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-200">
+                    <span className="w-9 h-9 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-700 dark:text-amber-200">
                       <Lock className="w-4 h-4" />
                     </span>
                     <div className="text-lg font-semibold theme-text-primary">

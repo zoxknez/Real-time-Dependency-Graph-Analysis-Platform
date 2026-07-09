@@ -4,7 +4,7 @@
  * React hooks for SLSA provenance queries and verification.
  */
 
-import { useQuery, useLazyQuery } from "@apollo/client";
+import { useQuery, useLazyQuery } from "@apollo/client/react";
 import { useMemo, useCallback } from "react";
 import {
   GET_SLSA_ASSESSMENT,

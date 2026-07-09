@@ -21,7 +21,7 @@ import {
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
-const navigation = [
+export const navigation = [
   {
     name: "Dashboard",
     href: "/",
@@ -93,7 +93,7 @@ export function Sidebar() {
       initial={false}
       animate={{ width: isCollapsed ? 80 : 280 }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
-      className="relative z-50 flex flex-col h-full glass-card rounded-none border-l-0 border-t-0 border-b-0 transition-colors duration-300"
+      className="relative z-50 hidden lg:flex flex-col h-full glass-card rounded-none border-l-0 border-t-0 border-b-0 transition-colors duration-300"
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-6 border-b theme-border">
@@ -127,7 +127,7 @@ export function Sidebar() {
               className={cn(
                 "group flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200",
                 isActive
-                  ? "bg-primary-500/20 text-primary-400 border border-primary-500/30"
+                  ? "bg-primary-500/10 dark:bg-primary-500/20 text-primary-600 dark:text-primary-400 border border-primary-500/20 dark:border-primary-500/30"
                   : "theme-text-tertiary theme-hover-text theme-bg-hover"
               )}
             >
@@ -135,14 +135,14 @@ export function Sidebar() {
                 className={cn(
                   "flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-200",
                   isActive
-                    ? "bg-primary-500/20"
+                    ? "bg-primary-500/15 dark:bg-primary-500/20"
                     : "theme-inner-card theme-inner-card-hover"
                 )}
               >
                 <item.icon
                   className={cn(
                     "w-5 h-5 transition-colors",
-                    isActive ? "text-primary-400" : "theme-text-muted group-hover:text-primary-500"
+                    isActive ? "text-primary-600 dark:text-primary-400" : "theme-text-muted group-hover:text-primary-500"
                   )}
                 />
               </div>
@@ -160,7 +160,7 @@ export function Sidebar() {
               {isActive && !isCollapsed && (
                 <motion.div
                   layoutId="sidebar-indicator"
-                  className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-400"
+                  className="ml-auto w-1.5 h-1.5 rounded-full bg-primary-600 dark:bg-primary-400"
                 />
               )}
             </Link>
@@ -173,7 +173,7 @@ export function Sidebar() {
         onClick={() => setIsCollapsed(!isCollapsed)}
         aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         title={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        data-testid="mobile-menu"
+        data-testid="sidebar-collapse"
         className="absolute -right-3 top-1/2 transform -translate-y-1/2 w-6 h-6 
                    rounded-full theme-bg-tertiary theme-border-strong border
                    flex items-center justify-center theme-text-muted 

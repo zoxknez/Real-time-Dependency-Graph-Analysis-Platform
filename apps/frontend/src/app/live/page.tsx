@@ -276,9 +276,9 @@ export default function LivePage() {
       animate={{ opacity: 1, y: 0 }}
       className="relative mb-8"
     >
-      <div className="absolute top-1/2 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent -z-10" />
+      <div className="absolute top-1/2 left-0 right-0 h-px bg-gradient-to-r from-transparent via-surface-200 dark:via-white/10 to-transparent -z-10" />
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
-        <div className="flex items-center gap-4 bg-slate-950 px-6 py-2 relative z-10">
+        <div className="flex items-center gap-4 theme-bg-primary px-6 py-2 relative z-10">
           <div className="relative">
             <div className="absolute inset-0 bg-accent-500/20 blur-xl rounded-full animate-pulse" />
             <Activity className="w-8 h-8 text-accent-400 relative z-10" />
@@ -297,7 +297,7 @@ export default function LivePage() {
         </div>
 
         {/* Controls Console */}
-        <div className="flex items-center gap-2 bg-slate-900/80 backdrop-blur-md p-2 rounded-xl border border-white/10 shadow-lg">
+        <div className="flex items-center gap-2 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md p-2 rounded-xl border theme-border shadow-lg">
           {breakingChangesCount > 0 && (
             <button
               onClick={() => router.push("/breaking-changes")}
@@ -311,7 +311,7 @@ export default function LivePage() {
             </button>
           )}
 
-          <div className="w-px h-6 bg-white/10 mx-1" />
+          <div className="w-px h-6 bg-surface-200 dark:bg-white/10 mx-1" />
 
           <button
             onClick={() => setIsPaused(!isPaused)}
@@ -319,7 +319,7 @@ export default function LivePage() {
               "p-2 rounded-lg border transition-all relative group",
               isPaused
                 ? "bg-amber-500/10 border-amber-500/20 text-amber-500"
-                : "bg-white/5 border-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+                : "bg-surface-100 dark:bg-white/5 border-surface-200 dark:border-white/5 text-slate-500 dark:text-slate-400 hover:text-surface-900 hover:dark:text-white hover:bg-surface-200 dark:hover:bg-white/10"
             )}
             title={isPaused ? "Resume Feed" : "Pause Feed"}
           >
@@ -328,7 +328,7 @@ export default function LivePage() {
 
           <button
             onClick={clearEvents}
-            className="p-2 rounded-lg bg-white/5 border border-white/5 text-slate-400 hover:text-white hover:bg-white/10 transition-all"
+            className="p-2 rounded-lg bg-surface-100 dark:bg-white/5 border border-surface-200 dark:border-white/5 text-slate-500 dark:text-slate-400 hover:text-surface-900 hover:dark:text-white hover:bg-surface-200 dark:hover:bg-white/10 transition-all"
             title="Clear Buffer"
           >
             <Trash2 className="w-4 h-4" />
@@ -340,21 +340,21 @@ export default function LivePage() {
               "p-2 rounded-lg border transition-all",
               soundEnabled
                 ? "bg-accent-500/10 border-accent-500/20 text-accent-400"
-                : "bg-white/5 border-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+                : "bg-surface-100 dark:bg-white/5 border border-surface-200 dark:border-white/5 text-slate-500 dark:text-slate-400 hover:text-surface-900 hover:dark:text-white hover:bg-surface-200 dark:hover:bg-white/10"
             )}
             title="Toggle Sound"
           >
             {soundEnabled ? <Bell className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
           </button>
 
-          <div className="w-px h-6 bg-white/10 mx-1" />
+          <div className="w-px h-6 bg-surface-200 dark:bg-white/10 mx-1" />
 
           <button
             onClick={toggleFallback}
             className={cn(
               "px-3 py-2 rounded-lg border text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2",
               useFallback
-                ? "bg-white/5 border-white/5 text-slate-400 hover:bg-white/10"
+                ? "bg-surface-100 dark:bg-white/5 border-surface-200 dark:border-white/5 text-slate-500 dark:text-slate-400 hover:bg-surface-200 dark:hover:bg-white/10"
                 : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
             )}
           >
@@ -373,18 +373,18 @@ export default function LivePage() {
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="relative group p-4 rounded-xl bg-slate-900/50 border border-white/5 backdrop-blur-sm overflow-hidden"
+        className="relative group p-4 rounded-xl theme-inner-card border theme-border backdrop-blur-sm overflow-hidden"
       >
         <div className="absolute inset-0 bg-primary-500/5 translate-y-full group-hover:translate-y-0 transition-transform duration-500" />
         <div className="relative z-10">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Total signals</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest theme-text-muted mb-1">Total signals</p>
           <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-black text-white tracking-tight">
+            <span className="text-2xl font-black theme-text-primary tracking-tight">
               <AnimatedCounter value={stats.total} />
             </span>
           </div>
         </div>
-        <div className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/5 text-primary-400">
+        <div className="absolute top-2 right-2 p-1.5 rounded-lg theme-pill text-primary-400">
           <Activity className="w-3.5 h-3.5" />
         </div>
       </motion.div>
@@ -394,19 +394,19 @@ export default function LivePage() {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.05 }}
-        className="relative group p-4 rounded-xl bg-slate-900/50 border border-white/5 backdrop-blur-sm overflow-hidden"
+        className="relative group p-4 rounded-xl theme-inner-card border theme-border backdrop-blur-sm overflow-hidden"
       >
         <div className="absolute inset-0 bg-emerald-500/5 translate-y-full group-hover:translate-y-0 transition-transform duration-500" />
         <div className="relative z-10">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Throughput</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest theme-text-muted mb-1">Throughput</p>
           <div className="flex items-baseline gap-1">
-            <span className="text-2xl font-black text-emerald-400 tracking-tight">
+            <span className="text-2xl font-black text-emerald-500 dark:text-emerald-400 tracking-tight">
               {stats.eventsPerMinute}
             </span>
-            <span className="text-[10px] font-mono text-emerald-500/70">events/m</span>
+            <span className="text-[10px] font-mono text-emerald-600/70 dark:text-emerald-500/70">events/m</span>
           </div>
         </div>
-        <div className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/5 text-emerald-400">
+        <div className="absolute top-2 right-2 p-1.5 rounded-lg theme-pill text-emerald-500 dark:text-emerald-400">
           <BarChart3 className="w-3.5 h-3.5" />
         </div>
       </motion.div>
@@ -422,23 +422,23 @@ export default function LivePage() {
           className={cn(
             "relative group p-4 rounded-xl border backdrop-blur-sm overflow-hidden cursor-pointer transition-all",
             selectedEcosystem === eco
-              ? "bg-slate-800/80 border-white/20 shadow-lg ring-1 ring-white/10"
-              : "bg-slate-900/50 border-white/5 hover:border-white/10"
+              ? "bg-surface-200 dark:bg-slate-800/80 border-surface-300 dark:border-white/20 shadow-lg ring-1 ring-surface-300/30 dark:ring-white/10"
+              : "theme-inner-card border theme-border hover:theme-inner-card-hover"
           )}
         >
           <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ backgroundColor: `${getEcosystemColor(eco)}10` }} />
 
           <div className="relative z-10">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1" style={{ color: selectedEcosystem === eco ? getEcosystemColor(eco) : undefined }}>
+            <p className="text-[10px] font-bold uppercase tracking-widest theme-text-muted mb-1" style={{ color: selectedEcosystem === eco ? getEcosystemColor(eco) : undefined }}>
               {formatEcosystemName(eco)}
             </p>
             <div className="flex items-baseline gap-1">
-              <span className="text-2xl font-black text-white tracking-tight">
+              <span className="text-2xl font-black theme-text-primary tracking-tight">
                 <AnimatedCounter value={stats.byEcosystem[eco] || 0} />
               </span>
             </div>
           </div>
-          <div className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/5 opacity-50 group-hover:opacity-100 transition-opacity" style={{ color: getEcosystemColor(eco) }}>
+          <div className="absolute top-2 right-2 p-1.5 rounded-lg theme-pill opacity-50 group-hover:opacity-100 transition-opacity" style={{ color: getEcosystemColor(eco) }}>
             <Package className="w-3.5 h-3.5" />
           </div>
         </motion.div>
@@ -449,9 +449,9 @@ export default function LivePage() {
   return (
     <div className="relative min-h-[calc(100vh-4rem)] -mt-6 -mx-4 md:-mx-8 px-4 md:px-8 py-8 overflow-hidden">
       {/* Background Layer */}
-      <div className="absolute inset-0 bg-surface-950 -z-20" />
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(18,18,27,0.8)_2px,transparent_2px),linear-gradient(90deg,rgba(18,18,27,0.8)_2px,transparent_2px)] bg-[size:40px_40px] opacity-20 -z-10" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(99,102,241,0.15),transparent_70%)] -z-10" />
+      <div className="absolute inset-0 theme-bg-primary -z-20" />
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(18,18,27,0.8)_2px,transparent_2px),linear-gradient(90deg,rgba(18,18,27,0.8)_2px,transparent_2px)] bg-[size:40px_40px] opacity-[0.04] dark:opacity-20 -z-10" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(99,102,241,0.06),transparent_70%)] dark:bg-[radial-gradient(circle_at_50%_0%,rgba(99,102,241,0.15),transparent_70%)] -z-10" />
 
       <div className="max-w-7xl mx-auto relative">
         <Header />
@@ -471,7 +471,7 @@ export default function LivePage() {
               {!isPaused && <div className="absolute inset-0 w-3 h-3 rounded-full bg-emerald-500 animate-ping opacity-50" />}
             </div>
             <div className="flex flex-col">
-              <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500">System Status</span>
+              <span className="text-[10px] uppercase font-bold tracking-widest theme-text-muted">System Status</span>
               <span className={cn("text-xs font-mono font-bold", isPaused ? "text-amber-500" : "text-emerald-400 uppercase")}>
                 {isPaused ? "PAUSED - BUFFERING" : "ONLINE - STREAMING"}
               </span>
@@ -488,8 +488,8 @@ export default function LivePage() {
                   className={cn(
                     "px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all flex items-center gap-2 border",
                     selectedEventType === opt.value
-                      ? "bg-slate-800 border-white/20 text-white shadow-lg"
-                      : "border-transparent text-slate-500 hover:text-slate-300 hover:bg-white/5"
+                      ? "bg-surface-200 dark:bg-slate-800 border-surface-300 dark:border-white/20 theme-text-primary shadow-lg"
+                      : "border-transparent theme-text-muted hover:theme-text-primary hover:bg-surface-100 dark:hover:bg-white/5"
                   )}
                 >
                   <opt.icon className={cn("w-3 h-3", opt.color)} />
@@ -497,16 +497,16 @@ export default function LivePage() {
                 </button>
               ))}
             </div>
-            <div className="pl-4 border-l border-white/10">
+            <div className="pl-4 border-l theme-border">
               <EcosystemFilter selected={selectedEcosystem} onSelect={setSelectedEcosystem} />
             </div>
           </div>
         </motion.div>
 
         {/* Data Stream */}
-        <div className="glass-card border-white/10 overflow-hidden relative min-h-[500px]">
+        <div className="glass-card overflow-hidden relative min-h-[500px]">
           {/* Header Row */}
-          <div className="grid grid-cols-[auto_1fr_auto_auto] gap-4 px-6 py-3 bg-slate-950/50 border-b border-white/10 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+          <div className="grid grid-cols-[auto_1fr_auto_auto] gap-4 px-6 py-3 bg-surface-100/50 dark:bg-slate-950/50 border-b theme-border text-[10px] font-bold uppercase tracking-widest theme-text-muted">
             <div className="w-8 text-center">Sys</div>
             <div>Package Identity</div>
             <div className="text-center w-24 hidden md:block">Event</div>
@@ -532,7 +532,7 @@ export default function LivePage() {
                     initial={{ opacity: 0, x: -20, height: 0 }}
                     animate={{ opacity: 1, x: 0, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="group border-b border-white/5 hover:bg-white/[0.02] transition-colors relative"
+                    className="group border-b theme-border hover:theme-bg-hover transition-colors relative"
                   >
                     <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-accent-500 opacity-0 group-hover:opacity-100 transition-opacity" />
 
@@ -550,10 +550,10 @@ export default function LivePage() {
                       {/* Package Details */}
                       <div className="min-w-0">
                         <div className="flex items-center gap-3">
-                          <span className="text-sm font-bold text-white font-mono group-hover:text-accent-400 transition-colors truncate">
+                          <span className="text-sm font-bold theme-text-primary font-mono group-hover:text-accent-500 dark:group-hover:text-accent-400 transition-colors truncate">
                             {event.package}
                           </span>
-                          <span className="text-[10px] text-slate-500 font-mono">
+                          <span className="text-[10px] theme-text-muted font-mono">
                             {formatTime(event.time)}
                           </span>
                         </div>
@@ -563,8 +563,8 @@ export default function LivePage() {
                       <div className="hidden md:flex justify-center w-24">
                         <div className={cn(
                           "text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5",
-                          event.type === "publish" ? "text-emerald-400" :
-                            event.type === "update" ? "text-primary-400" : "text-red-400"
+                          event.type === "publish" ? "text-emerald-600 dark:text-emerald-400" :
+                            event.type === "update" ? "text-primary-600 dark:text-primary-400" : "text-red-500 dark:text-red-400"
                         )}>
                           {event.type === "publish" && <Zap className="w-3 h-3" />}
                           {event.type === "update" && <TrendingUp className="w-3 h-3" />}
@@ -576,24 +576,24 @@ export default function LivePage() {
                       {/* Version & Actions */}
                       <div className="w-32 flex justify-end items-center gap-4 relative">
                         <span className={cn(
-                          "font-mono text-xs px-2 py-1 rounded bg-white/5 border border-white/10 group-hover:border-white/20 transition-colors",
+                          "font-mono text-xs px-2 py-1 rounded theme-pill border theme-border group-hover:theme-border-strong transition-colors",
                           event.type === "yank" && "line-through opacity-50"
                         )}>
                           v{event.version}
                         </span>
 
                         {/* Hover Actions */}
-                        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all bg-slate-900/90 shadow-xl rounded-lg p-1 border border-white/10 backdrop-blur-md translate-x-4 group-hover:translate-x-0 z-10">
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all theme-panel shadow-xl rounded-lg p-1 border backdrop-blur-md translate-x-4 group-hover:translate-x-0 z-10">
                           <button
                             onClick={(e) => { e.preventDefault(); navigateToGraph(event.ecosystem, event.package); }}
-                            className="p-1.5 rounded hover:bg-primary-500/20 text-slate-400 hover:text-primary-400 transition-colors"
+                            className="p-1.5 rounded hover:bg-primary-500/20 theme-text-muted hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
                             title="Graph"
                           >
                             <GitBranch className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={(e) => { e.preventDefault(); navigateToImpact(event.ecosystem, event.package); }}
-                            className="p-1.5 rounded hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-colors"
+                            className="p-1.5 rounded hover:bg-red-500/20 theme-text-muted hover:text-red-650 dark:hover:text-red-400 transition-colors"
                             title="Impact"
                           >
                             <Shield className="w-3.5 h-3.5" />
@@ -602,7 +602,7 @@ export default function LivePage() {
                             href={`/explore?q=${event.ecosystem.toLowerCase()}:${event.package}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                            className="p-1.5 rounded hover:bg-surface-200 dark:hover:bg-white/10 theme-text-muted hover:theme-text-primary transition-colors"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>

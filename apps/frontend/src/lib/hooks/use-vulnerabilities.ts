@@ -8,7 +8,7 @@
  * - Loading states
  */
 
-import { useQuery, useLazyQuery } from "@apollo/client";
+import { useQuery, useLazyQuery } from "@apollo/client/react";
 import { useMemo, useCallback, useState } from "react";
 import {
   GET_TRANSITIVE_PATHS,

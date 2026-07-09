@@ -3,7 +3,7 @@
 import { useState, useMemo, Suspense, useEffect, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { useLazyQuery } from "@apollo/client";
+import { useLazyQuery } from "@apollo/client/react";
 import {
   Shield,
   AlertTriangle,
@@ -26,7 +26,7 @@ import { cn, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass } fr
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { SkeletonCard, Skeleton } from "@/components/ui/skeleton";
 import { QueryError } from "@/components/ui/error-display";
-import type { ImpactNode } from "@/lib/graphql/types";
+import type { ImpactDepthBucket, ImpactNode, GetImpactRadiusResponse, GetImpactRadiusVariables } from "@/lib/graphql/types";
 
 // Severity thresholds
 const getSeverity = (impactedPackages: number): {
@@ -81,11 +81,11 @@ const getSeverity = (impactedPackages: number): {
 
 // Popular packages for quick analysis
 const POPULAR_PACKAGES = [
-  { id: "cargo:tokio", name: "tokio", ecosystem: "CARGO" },
-  { id: "cargo:serde", name: "serde", ecosystem: "CARGO" },
-  { id: "npm:lodash", name: "lodash", ecosystem: "NPM" },
-  { id: "pypi:requests", name: "requests", ecosystem: "PYPI" },
-  { id: "cargo:axum", name: "axum", ecosystem: "CARGO" },
+  { id: "npm:ethers", name: "ethers", ecosystem: "NPM" },
+  { id: "npm:uuid", name: "uuid", ecosystem: "NPM" },
+  { id: "npm:viem", name: "viem", ecosystem: "NPM" },
+  { id: "npm:buffer", name: "buffer", ecosystem: "NPM" },
+  { id: "npm:tslib", name: "tslib", ecosystem: "NPM" },
 ];
 
 function ImpactPageContent() {
@@ -104,7 +104,7 @@ function ImpactPageContent() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
 
-  const [getImpact, { data, loading, error }] = useLazyQuery(GET_IMPACT_RADIUS);
+  const [getImpact, { data, loading, error }] = useLazyQuery<GetImpactRadiusResponse, GetImpactRadiusVariables>(GET_IMPACT_RADIUS);
 
   // Auto-analyze if URL has package param
   useEffect(() => {
@@ -169,6 +169,14 @@ function ImpactPageContent() {
 
   const impact = data?.impactRadius;
 
+  const depthBucketMap = useMemo(() => {
+    const buckets = new Map<number, number>();
+    impact?.depthBuckets.forEach((bucket: ImpactDepthBucket) => {
+      buckets.set(bucket.depth, bucket.packageCount);
+    });
+    return buckets;
+  }, [impact]);
+
   // Calculate severity based on impact
   const severity = useMemo(() => {
     if (!impact) return null;
@@ -184,8 +192,11 @@ function ImpactPageContent() {
       severity: severity?.level,
       summary: {
         impactedPackages: impact.impactedPackages,
+        directImpactedPackages: impact.directImpactedPackages,
+        transitiveImpactedPackages: impact.transitiveImpactedPackages,
         impactedVersions: impact.impactedVersions,
         maxDepth: impact.maxDepth,
+        depthBuckets: impact.depthBuckets,
       },
       topImpacted: impact.topImpacted.map((item: ImpactNode) => ({
         id: item.package.id,
@@ -218,13 +229,13 @@ function ImpactPageContent() {
             <Shield className="w-8 h-8 text-danger animate-pulse" />
           </div>
           <div>
-            <h1 className="text-4xl font-bold tracking-tight text-white flex items-center gap-3">
+            <h1 className="text-4xl font-bold tracking-tight theme-text-primary flex items-center gap-3">
               Impact Analysis
               <span className="text-sm font-medium px-2 py-0.5 rounded-md bg-danger/20 text-danger border border-danger/30 uppercase tracking-widest">
                 Beta
               </span>
             </h1>
-            <p className="text-slate-400 mt-1 text-lg">
+            <p className="theme-text-muted mt-1 text-lg">
               Simulate CVE impact and assess vulnerability blast radius
             </p>
           </div>
@@ -241,8 +252,8 @@ function ImpactPageContent() {
         <div className={cn(
           "relative rounded-2xl transition-all duration-300 overflow-hidden",
           isInputFocused
-            ? "bg-slate-900/80 ring-2 ring-primary-500/50 shadow-[0_0_40px_rgba(37,99,235,0.2)]"
-            : "bg-slate-900/40 border border-white/5 hover:bg-slate-900/60"
+            ? "bg-white/80 dark:bg-slate-900/80 ring-2 ring-primary-500/50 shadow-[0_0_40px_rgba(37,99,235,0.2)]"
+            : "bg-white/40 dark:bg-slate-900/40 border border-surface-200 dark:border-white/5 hover:bg-white/60 hover:dark:bg-slate-900/60"
         )}>
           {/* Glass sheen */}
           <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
@@ -260,11 +271,11 @@ function ImpactPageContent() {
                 onFocus={() => setIsInputFocused(true)}
                 onBlur={() => setIsInputFocused(false)}
                 placeholder="Enter package ID (e.g., npm:react)"
-                className="w-full h-14 pl-12 pr-4 bg-transparent border-none outline-none text-white placeholder:text-slate-600 font-mono text-sm focus:ring-0"
+                className="w-full h-14 pl-12 pr-4 bg-transparent border-none outline-none text-surface-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 font-mono text-sm focus:ring-0"
               />
             </div>
 
-            <div className="h-px md:h-14 w-full md:w-px bg-white/5" />
+            <div className="h-px md:h-14 w-full md:w-px bg-surface-200 dark:bg-white/5" />
 
             {/* Version Range Input */}
             <div className="w-full md:w-64 relative group">
@@ -278,11 +289,11 @@ function ImpactPageContent() {
                 onFocus={() => setIsInputFocused(true)}
                 onBlur={() => setIsInputFocused(false)}
                 placeholder="Version range (optional)"
-                className="w-full h-14 pl-12 pr-4 bg-transparent border-none outline-none text-warning placeholder:text-slate-600 font-mono text-sm focus:ring-0"
+                className="w-full h-14 pl-12 pr-4 bg-transparent border-none outline-none text-warning placeholder:text-slate-400 dark:placeholder:text-slate-600 font-mono text-sm focus:ring-0"
               />
             </div>
 
-            <div className="h-px md:h-14 w-full md:w-px bg-white/5" />
+            <div className="h-px md:h-14 w-full md:w-px bg-surface-200 dark:bg-white/5" />
 
             {/* Depth Selector */}
             <div className="w-full md:w-48 relative group">
@@ -297,7 +308,7 @@ function ImpactPageContent() {
                 className="w-full h-14 pl-12 pr-10 bg-transparent border-none outline-none text-primary-300 font-mono text-sm appearance-none cursor-pointer focus:ring-0"
               >
                 {[1, 2, 3, 4, 5].map((d) => (
-                  <option key={d} value={d} className="bg-slate-900 text-white">
+                  <option key={d} value={d} className="bg-white dark:bg-slate-900 text-surface-900 dark:text-white">
                     {d} Level{d > 1 ? "s" : ""}
                   </option>
                 ))}
@@ -332,7 +343,7 @@ function ImpactPageContent() {
             <button
               key={pkg.id}
               onClick={() => analyzePackage(pkg.id)}
-              className="px-2 py-1 rounded-md hover:bg-white/5 hover:text-primary-300 transition-colors"
+              className="px-2 py-1 rounded-md hover:bg-surface-100 hover:dark:bg-white/5 hover:text-primary-300 transition-colors"
             >
               {pkg.id}
             </button>
@@ -382,7 +393,7 @@ function ImpactPageContent() {
                 <Skeleton className="h-10 w-32 rounded-xl" />
               </div>
               {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="flex items-center gap-4 p-4 rounded-2xl bg-white/5">
+                <div key={i} className="flex items-center gap-4 p-4 rounded-2xl bg-black/[0.02] dark:bg-white/5">
                   <Skeleton className="w-12 h-12 rounded-xl" />
                   <div className="flex-1 space-y-2">
                     <Skeleton className="h-5 w-48" />
@@ -427,7 +438,7 @@ function ImpactPageContent() {
                 initial={{ opacity: 0, scale: 0.98, filter: "blur(10px)" }}
                 animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
                 className={cn(
-                  "glass-card p-6 flex flex-col md:flex-row items-center gap-6 border border-white/5 shadow-2xl relative overflow-hidden",
+                  "glass-card p-6 flex flex-col md:flex-row items-center gap-6 border theme-border shadow-2xl relative overflow-hidden",
                   "before:absolute before:inset-0 before:opacity-[0.03] before:bg-[radial-gradient(circle_at_50%_50%,#fff,transparent)]"
                 )}
               >
@@ -442,7 +453,7 @@ function ImpactPageContent() {
                 <div className={cn(
                   "relative z-10 p-5 rounded-[2rem] shadow-inner flex items-center justify-center",
                   severity.bgColor.replace('/20', '/30'),
-                  "border border-white/5"
+                  "border border-surface-200/50 dark:border-white/5"
                 )}>
                   <severity.icon className={cn("w-12 h-12 drop-shadow-[0_0_10px_currentColor]", severity.color)} />
                 </div>
@@ -452,15 +463,15 @@ function ImpactPageContent() {
                     <span className={cn("text-2xl font-black tracking-tighter uppercase italic", severity.color)}>
                       {severity.level} Risk Profile
                     </span>
-                    <div className="hidden md:block w-1.5 h-1.5 rounded-full bg-white/20" />
-                    <div className="flex items-center gap-2 text-white font-bold text-lg">
+                    <div className="hidden md:block w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-white/20" />
+                    <div className="flex items-center gap-2 theme-text-primary font-bold text-lg">
                       <AnimatedCounter value={impact.impactedPackages} />
                       <span className="opacity-80">Ecosystem Blast Radius</span>
                     </div>
                   </div>
                   <p className="text-slate-400 leading-relaxed max-w-3xl">
-                    Potential security cascade in <span className="font-mono text-primary-400 font-bold px-2 py-0.5 rounded bg-white/5 border border-white/10">{packageId}</span>
-                    could affect critical infrastructure up to <span className="text-white font-bold">{impact.maxDepth} levels</span> deep.
+                    Potential security cascade in <span className="font-mono text-primary-400 font-bold px-2 py-0.5 rounded bg-black/5 dark:bg-white/5 border border-surface-200 dark:border-white/10">{packageId}</span>
+                    could affect critical infrastructure up to <span className="theme-text-primary font-bold">{impact.maxDepth} levels</span> deep.
                     Analysis suggests <span className={cn("font-bold", severity.color)}>{severity.level.toLowerCase()} prioritization</span> for patching.
                   </p>
                 </div>
@@ -469,7 +480,7 @@ function ImpactPageContent() {
                 <div className="flex items-center gap-3 relative z-10">
                   <button
                     onClick={() => navigateToGraph(packageId)}
-                    className="group/btn relative p-4 rounded-2xl bg-white/5 border border-white/10 
+                    className="group/btn relative p-4 rounded-2xl bg-black/5 dark:bg-white/5 border border-surface-200 dark:border-white/10
                              hover:bg-primary-500/10 hover:border-primary-500/30 transition-all duration-300 hover:scale-110"
                     title="Visualize full dependency path"
                   >
@@ -477,7 +488,7 @@ function ImpactPageContent() {
                   </button>
                   <button
                     onClick={copyShareLink}
-                    className="group/btn relative p-4 rounded-2xl bg-white/5 border border-white/10 
+                    className="group/btn relative p-4 rounded-2xl bg-black/5 dark:bg-white/5 border border-surface-200 dark:border-white/10
                              hover:bg-success/10 hover:border-success/30 transition-all duration-300 hover:scale-110"
                     title="Copy analysis URL"
                   >
@@ -490,7 +501,7 @@ function ImpactPageContent() {
                   <div className="relative">
                     <button
                       onClick={() => setShowExportMenu(!showExportMenu)}
-                      className="group/btn relative p-4 rounded-2xl bg-white/5 border border-white/10 
+                      className="group/btn relative p-4 rounded-2xl bg-black/5 dark:bg-white/5 border border-surface-200 dark:border-white/10
                                hover:bg-warning/10 hover:border-warning/30 transition-all duration-300 hover:scale-110"
                       title="Download JSON report"
                     >
@@ -502,15 +513,15 @@ function ImpactPageContent() {
                           initial={{ opacity: 0, scale: 0.95, y: 10 }}
                           animate={{ opacity: 1, scale: 1, y: 0 }}
                           exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                          className="absolute top-full right-0 mt-3 glass-card py-2 min-w-[220px] z-50 shadow-2xl 
-                                   border-white/10 before:absolute before:-top-2 before:right-6 before:w-4 
-                                   before:h-4 before:bg-slate-900 before:border-l before:border-t 
-                                   before:border-white/10 before:rotate-45"
+                          className="absolute top-full right-0 mt-3 glass-card py-2 min-w-[220px] z-50 shadow-2xl
+                                   theme-border before:absolute before:-top-2 before:right-6 before:w-4
+                                   before:h-4 before:bg-white before:dark:bg-slate-900 before:border-l before:border-t
+                                   before:border-surface-200 dark:before:border-white/10 before:rotate-45"
                         >
                           <button
                             onClick={exportAsJSON}
-                            className="w-full px-5 py-4 flex items-center gap-4 text-sm text-slate-300 
-                                     hover:text-white hover:bg-white/5 transition-all font-semibold"
+                            className="w-full px-5 py-4 flex items-center gap-4 text-sm theme-text-secondary
+                                     theme-hover-text theme-bg-hover transition-all font-semibold"
                           >
                             <div className="p-2 rounded-lg bg-warning/10">
                               <FileJson className="w-4 h-4 text-warning" />
@@ -526,7 +537,7 @@ function ImpactPageContent() {
             )}
 
             {/* Impact Summary Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -536,7 +547,7 @@ function ImpactPageContent() {
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex flex-col gap-1">
-                    <p className="text-4xl font-extrabold text-white tracking-tighter">
+                    <p className="text-4xl font-extrabold theme-text-primary tracking-tighter">
                       <AnimatedCounter value={impact.impactedPackages} />
                     </p>
                     <p className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
@@ -554,12 +565,52 @@ function ImpactPageContent() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
+                className="glass-card p-8 border-red-400/20 group hover:border-red-400/40 transition-all duration-500
+                         before:absolute before:inset-0 before:bg-gradient-to-br before:from-red-400/5 before:to-transparent before:opacity-0 hover:before:opacity-100"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-4xl font-extrabold theme-text-primary tracking-tighter">
+                      <AnimatedCounter value={impact.directImpactedPackages} />
+                    </p>
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Direct Dependents</p>
+                  </div>
+                  <div className="p-4 rounded-[1.5rem] bg-red-400/10 border border-red-400/20 group-hover:scale-110 transition-all duration-500 shadow-lg">
+                    <GitBranch className="w-8 h-8 text-red-400 drop-shadow-[0_0_8px_rgba(248,113,113,0.5)]" />
+                  </div>
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 }}
+                className="glass-card p-8 border-orange-400/20 group hover:border-orange-400/40 transition-all duration-500
+                         before:absolute before:inset-0 before:bg-gradient-to-br before:from-orange-400/5 before:to-transparent before:opacity-0 hover:before:opacity-100"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-col gap-1">
+                    <p className="text-4xl font-extrabold theme-text-primary tracking-tighter">
+                      <AnimatedCounter value={impact.transitiveImpactedPackages} />
+                    </p>
+                    <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Transitive Cascade</p>
+                  </div>
+                  <div className="p-4 rounded-[1.5rem] bg-orange-400/10 border border-orange-400/20 group-hover:scale-110 transition-all duration-500 shadow-lg">
+                    <Share2 className="w-8 h-8 text-orange-400 drop-shadow-[0_0_8px_rgba(251,146,60,0.5)]" />
+                  </div>
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.4 }}
                 className="glass-card p-8 border-warning/20 group hover:border-warning/40 transition-all duration-500
                          before:absolute before:inset-0 before:bg-gradient-to-br before:from-warning/5 before:to-transparent before:opacity-0 hover:before:opacity-100"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex flex-col gap-1">
-                    <p className="text-4xl font-extrabold text-white tracking-tighter">
+                    <p className="text-4xl font-extrabold theme-text-primary tracking-tighter">
                       <AnimatedCounter value={impact.impactedVersions} />
                     </p>
                     <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Version Blast Area</p>
@@ -573,13 +624,13 @@ function ImpactPageContent() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
+                transition={{ delay: 0.5 }}
                 className="glass-card p-8 border-primary-500/20 group hover:border-primary-500/40 transition-all duration-500
                          before:absolute before:inset-0 before:bg-gradient-to-br before:from-primary-500/5 before:to-transparent before:opacity-0 hover:before:opacity-100"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex flex-col gap-1">
-                    <p className="text-4xl font-extrabold text-white tracking-tighter">{impact.maxDepth}</p>
+                    <p className="text-4xl font-extrabold theme-text-primary tracking-tighter">{impact.maxDepth}</p>
                     <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Max Reach Levels</p>
                   </div>
                   <div className="p-4 rounded-[1.5rem] bg-primary-500/10 border border-primary-500/20 group-hover:scale-110 transition-all duration-500 shadow-lg">
@@ -590,7 +641,7 @@ function ImpactPageContent() {
             </div>
 
             {/* Top Impacted Packages */}
-            <div className="glass-card p-8 border-white/5 shadow-2xl relative overflow-hidden group">
+            <div className="glass-card p-8 theme-border shadow-2xl relative overflow-hidden group">
               {/* Subtle background glow */}
               <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 blur-[100px] pointer-events-none" />
 
@@ -600,14 +651,14 @@ function ImpactPageContent() {
                     <AlertTriangle className="w-6 h-6 text-warning animate-pulse" />
                   </div>
                   <div>
-                    <h3 className="text-2xl font-bold text-white tracking-tight">Top Impacted Entities</h3>
+                    <h3 className="text-2xl font-bold theme-text-primary tracking-tight">Top Impacted Entities</h3>
                     <p className="text-sm text-slate-400 font-medium">Critical nodes within the identified blast radius</p>
                   </div>
                 </div>
-                <div className="px-5 py-2.5 rounded-2xl bg-white/5 border border-white/10 flex items-center gap-3 backdrop-blur-md">
+                <div className="px-5 py-2.5 rounded-2xl bg-black/5 dark:bg-white/5 border border-surface-200 dark:border-white/10 flex items-center gap-3 backdrop-blur-md">
                   <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Visibility</span>
                   <div className="w-1.5 h-1.5 rounded-full bg-primary-500" />
-                  <span className="text-sm font-black text-white">
+                  <span className="text-sm font-black theme-text-primary">
                     {Math.min(impact.topImpacted.length, 10)} / <AnimatedCounter value={impact.impactedPackages} duration={0.8} />
                   </span>
                 </div>
@@ -627,8 +678,8 @@ function ImpactPageContent() {
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.05 }}
-                      className="group flex flex-col sm:flex-row items-center gap-4 p-5 rounded-2xl bg-white/[0.02] 
-                               border border-white/5 hover:bg-white/[0.05] hover:border-primary-500/30 
+                      className="group flex flex-col sm:flex-row items-center gap-4 p-5 rounded-2xl bg-black/[0.01] dark:bg-white/[0.02]
+                               border border-surface-200 dark:border-white/5 hover:bg-black/[0.03] hover:dark:bg-white/[0.05] hover:border-primary-500/30
                                transition-all duration-300 relative overflow-hidden shadow-lg hover:shadow-primary-500/5"
                     >
                       {/* Hover background effect */}
@@ -659,7 +710,7 @@ function ImpactPageContent() {
                       {/* Ecosystem Icon/Bulb */}
                       <div className="relative">
                         <div
-                          className="w-4 h-4 rounded-full ring-4 ring-white/5 group-hover:scale-125 transition-transform shadow-[0_0_20px_currentColor] relative z-10"
+                          className="w-4 h-4 rounded-full ring-4 ring-black/5 dark:ring-white/5 group-hover:scale-125 transition-transform shadow-[0_0_20px_currentColor] relative z-10"
                           style={{ backgroundColor: getEcosystemColor(item.package.ecosystem), color: getEcosystemColor(item.package.ecosystem) }}
                         />
                         <div
@@ -671,7 +722,7 @@ function ImpactPageContent() {
                       {/* Package Info */}
                       <div className="flex-1 min-w-0 text-center sm:text-left relative z-10">
                         <div className="flex items-center justify-center sm:justify-start gap-2 mb-0.5">
-                          <p className="font-bold text-white truncate text-lg group-hover:text-primary-400 transition-colors">
+                          <p className="font-bold theme-text-primary truncate text-lg group-hover:text-primary-400 transition-colors">
                             {item.package.name}
                           </p>
                         </div>
@@ -704,19 +755,19 @@ function ImpactPageContent() {
                       </div>
 
                       {/* Interactive Actions */}
-                      <div className="flex items-center gap-2 border-l border-white/10 pl-4 ml-2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0 relative z-10">
+                      <div className="flex items-center gap-2 border-l border-surface-200 dark:border-white/10 pl-4 ml-2 opacity-0 group-hover:opacity-100 transition-all translate-x-4 group-hover:translate-x-0 relative z-10">
                         <button
                           onClick={() => navigateToGraph(item.package.id)}
-                          className="p-3 rounded-xl bg-white/5 hover:bg-primary-500/20 text-slate-400 hover:text-primary-400 
-                                   border border-white/10 hover:border-primary-500/30 transition-all shadow-xl"
+                          className="p-3 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-primary-500/20 text-slate-400 hover:text-primary-400
+                                   border border-surface-200 dark:border-white/10 hover:border-primary-500/30 transition-all shadow-xl"
                           title="View dependency tree"
                         >
                           <GitBranch className="w-5 h-5" />
                         </button>
                         <a
                           href={`/explore?q=${encodeURIComponent(item.package.id)}`}
-                          className="p-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white 
-                                   border border-white/10 hover:border-white/20 transition-all shadow-xl"
+                          className="p-3 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 hover:dark:bg-white/10 text-slate-400 hover:text-surface-900 hover:dark:text-white
+                                   border border-surface-200 dark:border-white/10 hover:border-surface-300 hover:dark:border-white/20 transition-all shadow-xl"
                           title="Explore package details"
                         >
                           <ExternalLink className="w-5 h-5" />
@@ -731,11 +782,11 @@ function ImpactPageContent() {
             {/* Visual Impact Visualization Overhaul */}
             <div className="glass-card p-10 relative overflow-hidden">
               {/* Background scan grid effect */}
-              <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)]" />
+              <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,0.02)_1px,transparent_1px)] dark:bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)]" />
 
               <div className="relative z-10 flex flex-col xl:flex-row items-center justify-between gap-12">
                 <div className="flex-1 text-center xl:text-left">
-                  <h3 className="text-2xl font-black text-white mb-2 flex items-center justify-center xl:justify-start gap-3 tracking-tighter uppercase italic">
+                  <h3 className="text-2xl font-black theme-text-primary mb-2 flex items-center justify-center xl:justify-start gap-3 tracking-tighter uppercase italic">
                     <Target className="w-8 h-8 text-primary-400 animate-pulse" />
                     Borehole Visualization
                   </h3>
@@ -745,10 +796,10 @@ function ImpactPageContent() {
 
                   {/* Depth Breakdown Stats Overhaul */}
                   <div className="space-y-5 max-w-md mx-auto xl:mx-0">
-                    {[1, 2, 3].map((depth) => {
-                      const count = impact.topImpacted.filter((i: ImpactNode) => i.depth === depth).length;
-                      const percentage = impact.topImpacted.length > 0
-                        ? Math.round((count / impact.topImpacted.length) * 100)
+                    {Array.from({ length: Math.min(impact.maxDepth, 5) }, (_, index) => index + 1).map((depth) => {
+                      const count = depthBucketMap.get(depth) ?? 0;
+                      const percentage = impact.impactedPackages > 0
+                        ? Math.round((count / impact.impactedPackages) * 100)
                         : 0;
                       const colors = depth === 1
                         ? { bar: "from-red-600 to-red-400", bg: "bg-red-500/10", shadow: "shadow-[0_0_15px_rgba(239,68,68,0.3)]", text: "text-red-400" }
@@ -759,13 +810,13 @@ function ImpactPageContent() {
                       return (
                         <div key={depth} className="group/stat">
                           <div className="flex items-center justify-between text-sm mb-2 px-1">
-                            <span className="font-bold text-slate-300 tracking-widest uppercase">Depth 0{depth}</span>
+                            <span className="font-bold text-slate-300 tracking-widest uppercase">Depth {String(depth).padStart(2, "0")}</span>
                             <span className={cn("font-black text-base italic", colors.text)}>
                               {count.toLocaleString()} NODES ({percentage}%)
                             </span>
                           </div>
                           <div
-                            className={cn("h-3 rounded-full overflow-hidden p-[1px] border border-white/5", colors.bg)}
+                            className={cn("h-3 rounded-full overflow-hidden p-[1px] border border-surface-200 dark:border-white/5", colors.bg)}
                           >
                             <motion.div
                               initial={{ width: 0 }}
@@ -785,9 +836,9 @@ function ImpactPageContent() {
                       );
                     })}
 
-                    <div className="pt-6 mt-6 border-t border-white/5 flex items-center justify-between px-2">
+                    <div className="pt-6 mt-6 border-t border-surface-200 dark:border-white/5 flex items-center justify-between px-2">
                       <span className="text-slate-500 font-black uppercase tracking-[0.2em] italic">Aggregate Risk</span>
-                      <div className="text-3xl font-black text-white tracking-tighter flex items-end gap-2">
+                      <div className="text-3xl font-black theme-text-primary tracking-tighter flex items-end gap-2">
                         <AnimatedCounter value={impact.impactedPackages} />
                         <span className="text-sm font-bold text-primary-400/50 mb-1 uppercase tracking-widest">Global</span>
                       </div>
@@ -826,14 +877,14 @@ function ImpactPageContent() {
                   {/* Concentric Rings */}
                   {[0, 1, 2, 3].map((ring) => {
                     const depth = ring + 1;
-                    const depthPackages = impact.topImpacted.filter((i: ImpactNode) => i.depth === depth).length;
+                    const depthPackages = depthBucketMap.get(depth) ?? 0;
 
                     const ringSize = 100 + (ring * 100); // 100px, 200px, 300px, 400px
                     const ringColors =
                       depth === 1 ? "border-red-500/80 bg-red-500/5 shadow-[0_0_20px_rgba(239,68,68,0.1)]" :
                         depth === 2 ? "border-orange-500/50 bg-orange-500/5 shadow-[0_0_20px_rgba(245,158,11,0.05)]" :
                           depth === 3 ? "border-primary-500/40 bg-primary-500/5 shadow-[0_0_20px_rgba(59,130,246,0.05)]" :
-                            "border-slate-500/20 bg-white/[0.02]";
+                            "border-slate-300/40 dark:border-slate-500/20 bg-black/[0.01] dark:bg-white/[0.02]";
 
                     return (
                       <motion.div
@@ -860,7 +911,7 @@ function ImpactPageContent() {
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.8 + ring * 0.1 }}
-                            className="bg-slate-900/90 border border-white/20 shadow-2xl px-3 py-1 rounded-full flex items-center gap-2 backdrop-blur-md"
+                            className="bg-white/90 dark:bg-slate-900/90 border border-surface-200 dark:border-white/20 theme-shadow px-3 py-1 rounded-full flex items-center gap-2 backdrop-blur-md"
                           >
                             <div className="w-2 h-2 rounded-full animate-pulse"
                               style={{
@@ -868,7 +919,7 @@ function ImpactPageContent() {
                                 boxShadow: `0 0 10px ${depth === 1 ? "#ef4444" : depth === 2 ? "#f59e0b" : depth === 3 ? "#3b82f6" : "#64748b"}`
                               }}
                             />
-                            <span className="text-[12px] font-black text-white">
+                            <span className="text-[12px] font-black theme-text-primary">
                               {depthPackages.toLocaleString()}
                             </span>
                           </motion.div>
@@ -882,7 +933,7 @@ function ImpactPageContent() {
                             transition={{ repeat: Infinity, duration: 15 + ring * 5, ease: "linear" }}
                           >
                             <div
-                              className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full border-2 border-white/50"
+                              className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full border-2 border-surface-300/50 dark:border-white/50"
                               style={{
                                 backgroundColor: depth === 1 ? "#ef4444" : depth === 2 ? "#f59e0b" : "#3b82f6",
                                 boxShadow: `0 0 15px ${depth === 1 ? "#ef4444" : depth === 2 ? "#f59e0b" : "#3b82f6"}`
@@ -907,7 +958,7 @@ function ImpactPageContent() {
                       }}
                       transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
                       className={cn(
-                        "w-24 h-24 rounded-full bg-slate-900 border-4 flex flex-col items-center justify-center overflow-hidden",
+                        "w-24 h-24 rounded-full theme-bg-secondary border-4 flex flex-col items-center justify-center overflow-hidden",
                         severity?.ringColor || "border-red-500/50"
                       )}
                     >
@@ -922,9 +973,9 @@ function ImpactPageContent() {
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="mt-4 px-4 py-2 rounded-xl bg-slate-900/80 border border-white/10 backdrop-blur-md text-center shadow-2xl"
+                      className="mt-4 px-4 py-2 rounded-xl bg-white/80 dark:bg-slate-900/80 border border-surface-200 dark:border-white/10 backdrop-blur-md text-center shadow-2xl"
                     >
-                      <p className="text-white font-bold text-sm truncate max-w-[140px]">{packageId}</p>
+                      <p className="theme-text-primary font-bold text-sm truncate max-w-[140px]">{packageId}</p>
                       <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">{versionRange || 'Live Target'}</p>
                     </motion.div>
                   </div>
@@ -963,17 +1014,17 @@ function ImpactPageContent() {
                 transition={{ repeat: Infinity, duration: 20, ease: "linear" }}
               />
               <motion.div
-                className="absolute -inset-2 border border-white/5 rounded-full"
+                className="absolute -inset-2 border border-surface-200 dark:border-white/5 rounded-full"
                 animate={{ rotate: -360 }}
                 transition={{ repeat: Infinity, duration: 15, ease: "linear" }}
               />
 
-              <div className="relative w-28 h-28 rounded-[2rem] bg-slate-900 border border-white/10 flex items-center justify-center shadow-2xl group-hover/icon:rotate-[10deg] transition-all duration-500">
+              <div className="relative w-28 h-28 rounded-[2rem] theme-bg-secondary border border-surface-200 dark:border-white/10 flex items-center justify-center shadow-2xl group-hover/icon:rotate-[10deg] transition-all duration-500">
                 <Shield className="w-14 h-14 text-primary-400 group-hover/icon:scale-110 transition-transform" />
               </div>
             </div>
 
-            <h3 className="text-3xl font-black text-white mb-4 tracking-tighter uppercase italic">
+            <h3 className="text-3xl font-black theme-text-primary mb-4 tracking-tighter uppercase italic">
               System Ready
             </h3>
             <p className="text-lg text-slate-400 leading-relaxed mb-8">

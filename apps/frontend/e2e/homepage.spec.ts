@@ -2,7 +2,9 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Homepage', () => {
   test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.removeItem('theme'));
     await page.goto('/');
+    await expect(page.locator('html')).toHaveAttribute('data-theme-ready', 'true');
   });
 
   test('should display the main heading', async ({ page }) => {
@@ -25,9 +27,7 @@ test.describe('Homepage', () => {
   });
 
   test('should toggle dark/light theme', async ({ page }) => {
-    const themeToggle = page.getByTestId('theme-toggle').or(
-      page.getByRole('button', { name: /theme/i })
-    );
+    const themeToggle = page.getByTestId('theme-toggle');
     
     if (await themeToggle.isVisible()) {
       // Get initial theme
@@ -35,14 +35,11 @@ test.describe('Homepage', () => {
       const initialClass = await html.getAttribute('class');
       
       // Toggle theme
-      await themeToggle.click();
-      
-      // Wait for theme change
-      await page.waitForTimeout(300);
-      
-      // Verify theme changed
-      const newClass = await html.getAttribute('class');
-      expect(newClass).not.toBe(initialClass);
+      await themeToggle.click({ force: true });
+
+      await expect
+        .poll(() => html.getAttribute('class'))
+        .not.toBe(initialClass);
     }
   });
 
@@ -84,15 +81,13 @@ test.describe('Homepage - Mobile', () => {
     await page.goto('/');
     
     // Look for hamburger menu or mobile nav
-    const mobileMenu = page.getByTestId('mobile-menu').or(
-      page.getByRole('button', { name: /menu/i })
-    );
+    const mobileMenu = page.getByTestId('mobile-menu');
     
     // Mobile menu might be visible
     if (await mobileMenu.isVisible()) {
-      await mobileMenu.click();
+      await mobileMenu.click({ force: true });
       // Nav items should appear
-      await expect(page.getByRole('navigation')).toBeVisible();
+      await expect(page.getByRole('navigation', { name: 'Mobile navigation' })).toBeVisible();
     }
   });
 

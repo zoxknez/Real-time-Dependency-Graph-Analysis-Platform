@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useLazyQuery } from "@apollo/client";
+import { useLazyQuery } from "@apollo/client/react";
 import { Send, Loader2, Sparkles, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -32,8 +32,14 @@ export function GeminiChat({ packageId, onClose }: GeminiChatProps) {
     const [inputValue, setInputValue] = useState("");
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
-    const [askGemini, { loading: askLoading }] = useLazyQuery(ASK_GEMINI);
-    const [explainGraph, { loading: explainLoading }] = useLazyQuery(EXPLAIN_DEPENDENCY_GRAPH);
+    const [askGemini, { loading: askLoading }] = useLazyQuery<
+        { askGemini: string },
+        { question: string; contextPackages: string[] }
+    >(ASK_GEMINI);
+    const [explainGraph, { loading: explainLoading }] = useLazyQuery<
+        { explainDependencyGraph: string },
+        { packageId: string }
+    >(EXPLAIN_DEPENDENCY_GRAPH);
 
     const loading = askLoading || explainLoading;
 
@@ -66,11 +72,12 @@ export function GeminiChat({ packageId, onClose }: GeminiChatProps) {
                 },
             });
 
-            if (data?.askGemini) {
+            const answer = data?.askGemini;
+            if (answer) {
                 const aiMsg: Message = {
                     id: (Date.now() + 1).toString(),
                     role: "assistant",
-                    content: data.askGemini,
+                    content: answer,
                     timestamp: new Date(),
                 };
                 setMessages((prev) => [...prev, aiMsg]);
@@ -103,11 +110,12 @@ export function GeminiChat({ packageId, onClose }: GeminiChatProps) {
                 variables: { packageId },
             });
 
-            if (data?.explainDependencyGraph) {
+            const explanation = data?.explainDependencyGraph;
+            if (explanation) {
                 const aiMsg: Message = {
                     id: (Date.now() + 1).toString(),
                     role: "assistant",
-                    content: data.explainDependencyGraph,
+                    content: explanation,
                     timestamp: new Date(),
                 };
                 setMessages((prev) => [...prev, aiMsg]);
@@ -125,17 +133,17 @@ export function GeminiChat({ packageId, onClose }: GeminiChatProps) {
     };
 
     return (
-        <div className="flex flex-col h-full bg-slate-950/50 backdrop-blur-xl border-l border-white/10 w-full max-w-md shadow-2xl">
+        <div className="flex flex-col h-full theme-bg-secondary backdrop-blur-xl border-l theme-border w-full max-w-md shadow-2xl">
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-slate-900/50">
+            <div className="flex items-center justify-between p-4 border-b theme-border theme-bg-primary">
                 <div className="flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-purple-400" />
-                    <h2 className="font-semibold text-white">Gemini Assistant</h2>
+                    <Sparkles className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                    <h2 className="font-semibold theme-text-primary">Gemini Assistant</h2>
                 </div>
                 {onClose && (
                     <button
                         onClick={onClose}
-                        className="p-1 hover:bg-white/10 rounded-full transition-colors text-slate-400 hover:text-white"
+                        className="p-1 hover:bg-gray-100 dark:hover:bg-white/10 rounded-full transition-colors text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white"
                     >
                         <X className="w-5 h-5" />
                     </button>
@@ -154,11 +162,11 @@ export function GeminiChat({ packageId, onClose }: GeminiChatProps) {
                         <div
                             className={`max-w-[85%] rounded-2xl p-3 text-sm ${msg.role === "user"
                                 ? "bg-blue-600 text-white"
-                                : "bg-slate-800 text-slate-200 border border-white/5"
+                                : "theme-bg-primary theme-text-primary border theme-border"
                                 }`}
                         >
                             {msg.role === "assistant" ? (
-                                <div className="prose prose-invert prose-sm max-w-none">
+                                <div className="prose dark:prose-invert prose-sm max-w-none">
                                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                                         {msg.content}
                                     </ReactMarkdown>
@@ -176,7 +184,7 @@ export function GeminiChat({ packageId, onClose }: GeminiChatProps) {
                         animate={{ opacity: 1 }}
                         className="flex justify-start"
                     >
-                        <div className="bg-slate-800 rounded-2xl p-3 border border-white/5 flex items-center gap-2 text-slate-400 text-sm">
+                        <div className="theme-bg-primary rounded-2xl p-3 border theme-border flex items-center gap-2 theme-text-secondary text-sm">
                             <Loader2 className="w-4 h-4 animate-spin" />
                             Thinking...
                         </div>
@@ -186,12 +194,12 @@ export function GeminiChat({ packageId, onClose }: GeminiChatProps) {
             </div>
 
             {/* Input Area */}
-            <div className="p-4 border-t border-white/10 bg-slate-900/50 space-y-3">
+            <div className="p-4 border-t theme-border theme-bg-primary space-y-3">
                 {packageId && (
                     <button
                         onClick={handleExplainGraph}
                         disabled={loading}
-                        className="w-full text-xs py-2 px-3 rounded-lg border border-purple-500/30 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 transition-colors flex items-center justify-center gap-2"
+                        className="w-full text-xs py-2 px-3 rounded-lg border border-purple-300 dark:border-purple-500/30 bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-500/20 transition-colors flex items-center justify-center gap-2"
                     >
                         <Sparkles className="w-3 h-3" />
                         Explain this graph
@@ -205,7 +213,7 @@ export function GeminiChat({ packageId, onClose }: GeminiChatProps) {
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
                         placeholder="Ask about dependencies..."
-                        className="w-full bg-slate-800 border-white/10 rounded-xl pl-4 pr-12 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+                        className="w-full theme-bg-secondary border theme-border rounded-xl pl-4 pr-12 py-3 text-sm theme-text-primary placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
                         disabled={loading}
                     />
                     <button

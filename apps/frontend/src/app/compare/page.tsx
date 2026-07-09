@@ -2,7 +2,7 @@
 
 import { useState, useCallback, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useLazyQuery } from "@apollo/client";
+import { useLazyQuery } from "@apollo/client/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   GitCompare,
@@ -21,6 +21,12 @@ import {
 import { GET_PACKAGE, GET_REVERSE_DEPENDENTS } from "@/lib/graphql/queries";
 import { cn, formatEcosystemName, getEcosystemColor, getEcosystemBadgeClass, formatNumber } from "@/lib/utils";
 import { QueryError } from "@/components/ui/error-display";
+import type {
+  GetPackageResponse,
+  GetPackageVariables,
+  GetReverseDependentsResponse,
+  GetReverseDependentsVariables,
+} from "@/lib/graphql/types";
 
 interface ComparePackage {
   id: string;
@@ -63,16 +69,16 @@ function PackageSelector({
     <div className={cn(
       "relative rounded-2xl transition-all duration-300 overflow-hidden flex-1 group/container",
       packageData
-        ? "bg-slate-900/60 border border-white/10"
+        ? "bg-white/60 dark:bg-surface-900/60 border border-surface-200 dark:border-white/10"
         : isFocused
-          ? "bg-slate-900/80 ring-2 ring-primary-500/50 shadow-[0_0_40px_rgba(59,130,246,0.15)]"
-          : "bg-slate-900/40 border border-white/5 hover:bg-slate-900/60"
+          ? "bg-white/80 dark:bg-surface-900/80 ring-2 ring-primary-500/50 shadow-[0_0_40px_rgba(59,130,246,0.15)]"
+          : "bg-white/40 dark:bg-surface-900/40 border border-surface-200/50 dark:border-white/5 hover:bg-white/60 hover:dark:bg-surface-900/60"
     )}>
       {/* Glass sheen */}
       <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent pointer-events-none" />
 
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-white/5 relative z-10 bg-white/[0.02]">
+      <div className="flex items-center justify-between p-4 border-b border-surface-200/60 dark:border-white/5 relative z-10 bg-black/[0.01] dark:bg-white/[0.02]">
         <div className="flex items-center gap-2">
           <div className={cn(
             "w-2 h-2 rounded-full",
@@ -83,7 +89,7 @@ function PackageSelector({
         {packageData && (
           <button
             onClick={onClear}
-            className="p-1.5 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+            className="p-1.5 rounded-lg hover:bg-surface-100 hover:dark:bg-white/10 text-slate-400 hover:text-surface-900 hover:dark:text-white transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -104,7 +110,7 @@ function PackageSelector({
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
                 placeholder="Enter package ID (e.g., cargo:tokio)"
-                className="w-full h-14 pl-12 pr-4 bg-slate-950/50 border border-white/10 rounded-xl outline-none text-white placeholder:text-slate-600 font-mono text-sm focus:border-primary-500/50 focus:bg-slate-950/80 transition-all"
+                className="w-full h-14 pl-12 pr-4 bg-surface-100/50 dark:bg-slate-950/50 border border-surface-200 dark:border-white/10 rounded-xl outline-none text-surface-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-600 font-mono text-sm focus:border-primary-500/50 focus:bg-white focus:dark:bg-slate-950/80 transition-all"
               />
               <div className="absolute right-2 top-2">
                 <button
@@ -139,35 +145,35 @@ function PackageSelector({
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <h4 className="text-xl font-bold text-white truncate">{packageData.name}</h4>
+                <h4 className="text-xl font-bold theme-text-primary truncate">{packageData.name}</h4>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className={cn("text-[10px] px-2 py-0.5 rounded-md font-black uppercase tracking-widest border border-white/5", getEcosystemBadgeClass(packageData.ecosystem))}>
+                  <span className={cn("text-[10px] px-2 py-0.5 rounded-md font-black uppercase tracking-widest border border-surface-200/50 dark:border-white/5", getEcosystemBadgeClass(packageData.ecosystem))}>
                     {formatEcosystemName(packageData.ecosystem)}
                   </span>
-                  <span className="text-xs text-slate-500 font-mono bg-white/5 px-2 py-0.5 rounded-md">{packageData.id}</span>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 font-mono bg-surface-100 dark:bg-white/5 px-2 py-0.5 rounded-md">{packageData.id}</span>
                 </div>
               </div>
             </div>
 
             {/* Key Stats */}
             <div className="grid grid-cols-2 gap-3">
-              <div className="p-4 rounded-xl bg-slate-950/50 border border-white/5 relative overflow-hidden group/stat">
+              <div className="p-4 rounded-xl bg-surface-100/50 dark:bg-surface-950/50 border border-surface-200 dark:border-white/5 relative overflow-hidden group/stat">
                 <div className="absolute inset-0 bg-primary-500/5 translate-y-full group-hover/stat:translate-y-0 transition-transform duration-500" />
                 <div className="flex items-center gap-2 mb-1 relative z-10">
                   <Users className="w-4 h-4 text-primary-400" />
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Dependents</span>
                 </div>
-                <p className="text-2xl font-black text-white relative z-10">
+                <p className="text-2xl font-black theme-text-primary relative z-10">
                   {formatNumber(packageData.dependentsCount)}
                 </p>
               </div>
-              <div className="p-4 rounded-xl bg-slate-950/50 border border-white/5 relative overflow-hidden group/stat">
+              <div className="p-4 rounded-xl bg-surface-100/50 dark:bg-surface-950/50 border border-surface-200 dark:border-white/5 relative overflow-hidden group/stat">
                 <div className="absolute inset-0 bg-accent-500/5 translate-y-full group-hover/stat:translate-y-0 transition-transform duration-500" />
                 <div className="flex items-center gap-2 mb-1 relative z-10">
                   <TrendingUp className="w-4 h-4 text-accent-400" />
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Impact Score</span>
                 </div>
-                <p className="text-2xl font-black text-white relative z-10">
+                <p className="text-2xl font-black theme-text-primary relative z-10">
                   High
                 </p>
               </div>
@@ -177,14 +183,14 @@ function PackageSelector({
             <div className="flex gap-2 pt-2">
               <button
                 onClick={() => router.push(`/graph?pkg=${encodeURIComponent(packageData.id)}`)}
-                className="flex-1 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 transition-colors flex items-center justify-center gap-2 text-xs font-bold text-slate-300 hover:text-white uppercase tracking-wide group/btn"
+                className="flex-1 p-2.5 rounded-xl bg-surface-100 dark:bg-white/5 hover:bg-surface-200 hover:dark:bg-white/10 border border-surface-200 dark:border-white/5 hover:border-surface-300 hover:dark:border-white/20 transition-colors flex items-center justify-center gap-2 text-xs font-bold text-surface-700 dark:text-slate-300 hover:text-surface-900 hover:dark:text-white uppercase tracking-wide group/btn"
               >
                 <GitBranch className="w-4 h-4 text-slate-400 group-hover/btn:text-primary-400 transition-colors" />
                 Graph
               </button>
               <button
                 onClick={() => router.push(`/impact?pkg=${encodeURIComponent(packageData.id)}`)}
-                className="flex-1 p-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 transition-colors flex items-center justify-center gap-2 text-xs font-bold text-slate-300 hover:text-white uppercase tracking-wide group/btn"
+                className="flex-1 p-2.5 rounded-xl bg-surface-100 dark:bg-white/5 hover:bg-white/10 border border-surface-200 dark:border-white/5 hover:border-surface-300 hover:dark:border-white/20 transition-colors flex items-center justify-center gap-2 text-xs font-bold text-surface-700 dark:text-slate-300 hover:text-surface-900 hover:dark:text-white uppercase tracking-wide group/btn"
               >
                 <Shield className="w-4 h-4 text-slate-400 group-hover/btn:text-danger transition-colors" />
                 Impact
@@ -208,10 +214,10 @@ function ComparePageContent() {
   const [pkg1Data, setPkg1Data] = useState<ComparePackage | null>(null);
   const [pkg2Data, setPkg2Data] = useState<ComparePackage | null>(null);
 
-  const [getPackage1, { loading: loading1, error: error1 }] = useLazyQuery(GET_PACKAGE);
-  const [getPackage2, { loading: loading2, error: error2 }] = useLazyQuery(GET_PACKAGE);
-  const [getDeps1] = useLazyQuery(GET_REVERSE_DEPENDENTS);
-  const [getDeps2] = useLazyQuery(GET_REVERSE_DEPENDENTS);
+  const [getPackage1, { loading: loading1, error: error1 }] = useLazyQuery<GetPackageResponse, GetPackageVariables>(GET_PACKAGE);
+  const [getPackage2, { loading: loading2, error: error2 }] = useLazyQuery<GetPackageResponse, GetPackageVariables>(GET_PACKAGE);
+  const [getDeps1] = useLazyQuery<GetReverseDependentsResponse, GetReverseDependentsVariables>(GET_REVERSE_DEPENDENTS);
+  const [getDeps2] = useLazyQuery<GetReverseDependentsResponse, GetReverseDependentsVariables>(GET_REVERSE_DEPENDENTS);
 
   const loadPackage1 = useCallback(async (id: string) => {
     setPkg1Id(id);
@@ -282,8 +288,8 @@ function ComparePageContent() {
         animate={{ opacity: 1, y: 0 }}
         className="text-center mb-8 relative"
       >
-        <div className="absolute top-1/2 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent -z-10" />
-        <h1 className="text-4xl font-black theme-text-primary inline-flex items-center gap-4 bg-slate-950 px-6 relative z-10">
+        <div className="absolute top-1/2 left-0 right-0 h-px bg-gradient-to-r from-transparent via-surface-200 dark:via-white/10 to-transparent -z-10" />
+        <h1 className="text-4xl font-black theme-text-primary inline-flex items-center gap-4 theme-bg-primary px-6 relative z-10">
           <GitCompare className="w-8 h-8 text-primary-400" />
           SYSTEM COMPARE
         </h1>
@@ -313,15 +319,15 @@ function ComparePageContent() {
         {/* Swap Button Area */}
         <div className="flex items-center justify-center lg:py-0 py-4 relative z-20">
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none lg:rotate-90">
-            <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent lg:w-px lg:h-full lg:bg-gradient-to-b" />
+            <div className="w-full h-px bg-gradient-to-r from-transparent via-surface-200 dark:via-white/10 to-transparent lg:w-px lg:h-full lg:bg-gradient-to-b" />
           </div>
           <motion.button
             onClick={swapPackages}
             disabled={!pkg1Data && !pkg2Data}
             whileHover={{ scale: 1.1, rotate: 180 }}
             whileTap={{ scale: 0.9 }}
-            className="p-4 rounded-full bg-slate-900 border border-white/10 shadow-[0_0_20px_rgba(0,0,0,0.5)] 
-                     hover:border-primary-500/50 hover:shadow-[0_0_20px_rgba(59,130,246,0.2)] 
+            className="p-4 rounded-full theme-bg-secondary border theme-border theme-shadow
+                     hover:border-primary-500/50 hover:shadow-[0_0_20px_rgba(59,130,246,0.2)]
                      transition-all disabled:opacity-30 flex items-center justify-center group"
             title="Swap packages"
           >
@@ -361,12 +367,12 @@ function ComparePageContent() {
               ) : (
                 <div className="flex flex-col items-center">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-4xl font-black text-white">
+                    <span className="text-4xl font-black theme-text-primary">
                       {pkg1Data.dependentsCount > pkg2Data.dependentsCount ? pkg1Data.name : pkg2Data.name}
                     </span>
                     <CheckCircle className="w-8 h-8 text-success-400 animate-pulse" />
                   </div>
-                  <p className="text-lg text-slate-400">
+                  <p className="text-lg text-slate-400 dark:text-slate-300">
                     is dominant with{" "}
                     <span className="text-success-400 font-bold font-mono">
                       +{formatNumber(Math.abs(pkg1Data.dependentsCount - pkg2Data.dependentsCount))}
@@ -380,13 +386,13 @@ function ComparePageContent() {
             {/* Comparison Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Dependents Comparison */}
-              <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 backdrop-blur-sm relative overflow-hidden group hover:border-white/10 transition-colors">
+              <div className="p-6 rounded-2xl bg-white/50 dark:bg-surface-900/50 border border-surface-200 dark:border-white/5 backdrop-blur-sm relative overflow-hidden group hover:border-surface-300 hover:dark:border-white/10 transition-colors">
                 <div className="absolute inset-0 bg-primary-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
                 <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-6 text-center">Popularity Index</p>
 
                 <div className="flex items-center justify-between relative z-10">
                   <div className="text-center flex-1">
-                    <p className="text-2xl font-black text-white tabular-nums">
+                    <p className="text-2xl font-black theme-text-primary tabular-nums">
                       {formatNumber(pkg1Data.dependentsCount)}
                     </p>
                     <p className="text-[10px] text-slate-500 uppercase font-bold mt-1 truncate px-2">{pkg1Data.name}</p>
@@ -398,26 +404,26 @@ function ComparePageContent() {
                         <CheckCircle className="w-5 h-5 text-success" />
                       </div>
                     ) : pkg1Data.dependentsCount < pkg2Data.dependentsCount ? (
-                      <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full bg-surface-200 dark:bg-slate-800 flex items-center justify-center">
                         <span className="block w-2 h-2 rounded-full bg-slate-600" />
                       </div>
                     ) : (
                       <span className="text-xl font-bold theme-text-faint">=</span>
                     )}
-                    <div className="w-full h-px bg-white/10 my-2" />
+                    <div className="w-full h-px bg-surface-200 dark:bg-white/10 my-2" />
                     {pkg1Data.dependentsCount < pkg2Data.dependentsCount ? (
                       <div className="w-8 h-8 rounded-full bg-success/20 flex items-center justify-center">
                         <CheckCircle className="w-5 h-5 text-success" />
                       </div>
                     ) : pkg1Data.dependentsCount > pkg2Data.dependentsCount ? (
-                      <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-full bg-surface-200 dark:bg-slate-800 flex items-center justify-center">
                         <span className="block w-2 h-2 rounded-full bg-slate-600" />
                       </div>
                     ) : null}
                   </div>
 
                   <div className="text-center flex-1">
-                    <p className="text-2xl font-black text-white tabular-nums">
+                    <p className="text-2xl font-black theme-text-primary tabular-nums">
                       {formatNumber(pkg2Data.dependentsCount)}
                     </p>
                     <p className="text-[10px] text-slate-500 uppercase font-bold mt-1 truncate px-2">{pkg2Data.name}</p>
@@ -426,12 +432,12 @@ function ComparePageContent() {
               </div>
 
               {/* Ecosystem */}
-              <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 backdrop-blur-sm relative overflow-hidden group hover:border-white/10 transition-colors">
+              <div className="p-6 rounded-2xl bg-white/50 dark:bg-surface-900/50 border border-surface-200 dark:border-white/5 backdrop-blur-sm relative overflow-hidden group hover:border-surface-300 hover:dark:border-white/10 transition-colors">
                 <div className="absolute inset-0 bg-accent-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
                 <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-6 text-center">Environment</p>
                 <div className="flex flex-col gap-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-400 font-mono">{pkg1Data.name}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">{pkg1Data.name}</span>
                     <span
                       className={cn("text-xs px-2 py-1 rounded font-bold shadow-sm", getEcosystemBadgeClass(pkg1Data.ecosystem))}
                       style={{ backgroundColor: `${getEcosystemColor(pkg1Data.ecosystem)}20` }}
@@ -439,9 +445,9 @@ function ComparePageContent() {
                       {formatEcosystemName(pkg1Data.ecosystem)}
                     </span>
                   </div>
-                  <div className="w-full h-px bg-white/5" />
+                  <div className="w-full h-px bg-surface-200 dark:bg-white/5" />
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-400 font-mono">{pkg2Data.name}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">{pkg2Data.name}</span>
                     <span
                       className={cn("text-xs px-2 py-1 rounded font-bold shadow-sm", getEcosystemBadgeClass(pkg2Data.ecosystem))}
                       style={{ backgroundColor: `${getEcosystemColor(pkg2Data.ecosystem)}20` }}
@@ -465,11 +471,11 @@ function ComparePageContent() {
               </div>
 
               {/* Path Connection */}
-              <div className="p-6 rounded-2xl bg-slate-900/50 border border-white/5 backdrop-blur-sm relative overflow-hidden group hover:border-white/10 transition-colors flex flex-col justify-between">
+              <div className="p-6 rounded-2xl bg-white/50 dark:bg-surface-900/50 border border-surface-200 dark:border-white/5 backdrop-blur-sm relative overflow-hidden group hover:border-surface-300 hover:dark:border-white/10 transition-colors flex flex-col justify-between">
                 <div className="absolute inset-0 bg-success/5 opacity-0 group-hover:opacity-100 transition-opacity" />
                 <div>
                   <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-4 text-center">Connectivity</p>
-                  <p className="text-slate-400 text-center text-sm mb-6">
+                  <p className="text-slate-500 dark:text-slate-400 text-center text-sm mb-6">
                     Discover the dependency chain between these two packages.
                   </p>
                 </div>
@@ -492,7 +498,7 @@ function ComparePageContent() {
             exit={{ opacity: 0 }}
             className="glass-card min-h-[400px] flex flex-col items-center justify-center text-center relative overflow-hidden p-12"
           >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(50,50,50,0.1),transparent_70%)]" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(120,120,120,0.05),transparent_70%)] dark:bg-[radial-gradient(circle_at_50%_50%,rgba(50,50,50,0.15),transparent_70%)]" />
 
             <div className="relative z-10 max-w-md mx-auto">
               <div className="w-24 h-24 mx-auto mb-8 relative">
@@ -502,7 +508,7 @@ function ComparePageContent() {
                   transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
                 />
                 <motion.div
-                  className="absolute inset-2 border border-white/10 rounded-full"
+                  className="absolute inset-2 border border-surface-200 dark:border-white/10 rounded-full"
                   animate={{ scale: [1, 1.1, 1] }}
                   transition={{ duration: 3, repeat: Infinity }}
                 />
@@ -511,8 +517,8 @@ function ComparePageContent() {
                 </div>
               </div>
 
-              <h3 className="text-2xl font-bold text-white mb-2">Ready to Compare</h3>
-              <p className="text-slate-400 leading-relaxed mb-8">
+              <h3 className="text-2xl font-bold theme-text-primary mb-2">Ready to Compare</h3>
+              <p className="theme-text-muted leading-relaxed mb-8">
                 Select two packages to initiate a comprehensive dependency analysis and side-by-side comparison.
               </p>
 

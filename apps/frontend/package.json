@@ -3,15 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3000",
-    "build": "next build",
+    "dev": "next dev --webpack --port 3000",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx",
-    "codegen": "graphql-codegen --config codegen.ts",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed",
-    "test:e2e:debug": "playwright test --debug"
+    "test:e2e": "node scripts/e2e.mjs",
+    "test:e2e:ui": "node scripts/e2e.mjs --ui",
+    "test:e2e:headed": "node scripts/e2e.mjs --headed",
+    "test:e2e:debug": "node scripts/e2e.mjs --debug"
   },
   "dependencies": {
     "@apollo/client": "^4.1.7",
@@ -28,7 +27,7 @@
     "graphql": "^16.10.0",
     "graphql-ws": "^5.16.2",
     "lucide-react": "^0.475.0",
-    "next": "16.2.3",
+    "next": "16.2.7",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-force-graph-2d": "^1.26.1",
@@ -43,12 +42,7 @@
   "devDependencies": {
     "@axe-core/playwright": "^4.8.0",
     "@eslint/js": "^9.17.0",
-    "@graphql-codegen/cli": "^5.0.4",
-    "@graphql-codegen/client-preset": "^4.5.1",
-    "@graphql-codegen/typescript": "^4.1.2",
-    "@graphql-codegen/typescript-operations": "^4.4.0",
-    "@graphql-codegen/typescript-react-apollo": "^4.3.2",
-    "@next/eslint-plugin-next": "^16.2.3",
+    "@next/eslint-plugin-next": "16.2.7",
     "@playwright/test": "^1.59.1",
     "@types/d3": "^7.4.3",
     "@types/node": "^22",
@@ -59,9 +53,12 @@
     "eslint": "^9.17.0",
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.1.0",
-    "postcss": "^8.4.49",
+    "postcss": "8.5.15",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.0",
     "typescript-eslint": "^8.18.2"
+  },
+  "overrides": {
+    "postcss": "8.5.15"
   }
 }

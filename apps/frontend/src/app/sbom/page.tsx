@@ -74,11 +74,11 @@ export default function SbomPage() {
 
 function SbomPageSkeleton() {
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 animate-pulse">
-      <div className="h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800" />
+    <div className="min-h-screen theme-bg-primary animate-pulse">
+      <div className="h-16 theme-bg-secondary border-b theme-border" />
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="h-32 bg-gray-200 dark:bg-gray-800 rounded-xl mb-6" />
-        <div className="h-96 bg-gray-200 dark:bg-gray-800 rounded-xl" />
+        <div className="h-32 theme-skeleton rounded-xl mb-6" />
+        <div className="h-96 theme-skeleton rounded-xl" />
       </div>
     </div>
   );
@@ -109,6 +109,11 @@ function SbomPageContent() {
     });
   }, [packageId, generate]);
 
+  const components = useMemo(
+    () => parseSbomComponents(sbom?.content),
+    [sbom?.content]
+  );
+
   useEffect(() => {
     if (!packageId || activeTab !== "vulnerabilities") return;
     const hasVulnSignal = components.some((c) => c.vulnerabilities !== null);
@@ -120,11 +125,6 @@ function SbomPageContent() {
       includeVulnerabilities: true,
     });
   }, [activeTab, components, generate, packageId]);
-
-  const components = useMemo(
-    () => parseSbomComponents(sbom?.content),
-    [sbom?.content]
-  );
 
   const licenseSummary = useMemo(
     () => buildLicenseSummary(components),
@@ -161,18 +161,18 @@ function SbomPageContent() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="min-h-screen theme-bg-primary">
       {/* Header */}
-      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+      <header className="theme-bg-secondary border-b theme-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
               <Layers className="w-8 h-8 text-purple-600 dark:text-purple-400" />
               <div>
-                <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+                <h1 className="text-xl font-bold theme-text-primary">
                   SBOM Management
                 </h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
+                <p className="text-sm theme-text-tertiary">
                   Software Bill of Materials • CycloneDX 1.5
                 </p>
               </div>
@@ -206,7 +206,7 @@ function SbomPageContent() {
                     includeVulnerabilities: false,
                   })
                 }
-                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
+                className="p-2 theme-text-muted hover:theme-text-primary rounded-lg hover:bg-surface-100 dark:hover:bg-surface-800 transition-colors disabled:opacity-50"
               >
                 <RefreshCw className="w-5 h-5" />
               </button>
@@ -222,7 +222,7 @@ function SbomPageContent() {
                 className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   activeTab === tab.id
                     ? "border-purple-600 text-purple-600 dark:border-purple-400 dark:text-purple-400"
-                    : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300"
+                    : "border-transparent theme-text-muted hover:theme-text-primary hover:border-surface-300 dark:hover:border-surface-700"
                 }`}
               >
                 {tab.icon}
@@ -234,7 +234,7 @@ function SbomPageContent() {
       </header>
 
       {/* Stats Banner */}
-      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+      <div className="theme-bg-secondary border-b theme-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <StatCard
@@ -276,7 +276,7 @@ function SbomPageContent() {
         {/* Search & Filters */}
         <div className="mb-6 flex flex-col sm:flex-row gap-4">
           <div className="flex-1">
-            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">
+            <label className="block text-xs theme-text-muted mb-1">
               Root package
             </label>
             <div className="flex items-center gap-2">
@@ -290,7 +290,7 @@ function SbomPageContent() {
                     setPackageId(packageInput.trim());
                   }
                 }}
-                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="w-full px-3 py-2 text-sm border theme-border rounded-lg theme-bg-secondary theme-text-primary focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
               <button
                 type="button"
@@ -309,13 +309,13 @@ function SbomPageContent() {
               placeholder="Search components by name or PURL..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="w-full pl-9 pr-4 py-2 text-sm border theme-border rounded-lg theme-bg-secondary theme-text-primary focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             />
           </div>
           <select
             value={ecosystemFilter}
             onChange={(e) => setEcosystemFilter(e.target.value)}
-            className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            className="px-4 py-2 text-sm border theme-border rounded-lg theme-bg-secondary theme-text-primary focus:ring-2 focus:ring-purple-500 focus:border-transparent"
           >
             <option value="all">All Ecosystems</option>
             <option value="NPM">NPM</option>
@@ -326,13 +326,13 @@ function SbomPageContent() {
         </div>
 
         {!packageId && (
-          <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-10 text-center text-gray-500">
+          <div className="glass-card p-10 text-center theme-text-muted">
             Provide a root package to generate an SBOM.
           </div>
         )}
 
         {packageId && sbomError && (
-          <div className="bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800 p-6 text-red-700 dark:text-red-300">
+          <div className="bg-red-50 dark:bg-red-950/40 rounded-xl border border-red-200 dark:border-red-800/60 p-6 text-red-800 dark:text-red-300">
             Failed to generate SBOM. Please try again.
           </div>
         )}
@@ -401,7 +401,7 @@ interface ComponentsTabProps {
 function ComponentsTab({ components, loading = false }: ComponentsTabProps) {
   if (loading) {
     return (
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-gray-500">
+      <div className="glass-card p-6 text-center theme-text-muted">
         Generating SBOM...
       </div>
     );
@@ -409,59 +409,59 @@ function ComponentsTab({ components, loading = false }: ComponentsTabProps) {
 
   if (!components.length) {
     return (
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-gray-500">
+      <div className="glass-card p-6 text-center theme-text-muted">
         No components found for this package.
       </div>
     );
   }
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+    <div className="glass-card overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-gray-50 dark:bg-gray-800">
+          <thead className="bg-surface-100/50 dark:bg-surface-800/50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold theme-text-muted uppercase tracking-wider">
                 Component
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold theme-text-muted uppercase tracking-wider">
                 Version
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold theme-text-muted uppercase tracking-wider">
                 Ecosystem
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold theme-text-muted uppercase tracking-wider">
                 License
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold theme-text-muted uppercase tracking-wider">
                 Type
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+              <th className="px-4 py-3 text-left text-xs font-semibold theme-text-muted uppercase tracking-wider">
                 Status
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          <tbody className="divide-y theme-border">
             {components.map((comp, index) => (
               <tr
                 key={index}
-                className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                className="theme-bg-hover transition-colors"
               >
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <Package className="w-4 h-4 text-gray-400" />
                     <div>
-                      <div className="font-medium text-gray-900 dark:text-gray-100">
+                      <div className="font-medium theme-text-primary">
                         {comp.name}
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                      <div className="text-xs theme-text-muted font-mono">
                         {comp.purl}
                       </div>
                     </div>
                   </div>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="font-mono text-sm text-gray-900 dark:text-gray-100">
+                  <span className="font-mono text-sm theme-text-primary">
                     {comp.version}
                   </span>
                 </td>
@@ -473,27 +473,27 @@ function ComponentsTab({ components, loading = false }: ComponentsTabProps) {
                 </td>
                 <td className="px-4 py-3">
                   {comp.directDependency ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
                       Direct
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium theme-pill">
                       Transitive
                     </span>
                   )}
                 </td>
                 <td className="px-4 py-3">
                   {comp.vulnerabilities === null ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium theme-pill">
                       Unknown
                     </span>
                   ) : comp.vulnerabilities > 0 ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300">
                       <AlertTriangle className="w-3 h-3" />
                       {comp.vulnerabilities} vuln
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300">
                       <CheckCircle2 className="w-3 h-3" />
                       Secure
                     </span>
@@ -514,15 +514,15 @@ function ComponentsTab({ components, loading = false }: ComponentsTabProps) {
 
 function EcosystemBadge({ ecosystem }: { ecosystem: string }) {
   const colors: Record<string, string> = {
-    NPM: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300",
-    CARGO: "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300",
-    PYPI: "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300",
-    MAVEN: "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300",
-    GO: "bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300",
+    NPM: "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300",
+    CARGO: "bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300",
+    PYPI: "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300",
+    MAVEN: "bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300",
+    GO: "bg-cyan-100 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-300",
   };
 
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colors[ecosystem] || "bg-gray-100 text-gray-700"}`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colors[ecosystem] || "theme-pill"}`}>
       {ecosystem}
     </span>
   );
@@ -540,31 +540,31 @@ function DependencyTreeTab({ components }: DependencyTreeTabProps) {
   const directDeps = components.filter((c) => c.directDependency);
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+    <div className="glass-card p-6">
       <div className="space-y-4">
         {directDeps.map((dep, index) => (
-          <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+          <div key={index} className="border theme-border rounded-lg p-4">
             <div className="flex items-center gap-3 mb-2">
               <Package className="w-5 h-5 text-blue-500" />
-              <span className="font-semibold text-gray-900 dark:text-gray-100">
+              <span className="font-semibold theme-text-primary">
                 {dep.name}
               </span>
-              <span className="text-sm text-gray-500 dark:text-gray-400 font-mono">
+              <span className="text-sm theme-text-muted font-mono">
                 @{dep.version}
               </span>
               <EcosystemBadge ecosystem={dep.ecosystem} />
             </div>
             
             {/* Transitive dependencies */}
-            <div className="ml-8 pl-4 border-l-2 border-gray-200 dark:border-gray-700 space-y-2 mt-3">
+            <div className="ml-8 pl-4 border-l-2 theme-border space-y-2 mt-3">
               {components
                 .filter((c) => !c.directDependency && c.ecosystem === dep.ecosystem)
                 .slice(0, 3)
                 .map((transitive, tIndex) => (
                   <div key={tIndex} className="flex items-center gap-2 text-sm">
                     <GitBranch className="w-4 h-4 text-gray-400" />
-                    <span className="text-gray-700 dark:text-gray-300">{transitive.name}</span>
-                    <span className="text-gray-500 dark:text-gray-400 font-mono text-xs">
+                    <span className="theme-text-secondary">{transitive.name}</span>
+                    <span className="theme-text-muted font-mono text-xs">
                       @{transitive.version}
                     </span>
                   </div>
@@ -587,11 +587,11 @@ interface LicensesTabProps {
 
 function LicensesTab({ licenses }: LicensesTabProps) {
   const categoryColors = {
-    permissive: "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300",
-    copyleft: "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300",
-    "weak-copyleft": "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300",
-    proprietary: "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300",
-    unknown: "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300",
+    permissive: "bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300",
+    copyleft: "bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300",
+    "weak-copyleft": "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300",
+    proprietary: "bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300",
+    unknown: "theme-pill",
   };
 
   const totalComponents = licenses.reduce((sum, l) => sum + l.count, 0);
@@ -599,7 +599,7 @@ function LicensesTab({ licenses }: LicensesTabProps) {
 
   if (licenses.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6 text-gray-500">
+      <div className="glass-card p-6 text-center theme-text-muted">
         No license data available.
       </div>
     );
@@ -608,11 +608,11 @@ function LicensesTab({ licenses }: LicensesTabProps) {
   return (
     <div className="space-y-6">
       {/* License Distribution Chart */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+      <div className="glass-card p-6">
+        <h3 className="text-lg font-semibold theme-text-primary mb-4">
           License Distribution
         </h3>
-        <div className="h-4 flex rounded-full overflow-hidden bg-gray-200 dark:bg-gray-700">
+        <div className="h-4 flex rounded-full overflow-hidden bg-surface-200 dark:bg-surface-700">
           {licenses.map((license, index) => (
             <div
               key={index}
@@ -626,7 +626,7 @@ function LicensesTab({ licenses }: LicensesTabProps) {
           {licenses.map((license, index) => (
             <div key={index} className="flex items-center gap-2 text-sm">
               <div className={`w-3 h-3 rounded ${categoryColors[license.category]}`} />
-              <span className="text-gray-600 dark:text-gray-400">
+              <span className="theme-text-muted">
                 {license.license} ({license.count})
               </span>
             </div>
@@ -635,31 +635,31 @@ function LicensesTab({ licenses }: LicensesTabProps) {
       </div>
 
       {/* License List */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+      <div className="glass-card overflow-hidden">
         <table className="w-full">
-          <thead className="bg-gray-50 dark:bg-gray-800">
+          <thead className="bg-surface-100/50 dark:bg-surface-800/50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+              <th className="px-4 py-3 text-left text-xs font-semibold theme-text-muted uppercase">
                 License
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+              <th className="px-4 py-3 text-left text-xs font-semibold theme-text-muted uppercase">
                 Category
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+              <th className="px-4 py-3 text-left text-xs font-semibold theme-text-muted uppercase">
                 Components
               </th>
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">
+              <th className="px-4 py-3 text-left text-xs font-semibold theme-text-muted uppercase">
                 Actions
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+          <tbody className="divide-y theme-border">
             {licenses.map((license, index) => (
-              <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+              <tr key={index} className="theme-bg-hover transition-colors">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
                     <Scale className="w-4 h-4 text-gray-400" />
-                    <span className="font-medium text-gray-900 dark:text-gray-100">
+                    <span className="font-medium theme-text-primary">
                       {license.license}
                     </span>
                   </div>
@@ -670,10 +670,10 @@ function LicensesTab({ licenses }: LicensesTabProps) {
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="text-gray-900 dark:text-gray-100">{license.count}</span>
+                  <span className="theme-text-primary">{license.count}</span>
                 </td>
                 <td className="px-4 py-3">
-                  <button className="text-blue-600 dark:text-blue-400 hover:underline text-sm">
+                  <button className="text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 hover:underline text-sm font-medium">
                     View Components
                   </button>
                 </td>
@@ -700,12 +700,12 @@ function VulnerabilitiesTab({ components }: VulnerabilitiesTabProps) {
 
   if (!components.length) {
     return (
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+      <div className="glass-card p-12 text-center">
         <AlertTriangle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+        <h3 className="text-lg font-semibold theme-text-primary mb-2">
           No SBOM data
         </h3>
-        <p className="text-gray-500 dark:text-gray-400">
+        <p className="theme-text-muted">
           Generate an SBOM to see vulnerability status.
         </p>
       </div>
@@ -714,12 +714,12 @@ function VulnerabilitiesTab({ components }: VulnerabilitiesTabProps) {
 
   if (!hasSignal) {
     return (
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+      <div className="glass-card p-12 text-center">
         <CheckCircle2 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+        <h3 className="text-lg font-semibold theme-text-primary mb-2">
           Vulnerability data unavailable
         </h3>
-        <p className="text-gray-500 dark:text-gray-400">
+        <p className="theme-text-muted">
           SBOM generation did not include vulnerability data.
         </p>
       </div>
@@ -728,12 +728,12 @@ function VulnerabilitiesTab({ components }: VulnerabilitiesTabProps) {
 
   if (vulnerableComponents.length === 0) {
     return (
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 p-12 text-center">
+      <div className="glass-card p-12 text-center">
         <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+        <h3 className="text-lg font-semibold theme-text-primary mb-2">
           No Vulnerabilities Found
         </h3>
-        <p className="text-gray-500 dark:text-gray-400">
+        <p className="theme-text-muted">
           All components in this SBOM are secure.
         </p>
       </div>
@@ -745,16 +745,16 @@ function VulnerabilitiesTab({ components }: VulnerabilitiesTabProps) {
       {vulnerableComponents.map((comp, index) => (
         <div
           key={index}
-          className="bg-white dark:bg-gray-900 rounded-xl border border-red-200 dark:border-red-800 p-4"
+          className="bg-red-50 dark:bg-red-950/40 rounded-xl border border-red-200 dark:border-red-800/60 p-4 shadow-sm"
         >
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-3">
               <AlertTriangle className="w-5 h-5 text-red-500" />
               <div>
-                <span className="font-semibold text-gray-900 dark:text-gray-100">
+                <span className="font-semibold theme-text-primary">
                   {comp.name}
                 </span>
-                <span className="text-gray-500 dark:text-gray-400 ml-2 font-mono text-sm">
+                <span className="theme-text-muted ml-2 font-mono text-sm">
                   @{comp.version}
                 </span>
               </div>
@@ -763,12 +763,12 @@ function VulnerabilitiesTab({ components }: VulnerabilitiesTabProps) {
           </div>
           
           <div className="pl-8 space-y-2">
-            <div className="text-sm text-gray-600 dark:text-gray-400">
+            <div className="text-sm theme-text-tertiary">
               {comp.vulnerabilities} known vulnerability
             </div>
             <Link
               href={`/security?tab=vulnerabilities&package=${comp.purl}`}
-              className="inline-flex items-center gap-1 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              className="inline-flex items-center gap-1 text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 hover:underline font-medium"
             >
               View details <ChevronRight className="w-4 h-4" />
             </Link>

@@ -5,7 +5,7 @@
  * based on SPDX license expressions and policies.
  */
 
-import { useQuery, useLazyQuery } from "@apollo/client";
+import { useQuery, useLazyQuery } from "@apollo/client/react";
 import { useCallback, useState } from "react";
 import {
   GET_LICENSE_INFO,

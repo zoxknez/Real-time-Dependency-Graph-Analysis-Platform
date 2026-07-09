@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { useLazyQuery } from "@apollo/client";
+import { useLazyQuery } from "@apollo/client/react";
 import {
   Search,
   Loader2,
@@ -16,12 +16,19 @@ import { SearchInput } from "@/components/ui/search-input";
 import { QueryError } from "@/components/ui/error-display";
 
 import { cn, parsePackageId } from "@/lib/utils";
+import type {
+  GetPackageResponse,
+  GetPackageVariables,
+  SearchPackagesResponse,
+  SearchPackagesVariables,
+  SemanticSearchPackagesResponse,
+} from "@/lib/graphql/types";
 
 export default function ExplorePage() {
   return (
     <Suspense
       fallback={
-        <div className="h-screen w-full flex items-center justify-center bg-surface-950">
+        <div className="h-screen w-full flex items-center justify-center theme-bg-primary">
           <Loader2 className="w-10 h-10 text-primary-400 animate-spin" />
         </div>
       }
@@ -30,8 +37,6 @@ export default function ExplorePage() {
     </Suspense>
   );
 }
-
-
 
 function ExplorePageContent() {
   const searchParams = useSearchParams();
@@ -48,14 +53,14 @@ function ExplorePageContent() {
 
   // Direct package lookup (for exact ID matches)
   const [getPackage, { data: packageData, loading: packageLoading, error: packageError }] =
-    useLazyQuery(GET_PACKAGE);
+    useLazyQuery<GetPackageResponse, GetPackageVariables>(GET_PACKAGE);
 
   // Fuzzy search for packages
   const [searchPackagesByName, { data: nameSearchData, loading: nameSearchLoading, error: nameSearchError, fetchMore: fetchMoreNameSearch }] =
-    useLazyQuery(SEARCH_PACKAGES);
+    useLazyQuery<SearchPackagesResponse, SearchPackagesVariables>(SEARCH_PACKAGES);
 
   const [searchPackagesSemantic, { data: semanticSearchData, loading: semanticSearchLoading, error: semanticSearchError, fetchMore: fetchMoreSemanticSearch }] =
-    useLazyQuery(SEMANTIC_SEARCH_PACKAGES);
+    useLazyQuery<SemanticSearchPackagesResponse, SearchPackagesVariables>(SEMANTIC_SEARCH_PACKAGES);
 
   const foundPackage = packageData?.package;
   const searchConnection = useSemanticSearch
@@ -206,9 +211,9 @@ function ExplorePageContent() {
   }, [initialQuery, initialEcosystem, getPackage, searchPackagesByName, searchPackagesSemantic, useSemanticSearch]);
 
   return (
-    <div className="min-h-screen bg-surface-950 text-white selection:bg-primary-500/30 font-sans">
-      {/* Deep Blue Background */}
-      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-surface-950 to-black z-0 pointer-events-none" />
+    <div className="min-h-screen theme-bg-primary theme-text-primary selection:bg-primary-500/30 font-sans">
+      {/* Dynamic Background */}
+      <div className="fixed inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-50/40 via-white to-slate-50/40 dark:from-slate-900 dark:via-surface-950 dark:to-black z-0 pointer-events-none" />
       <div className="fixed inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] opacity-20 z-0 pointer-events-none" />
 
       <div className="relative z-10 w-full max-w-7xl mx-auto px-4 py-8 flex flex-col min-h-screen pt-24">
@@ -218,14 +223,14 @@ function ExplorePageContent() {
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-white/5 pb-8"
+            className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b theme-border pb-8"
           >
             <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-500/10 border border-primary-500/20 text-[10px] font-bold text-primary-400 uppercase tracking-widest backdrop-blur-sm">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-500/10 border border-primary-500/20 text-[10px] font-bold text-primary-600 dark:text-primary-400 uppercase tracking-widest backdrop-blur-sm">
                 <Sparkles className="w-3 h-3 animate-pulse" />
                 Global Registry Search
               </div>
-              <h1 className="text-4xl font-extrabold text-white tracking-tight flex items-center gap-3">
+              <h1 className="text-4xl font-extrabold theme-text-primary tracking-tight flex items-center gap-3">
                 Dependency <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-accent-500">Observatory</span>
               </h1>
             </div>
@@ -259,7 +264,7 @@ function ExplorePageContent() {
                 onSearch={handleSearch}
                 placeholder="Search packages (e.g., npm:express, cargo:tokio)..."
                 isLoading={packageLoading}
-                className="w-full bg-surface-900/80 backdrop-blur-xl border border-white/10 rounded-2xl p-4 pl-12 shadow-2xl text-lg text-white placeholder:text-white/30 focus:ring-0 focus:border-primary-500/50 transition-all font-medium"
+                className="w-full bg-white/80 dark:bg-surface-900/80 backdrop-blur-xl border theme-border rounded-2xl p-4 pl-12 shadow-2xl text-lg theme-text-primary placeholder:theme-text-muted focus:ring-0 focus:border-primary-500/50 transition-all font-medium"
               />
             </div>
           </motion.div>
@@ -281,7 +286,7 @@ function ExplorePageContent() {
             {isLoading && (
               <div className="space-y-4">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-24 rounded-2xl bg-white/5 border border-white/5 animate-pulse" />
+                  <div key={i} className="h-24 rounded-2xl bg-slate-900/5 dark:bg-white/5 border theme-border animate-pulse" />
                 ))}
               </div>
             )}
@@ -317,7 +322,7 @@ function ExplorePageContent() {
                               setSearchQuery(example);
                               handleSearch(example);
                             }}
-                            className="px-4 py-3 rounded-xl bg-white/5 border border-white/5 hover:border-primary-500/30 hover:bg-white/10 text-sm theme-text-tertiary hover:theme-text-primary transition-all font-mono text-left group"
+                            className="px-4 py-3 rounded-xl bg-slate-900/5 dark:bg-white/5 border theme-border hover:border-primary-500/30 hover:bg-slate-900/10 dark:hover:bg-white/10 text-sm theme-text-tertiary hover:theme-text-primary transition-all font-mono text-left group"
                           >
                             <span className="opacity-50 group-hover:opacity-100 transition-opacity mr-2">$</span>
                             {example}
@@ -334,13 +339,13 @@ function ExplorePageContent() {
                     <motion.div
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      className="text-center p-12 bg-white/5 border border-white/10 rounded-3xl backdrop-blur-md max-w-lg"
+                      className="text-center p-12 bg-slate-900/5 dark:bg-white/5 border theme-border rounded-3xl backdrop-blur-md max-w-lg"
                     >
-                      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-white/10 flex items-center justify-center">
-                        <Search className="w-8 h-8 text-white/50" />
+                      <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-slate-900/10 dark:bg-white/10 flex items-center justify-center">
+                        <Search className="w-8 h-8 theme-text-muted" />
                       </div>
-                      <h3 className="text-xl font-bold text-white mb-2">No matching packages</h3>
-                      <p className="text-white/50 mb-8">
+                      <h3 className="text-xl font-bold theme-text-primary mb-2">No matching packages</h3>
+                      <p className="theme-text-muted mb-8">
                         No packages found for "{searchQuery}". Check the ID or try a broader search.
                       </p>
                       <button
@@ -348,7 +353,7 @@ function ExplorePageContent() {
                           setSearchQuery("");
                           router.push("/explore");
                         }}
-                        className="px-6 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-medium transition-colors"
+                        className="px-6 py-2 rounded-xl bg-slate-900/10 dark:bg-white/10 hover:bg-slate-900/20 dark:hover:bg-white/20 theme-text-primary font-medium transition-colors"
                       >
                         Clear search
                       </button>
@@ -375,7 +380,7 @@ function ExplorePageContent() {
             {searchResults.length > 0 && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between px-2">
-                  <h2 className="text-sm font-semibold text-white/70 uppercase tracking-wider">
+                  <h2 className="text-sm font-semibold theme-text-muted uppercase tracking-wider">
                     Search Results ({searchConnection?.totalCount || searchResults.length})
                   </h2>
                 </div>
@@ -402,7 +407,7 @@ function ExplorePageContent() {
                     <button
                       onClick={handleLoadMoreSearch}
                       disabled={isLoadingMoreSearch || isLoading}
-                      className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 text-white font-medium transition-all"
+                      className="px-6 py-3 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 border theme-border hover:border-black/20 dark:hover:border-white/20 theme-text-primary font-medium transition-all"
                     >
                       {isLoadingMoreSearch ? (
                         <span className="flex items-center gap-2">
@@ -419,6 +424,6 @@ function ExplorePageContent() {
           </motion.div>
         </div>
       </div>
-    </div >
+    </div>
   );
 }

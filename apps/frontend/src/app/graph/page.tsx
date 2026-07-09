@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, Suspense, useMemo } from "rea
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
-import { useLazyQuery } from "@apollo/client";
+import { useLazyQuery } from "@apollo/client/react";
 import {
   GitBranch,
   Maximize2,
@@ -28,7 +28,8 @@ import { LiveUpdateIndicator } from "@/components/graph/live-update-indicator";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { QueryError, EmptyState } from "@/components/ui/error-display";
 import { useDependencyGraphUpdates, useConnectionStatus } from "@/lib/hooks";
-import type { DependencyGraphUpdate, PackageEdge } from "@/lib/graphql/types";
+import { useTheme } from "@/components/providers/theme-provider";
+import type { DependencyGraphUpdate, PackageEdge, GetReverseDependentsResponse, GetReverseDependentsVariables } from "@/lib/graphql/types";
 import * as THREE from "three";
 import SpriteText from "three-spritetext";
 import type { NodeObject, LinkObject } from "react-force-graph-3d";
@@ -68,6 +69,23 @@ interface GraphData {
 function GraphPageContent() {
   const searchParams = useSearchParams();
   const initialPkg = searchParams.get("pkg") || "";
+  const { theme } = useTheme();
+
+  // Safe SSR check for dark theme
+  const [isDark, setIsDark] = useState(true);
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const updateTheme = () => {
+      if (theme === "system") {
+        setIsDark(mediaQuery.matches);
+      } else {
+        setIsDark(theme === "dark");
+      }
+    };
+    updateTheme();
+    mediaQuery.addEventListener("change", updateTheme);
+    return () => mediaQuery.removeEventListener("change", updateTheme);
+  }, [theme]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const graphRef = useRef<any>(null);
@@ -87,7 +105,7 @@ function GraphPageContent() {
   const [isPaused, setIsPaused] = useState(false);
   const showLiveUpdates = true;
 
-  const [getReverseDeps, { data: reverseDepsData, loading, error }] = useLazyQuery(GET_REVERSE_DEPENDENTS);
+  const [getReverseDeps, { data: reverseDepsData, loading, error }] = useLazyQuery<GetReverseDependentsResponse, GetReverseDependentsVariables>(GET_REVERSE_DEPENDENTS);
 
   // Debounced depth for graph loading
   const [debouncedMaxDepth, setDebouncedMaxDepth] = useState(maxDepth);
@@ -483,7 +501,7 @@ function GraphPageContent() {
             }}
 
             // Link Styling
-            linkColor={() => "rgba(148, 163, 184, 0.2)"}
+            linkColor={() => isDark ? "rgba(148, 163, 184, 0.2)" : "rgba(100, 116, 139, 0.35)"}
             linkWidth={1}
             linkDirectionalParticles={2}
             linkDirectionalParticleSpeed={0.005}
@@ -706,7 +724,7 @@ function GraphPageContent() {
                       className="w-3 h-3 rounded-full animate-pulse"
                       style={{ backgroundColor: selectedNode.color }}
                     />
-                    <span className="text-[10px] uppercase tracking-tighter font-bold px-2 py-0.5 rounded bg-white/5"
+                    <span className="text-[10px] uppercase tracking-tighter font-bold px-2 py-0.5 rounded bg-black/5 dark:bg-white/5"
                       style={{ color: selectedNode.color }}
                     >
                       {formatEcosystemName(selectedNode.ecosystem)}
@@ -715,7 +733,7 @@ function GraphPageContent() {
                 </div>
                 <button
                   onClick={() => setSelectedNode(null)}
-                  className="p-1.5 rounded-lg theme-text-faint hover:theme-text-primary hover:bg-white/10 transition-all"
+                  className="p-1.5 rounded-lg theme-text-faint hover:theme-text-primary hover:bg-black/5 hover:dark:bg-white/10 transition-all"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -726,7 +744,7 @@ function GraphPageContent() {
               </h3>
 
               <div className="space-y-3 mb-6">
-                <div className="p-3 rounded-xl bg-black/20 border border-white/5">
+                <div className="p-3 rounded-xl bg-black/5 dark:bg-black/20 border border-surface-200/50 dark:border-white/5">
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-xs theme-text-faint uppercase font-semibold">Package ID</span>
                     <button className="text-[10px] theme-text-accent hover:underline" onClick={() => navigator.clipboard.writeText(selectedNode.id)}>Copy</button>
@@ -737,11 +755,11 @@ function GraphPageContent() {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                  <div className="p-3 rounded-xl bg-black/[0.02] dark:bg-white/5 border border-surface-200/50 dark:border-white/5">
                     <span className="block text-[10px] theme-text-faint uppercase font-semibold mb-1">Depth</span>
                     <span className="text-lg font-bold theme-text-primary">{selectedNode.depth}</span>
                   </div>
-                  <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                  <div className="p-3 rounded-xl bg-black/[0.02] dark:bg-white/5 border border-surface-200/50 dark:border-white/5">
                     <span className="block text-[10px] theme-text-faint uppercase font-semibold mb-1">Impact</span>
                     <span className="text-lg font-bold theme-text-primary">High</span>
                   </div>
@@ -761,7 +779,7 @@ function GraphPageContent() {
                     href={`/explore?q=${encodeURIComponent(selectedNode.id)}`}
                     className="glass-card py-2.5 rounded-xl text-sm text-center theme-text-tertiary 
                              theme-hover-text theme-inner-card-hover transition-all 
-                             flex items-center justify-center gap-2 border border-white/5"
+                             flex items-center justify-center gap-2 border border-surface-200 dark:border-white/5"
                   >
                     <ExternalLink className="w-4 h-4" />
                     Details
@@ -770,7 +788,7 @@ function GraphPageContent() {
                     href={`/impact?pkg=${encodeURIComponent(selectedNode.id)}`}
                     className="glass-card py-2.5 rounded-xl text-sm text-center theme-text-tertiary 
                              hover:text-danger hover:border-danger/30 transition-all 
-                             flex items-center justify-center gap-2 border border-white/5"
+                             flex items-center justify-center gap-2 border border-surface-200 dark:border-white/5"
                   >
                     <Info className="w-4 h-4" />
                     Impact

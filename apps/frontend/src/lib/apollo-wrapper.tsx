@@ -1,12 +1,38 @@
 "use client";
 
-import { ApolloClient, ApolloProvider, InMemoryCache, HttpLink, split, from, ApolloLink, Observable } from "@apollo/client";
+import { ApolloClient, InMemoryCache, HttpLink, split, from, ApolloLink, Observable } from "@apollo/client";
+import { CombinedGraphQLErrors } from "@apollo/client/errors";
+import { ApolloProvider } from "@apollo/client/react";
 import { GraphQLWsLink } from "@apollo/client/link/subscriptions";
 import { getMainDefinition } from "@apollo/client/utilities";
 import { onError } from "@apollo/client/link/error";
 import { RetryLink } from "@apollo/client/link/retry";
 import { createClient } from "graphql-ws";
 import { useMemo, useEffect, useState } from "react";
+
+/* eslint-disable @typescript-eslint/no-namespace */
+declare module "@apollo/client" {
+  interface TypeOverrides {
+    signatureStyle: "classic";
+  }
+
+  namespace ApolloClient {
+    namespace DeclareDefaultOptions {
+      interface WatchQuery {
+        errorPolicy: "all";
+      }
+
+      interface Query {
+        errorPolicy: "all";
+      }
+
+      interface Mutate {
+        errorPolicy: "all";
+      }
+    }
+  }
+}
+/* eslint-enable @typescript-eslint/no-namespace */
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -138,12 +164,19 @@ function parseRetryAfterSeconds(value?: string | null): number | undefined {
   return undefined;
 }
 
-const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
-  if (networkError) {
+type NetworkLikeError = Error & {
+  statusCode?: number;
+  response?: { headers?: Headers };
+};
+
+const errorLink = onError(({ error, operation }) => {
+  if (!CombinedGraphQLErrors.is(error)) {
+    const networkError = error as NetworkLikeError;
+
     // Handle 429 Too Many Requests
-    if ('statusCode' in networkError && networkError.statusCode === 429) {
+    if (networkError.statusCode === 429) {
       // Extract Retry-After header if available
-      const retryAfterHeader = 'response' in networkError && networkError.response?.headers?.get('Retry-After');
+      const retryAfterHeader = networkError.response?.headers?.get('Retry-After');
       const parsedRetry = parseRetryAfterSeconds(retryAfterHeader);
       const retrySeconds = parsedRetry ?? 60;
 
@@ -156,25 +189,24 @@ const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
     }
 
     // Record other network failures
-    if ('statusCode' in networkError && networkError.statusCode >= 500) {
+    if (typeof networkError.statusCode === "number" && networkError.statusCode >= 500) {
       recordFailure();
     }
 
     console.error(`[Apollo] Network error: ${networkError.message}`);
+    return;
   }
 
-  if (graphQLErrors) {
-    for (const error of graphQLErrors) {
-      // Check for rate limit errors in GraphQL responses
-      if (error.message.toLowerCase().includes('rate limit') ||
-        error.message.toLowerCase().includes('too many requests')) {
-        operation.setContext({ rateLimited: true });
-        recordFailure(60);
-        return;
-      }
-
-      console.error(`[Apollo GraphQL Error]: ${error.message}`);
+  for (const graphQLError of error.errors) {
+    // Check for rate limit errors in GraphQL responses
+    if (graphQLError.message.toLowerCase().includes('rate limit') ||
+      graphQLError.message.toLowerCase().includes('too many requests')) {
+      operation.setContext({ rateLimited: true });
+      recordFailure(60);
+      return;
     }
+
+    console.error(`[Apollo GraphQL Error]: ${graphQLError.message}`);
   }
 });
 
@@ -191,19 +223,21 @@ const retryLink = new RetryLink({
   attempts: {
     max: 3,               // Maximum 3 retry attempts
     retryIf: (error, _operation) => {
+      const statusCode = (error as NetworkLikeError | undefined)?.statusCode;
+
       // Don't retry if circuit breaker is open
       if (circuitBreaker.isOpen) {
         return false;
       }
 
       // Don't retry 429 errors - let circuit breaker handle
-      if (error?.statusCode === 429) {
+      if (statusCode === 429) {
         return false;
       }
 
       // Only retry on network errors and 5xx server errors
-      const isNetworkError = !error?.statusCode;
-      const isServerError = error?.statusCode >= 500;
+      const isNetworkError = typeof statusCode !== "number";
+      const isServerError = typeof statusCode === "number" && statusCode >= 500;
 
       return isNetworkError || isServerError;
     },
@@ -215,12 +249,26 @@ const retryLink = new RetryLink({
 // ═══════════════════════════════════════════════════════════════
 
 const successLink = new ApolloLink((operation, forward) => {
-  return forward(operation).map((response) => {
-    const context = operation.getContext();
-    if (!context.rateLimited) {
-      recordSuccess();
-    }
-    return response;
+  return new Observable((observer) => {
+    const subscription = forward(operation).subscribe({
+      next: (response) => {
+        const context = operation.getContext();
+        if (!context.rateLimited) {
+          recordSuccess();
+        }
+        observer.next(response);
+      },
+      error: (error) => {
+        observer.error(error);
+      },
+      complete: () => {
+        observer.complete();
+      },
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   });
 });
 

@@ -4,7 +4,7 @@
  * React hooks for VEX queries and utilities.
  */
 
-import { useQuery, useLazyQuery } from "@apollo/client";
+import { useQuery, useLazyQuery } from "@apollo/client/react";
 import { useMemo, useCallback } from "react";
 import {
   GET_VEX_EXPLOITABILITY,

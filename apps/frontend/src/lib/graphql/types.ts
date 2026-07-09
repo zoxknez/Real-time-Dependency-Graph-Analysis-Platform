@@ -29,6 +29,10 @@ export interface PackageEdge {
   depth?: number;
 }
 
+export interface ScoredPackageEdge extends PackageEdge {
+  score?: number;
+}
+
 export interface PageInfo {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
@@ -38,6 +42,12 @@ export interface PageInfo {
 
 export interface PackageConnection {
   edges: PackageEdge[];
+  pageInfo: PageInfo;
+  totalCount: number;
+}
+
+export interface PackageSearchConnection {
+  edges: ScoredPackageEdge[];
   pageInfo: PageInfo;
   totalCount: number;
 }
@@ -160,12 +170,20 @@ export interface ImpactNode {
   estimatedAffectedVersions?: number;
 }
 
+export interface ImpactDepthBucket {
+  depth: number;
+  packageCount: number;
+}
+
 export interface ImpactRadiusResult {
   packageId: string;
   vulnerableVersionRange?: string;
   maxDepth: number;
   impactedPackages: number;
+  directImpactedPackages: number;
+  transitiveImpactedPackages: number;
   impactedVersions: number;
+  depthBuckets: ImpactDepthBucket[];
   topImpacted: ImpactNode[];
 }
 
@@ -218,9 +236,16 @@ export interface GetDependencyPathVariables {
 
 export interface GetImpactRadiusVariables {
   packageId: string;
-  vulnerableVersionRange?: string;
+  vulnerableVersionRange?: string | null;
   maxDepth?: number;
   limit?: number;
+}
+
+export interface SearchPackagesVariables {
+  query: string;
+  ecosystem?: string;
+  first?: number;
+  after?: string;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -297,6 +322,14 @@ export interface GetImpactRadiusResponse {
 
 export interface GetGraphStatsResponse {
   graphStats: GraphStats;
+}
+
+export interface SearchPackagesResponse {
+  searchPackages: PackageSearchConnection;
+}
+
+export interface SemanticSearchPackagesResponse {
+  semanticSearchPackages: PackageSearchConnection;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -431,7 +464,7 @@ export interface LivePackageActivityVariables {
 }
 
 export interface WatchPackagesVariables {
-  packageIds: string[];
+  packageId?: string;
 }
 
 export interface DependencyGraphUpdateVariables {

@@ -126,7 +126,7 @@ export function PackageCard({ package: pkg, onClick, isSelected, depth, score }:
                 {formatEcosystemName(pkg.ecosystem)}
               </span>
             </div>
-            <p className="text-sm theme-text-muted font-mono bg-black/10 px-2 py-0.5 rounded inline-block">
+            <p className="text-sm theme-text-muted font-mono theme-pill px-2 py-0.5 rounded inline-block">
               {pkg.id}
             </p>
 
@@ -139,7 +139,7 @@ export function PackageCard({ package: pkg, onClick, isSelected, depth, score }:
                   </span>
                   <span>{(score * 100).toFixed(0)}%</span>
                 </div>
-                <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                <div className="h-1 w-full bg-gray-200 dark:bg-white/5 rounded-full overflow-hidden">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${score * 100}%` }}
@@ -151,7 +151,7 @@ export function PackageCard({ package: pkg, onClick, isSelected, depth, score }:
 
             <div className="flex items-center gap-3 mt-3">
               {depth !== undefined && (
-                <div className="flex items-center gap-1 text-xs theme-text-faint bg-white/5 px-2 py-1 rounded">
+                <div className="flex items-center gap-1 text-xs theme-text-faint theme-pill px-2 py-1 rounded">
                   <GitBranch className="w-3 h-3" />
                   <span>Depth: {depth}</span>
                 </div>
@@ -164,7 +164,7 @@ export function PackageCard({ package: pkg, onClick, isSelected, depth, score }:
                   onClick={handleExternalClick}
                   className="flex items-center gap-1.5 text-xs theme-text-muted hover:text-primary-400 transition-all"
                 >
-                  <div className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center group-hover:bg-primary-500/20">
+                  <div className="w-4 h-4 rounded-full theme-pill flex items-center justify-center group-hover:bg-primary-500/20">
                     <ExternalLink className="w-2.5 h-2.5" />
                   </div>
                   <span>Registry</span>

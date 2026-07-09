@@ -81,22 +81,22 @@ const AgentStepCard: React.FC<{ step: SecurityAgentStep; isExpanded: boolean; on
   const getStepIcon = () => {
     switch (step.action_type) {
       case 'FUNCTION_CALL':
-        return <Wrench className="w-4 h-4 text-blue-400" />;
+        return <Wrench className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
       case 'TEXT_RESPONSE':
-        return <FileText className="w-4 h-4 text-green-400" />;
+        return <FileText className="w-4 h-4 text-green-600 dark:text-green-400" />;
       case 'ERROR':
-        return <AlertCircle className="w-4 h-4 text-red-400" />;
+        return <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />;
     }
   };
 
   const getStepColor = () => {
     switch (step.action_type) {
       case 'FUNCTION_CALL':
-        return 'border-blue-500/30 bg-blue-500/5';
+        return 'border-blue-300 dark:border-blue-500/30 bg-blue-50/50 dark:bg-blue-500/5';
       case 'TEXT_RESPONSE':
-        return 'border-green-500/30 bg-green-500/5';
+        return 'border-green-300 dark:border-green-500/30 bg-green-50/50 dark:bg-green-500/5';
       case 'ERROR':
-        return 'border-red-500/30 bg-red-500/5';
+        return 'border-red-300 dark:border-red-500/30 bg-red-50/50 dark:bg-red-500/5';
     }
   };
 
@@ -112,11 +112,11 @@ const AgentStepCard: React.FC<{ step: SecurityAgentStep; isExpanded: boolean; on
         className="w-full flex items-center justify-between"
       >
         <div className="flex items-center gap-3">
-          <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-700 text-xs font-mono">
+          <span className="flex items-center justify-center w-6 h-6 rounded-full theme-bg-secondary border theme-border text-xs font-mono theme-text-primary">
             {step.step_number}
           </span>
           {getStepIcon()}
-          <span className="text-sm font-medium text-gray-200">
+          <span className="text-sm font-medium theme-text-primary">
             {step.action_type === 'FUNCTION_CALL' 
               ? `Tool: ${step.tool_name}` 
               : step.action_type === 'TEXT_RESPONSE'
@@ -125,12 +125,12 @@ const AgentStepCard: React.FC<{ step: SecurityAgentStep; isExpanded: boolean; on
           </span>
         </div>
         {typeof timingMs === 'number' && (
-          <span className="text-xs text-gray-400">{(timingMs / 1000).toFixed(2)}s</span>
+          <span className="text-xs theme-text-secondary">{(timingMs / 1000).toFixed(2)}s</span>
         )}
         {isExpanded ? (
-          <ChevronUp className="w-4 h-4 text-gray-400" />
+          <ChevronUp className="w-4 h-4 theme-text-secondary" />
         ) : (
-          <ChevronDown className="w-4 h-4 text-gray-400" />
+          <ChevronDown className="w-4 h-4 theme-text-secondary" />
         )}
       </button>
       
@@ -143,19 +143,19 @@ const AgentStepCard: React.FC<{ step: SecurityAgentStep; isExpanded: boolean; on
             className="mt-3 overflow-hidden"
           >
             {step.thought_summary && (
-              <div className="mb-3 p-2 rounded bg-purple-500/10 border border-purple-500/20">
+              <div className="mb-3 p-2 rounded bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/20">
                 <div className="flex items-center gap-2 mb-1">
-                  <Brain className="w-3 h-3 text-purple-400" />
-                  <span className="text-xs text-purple-400 font-medium">Agent Thinking</span>
+                  <Brain className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                  <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">Agent Thinking</span>
                 </div>
-                <p className="text-xs text-gray-300 line-clamp-3">{step.thought_summary}</p>
+                <p className="text-xs theme-text-secondary line-clamp-3">{step.thought_summary}</p>
               </div>
             )}
             
             {step.tool_args && (
               <div className="mb-2">
-                <span className="text-xs text-gray-500 block mb-1">Arguments:</span>
-                <pre className="text-xs bg-gray-900 p-2 rounded overflow-x-auto font-mono text-blue-300">
+                <span className="text-xs text-gray-500 dark:text-gray-400 block mb-1">Arguments:</span>
+                <pre className="text-xs theme-bg-primary border theme-border p-2 rounded overflow-x-auto font-mono text-blue-600 dark:text-blue-300">
                   {JSON.stringify(JSON.parse(step.tool_args), null, 2)}
                 </pre>
               </div>
@@ -163,16 +163,16 @@ const AgentStepCard: React.FC<{ step: SecurityAgentStep; isExpanded: boolean; on
             
             {step.tool_result && (
               <div>
-                <span className="text-xs text-gray-500 block mb-1">Result:</span>
-                <pre className="text-xs bg-gray-900 p-2 rounded overflow-x-auto font-mono text-green-300 max-h-32 overflow-y-auto">
+                <span className="text-xs text-gray-500 dark:text-gray-400 block mb-1">Result:</span>
+                <pre className="text-xs theme-bg-primary border theme-border p-2 rounded overflow-x-auto font-mono text-green-600 dark:text-green-300 max-h-32 overflow-y-auto">
                   {JSON.stringify(JSON.parse(step.tool_result), null, 2)}
                 </pre>
               </div>
             )}
             
             {step.text_response && (
-              <div className="prose prose-sm prose-invert max-w-none">
-                <p className="text-sm text-gray-300 whitespace-pre-wrap">{step.text_response}</p>
+              <div className="prose dark:prose-invert prose-sm max-w-none">
+                <p className="text-sm theme-text-secondary whitespace-pre-wrap">{step.text_response}</p>
               </div>
             )}
           </motion.div>
@@ -217,11 +217,11 @@ const VulnerabilityCard: React.FC<{ vuln: AgentVulnerability }> = ({ vuln }) => 
           {vuln.severity}
         </span>
       </div>
-      <p className="text-xs text-gray-300 mb-2 line-clamp-2">{vuln.description}</p>
+      <p className="text-xs theme-text-secondary mb-2 line-clamp-2">{vuln.description}</p>
       <div className="flex items-center justify-between text-xs">
-        <span className="text-gray-400">Package: <span className="text-gray-200">{vuln.package}</span></span>
+        <span className="theme-text-secondary">Package: <span className="theme-text-primary font-medium">{vuln.package}</span></span>
         {vuln.fix_version && (
-          <span className="text-green-400">Fix: {vuln.fix_version}</span>
+          <span className="text-green-600 dark:text-green-400 font-medium">Fix: {vuln.fix_version}</span>
         )}
       </div>
     </motion.div>
@@ -452,7 +452,7 @@ export const SecurityAgent: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-6">
+    <div className="min-h-screen theme-bg-primary text-gray-900 dark:text-gray-100 p-6">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <motion.div
@@ -461,26 +461,26 @@ export const SecurityAgent: React.FC = () => {
           className="mb-8"
         >
           <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-600">
+            <div className="p-2 rounded-lg bg-gradient-to-br from-purple-500 to-blue-600 text-white">
               <Bot className="w-6 h-6" />
             </div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-blue-400 bg-clip-text text-transparent">
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 dark:from-purple-400 dark:to-blue-400 bg-clip-text text-transparent">
               Security Agent
             </h1>
-            <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-xs font-medium flex items-center gap-1">
+            <span className="px-2 py-0.5 rounded-full bg-purple-500/10 dark:bg-purple-500/20 text-purple-700 dark:text-purple-300 text-xs font-medium flex items-center gap-1">
               <Sparkles className="w-3 h-3" />
               Powered by Gemini 3
             </span>
             <Link
               href="/agent-live"
-              className="px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-300 text-xs font-medium flex items-center gap-1"
+              className="px-2 py-0.5 rounded-full bg-blue-500/10 dark:bg-blue-500/15 text-blue-700 dark:text-blue-300 text-xs font-medium flex items-center gap-1"
             >
               <Mic className="w-3 h-3" />
               Live API
               <ExternalLink className="w-3 h-3" />
             </Link>
           </div>
-          <p className="text-gray-400 text-sm">
+          <p className="theme-text-secondary text-sm">
             Autonomous AI agent for supply chain security analysis. Uses function calling 
             and advanced reasoning to analyze vulnerabilities, assess impact, and provide remediation.
           </p>
@@ -493,7 +493,7 @@ export const SecurityAgent: React.FC = () => {
           transition={{ delay: 0.1 }}
           className="mb-6"
         >
-          <label className="block text-sm font-medium text-gray-300 mb-2">
+          <label className="block text-sm font-medium theme-text-secondary mb-2">
             Describe your security analysis task
           </label>
           <div className="relative">
@@ -501,9 +501,9 @@ export const SecurityAgent: React.FC = () => {
               value={task}
               onChange={(e) => setTask(e.target.value)}
               placeholder="e.g., Analyze npm:lodash for vulnerabilities and assess the impact on my project..."
-              className="w-full h-24 px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg 
-                       text-white placeholder-gray-500 focus:outline-none focus:ring-2 
-                       focus:ring-purple-500 focus:border-transparent resize-none"
+              className="w-full h-24 px-4 py-3 theme-bg-secondary border theme-border rounded-lg
+                       theme-text-primary placeholder-gray-500 focus:outline-none focus:ring-1
+                       focus:ring-purple-500 resize-none"
               disabled={isRunning}
             />
             <button
@@ -528,7 +528,7 @@ export const SecurityAgent: React.FC = () => {
             </button>
           </div>
 
-          <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
+          <div className="mt-3 flex items-center gap-2 text-xs theme-text-secondary">
             <input
               id="stream-mode"
               type="checkbox"
@@ -546,8 +546,7 @@ export const SecurityAgent: React.FC = () => {
                 key={i}
                 onClick={() => setTask(example)}
                 disabled={isRunning}
-                className="px-3 py-1 text-xs bg-gray-800 hover:bg-gray-700 border border-gray-700 
-                         rounded-full text-gray-300 transition-colors disabled:opacity-50"
+                className="px-3 py-1 text-xs theme-pill hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors disabled:opacity-50"
               >
                 {example.slice(0, 50)}...
               </button>
@@ -562,11 +561,11 @@ export const SecurityAgent: React.FC = () => {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="mb-6 p-4 rounded-lg bg-purple-500/10 border border-purple-500/30"
+              className="mb-6 p-4 rounded-lg bg-purple-50 dark:bg-purple-500/10 border border-purple-200 dark:border-purple-500/30"
             >
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <Brain className="w-8 h-8 text-purple-400" />
+                  <Brain className="w-8 h-8 text-purple-600 dark:text-purple-400" />
                   <motion.div
                     animate={{ scale: [1, 1.2, 1], opacity: [0.5, 1, 0.5] }}
                     transition={{ repeat: Infinity, duration: 2 }}
@@ -574,8 +573,8 @@ export const SecurityAgent: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <p className="font-medium text-purple-300">Agent is thinking...</p>
-                  <p className="text-sm text-gray-400">
+                  <p className="font-medium text-purple-700 dark:text-purple-300">Agent is thinking...</p>
+                  <p className="text-sm theme-text-secondary">
                     Using Gemini 3 with high thinking level and function calling
                   </p>
                 </div>
@@ -593,42 +592,42 @@ export const SecurityAgent: React.FC = () => {
           >
             {/* Summary Stats */}
             <div className="grid grid-cols-4 gap-4">
-              <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
+              <div className="p-4 rounded-lg theme-bg-secondary border theme-border">
                 <div className="flex items-center gap-2 mb-1">
                   {result.success ? (
-                    <CheckCircle className="w-4 h-4 text-green-400" />
+                    <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
                   ) : (
-                    <AlertCircle className="w-4 h-4 text-red-400" />
+                    <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
                   )}
-                  <span className="text-xs text-gray-400">Status</span>
+                  <span className="text-xs theme-text-secondary">Status</span>
                 </div>
-                <p className={`text-lg font-bold ${result.success ? 'text-green-400' : 'text-red-400'}`}>
+                <p className={`text-lg font-bold ${result.success ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                   {result.success ? 'Success' : 'Failed'}
                 </p>
               </div>
               
-              <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
+              <div className="p-4 rounded-lg theme-bg-secondary border theme-border">
                 <div className="flex items-center gap-2 mb-1">
-                  <Terminal className="w-4 h-4 text-blue-400" />
-                  <span className="text-xs text-gray-400">Tool Calls</span>
+                  <Terminal className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  <span className="text-xs theme-text-secondary">Tool Calls</span>
                 </div>
-                <p className="text-lg font-bold text-blue-400">{result.total_function_calls}</p>
+                <p className="text-lg font-bold text-blue-600 dark:text-blue-400">{result.total_function_calls}</p>
               </div>
               
-              <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
+              <div className="p-4 rounded-lg theme-bg-secondary border theme-border">
                 <div className="flex items-center gap-2 mb-1">
-                  <AlertTriangle className="w-4 h-4 text-orange-400" />
-                  <span className="text-xs text-gray-400">Vulnerabilities</span>
+                  <AlertTriangle className="w-4 h-4 text-orange-600 dark:text-orange-400" />
+                  <span className="text-xs theme-text-secondary">Vulnerabilities</span>
                 </div>
-                <p className="text-lg font-bold text-orange-400">{result.vulnerabilities_found.length}</p>
+                <p className="text-lg font-bold text-orange-600 dark:text-orange-400">{result.vulnerabilities_found.length}</p>
               </div>
               
-              <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
+              <div className="p-4 rounded-lg theme-bg-secondary border theme-border">
                 <div className="flex items-center gap-2 mb-1">
-                  <Clock className="w-4 h-4 text-purple-400" />
-                  <span className="text-xs text-gray-400">Duration</span>
+                  <Clock className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-xs theme-text-secondary">Duration</span>
                 </div>
-                <p className="text-lg font-bold text-purple-400">
+                <p className="text-lg font-bold text-purple-600 dark:text-purple-400">
                   {(result.execution_time_ms / 1000).toFixed(1)}s
                 </p>
               </div>
@@ -637,8 +636,8 @@ export const SecurityAgent: React.FC = () => {
             {/* Vulnerabilities Found */}
             {result.vulnerabilities_found.length > 0 && (
               <div>
-                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                  <AlertTriangle className="w-5 h-5 text-orange-400" />
+                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 theme-text-primary">
+                  <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400" />
                   Vulnerabilities Found ({result.vulnerabilities_found.length})
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -651,18 +650,18 @@ export const SecurityAgent: React.FC = () => {
 
             {/* Agent Steps */}
             <div>
-              <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                <Bot className="w-5 h-5 text-purple-400" />
+              <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 theme-text-primary">
+                <Bot className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                 Agent Execution Steps ({result.steps.length})
               </h3>
               <div className="space-y-2">
                 {result.steps.map((step) => (
                   <AgentStepCard
-                    key={step.step_number}
-                    step={step}
-                    isExpanded={expandedSteps.has(step.step_number)}
-                    onToggle={() => toggleStep(step.step_number)}
-                    timingMs={stepTimings[step.step_number]}
+                     key={step.step_number}
+                     step={step}
+                     isExpanded={expandedSteps.has(step.step_number)}
+                     onToggle={() => toggleStep(step.step_number)}
+                     timingMs={stepTimings[step.step_number]}
                   />
                 ))}
               </div>
@@ -671,8 +670,8 @@ export const SecurityAgent: React.FC = () => {
             {/* Recommendations */}
             {result.recommendations.length > 0 && (
               <div>
-                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                  <CheckCircle className="w-5 h-5 text-green-400" />
+                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 theme-text-primary">
+                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
                   Recommendations
                 </h3>
                 <ul className="space-y-2">
@@ -682,10 +681,10 @@ export const SecurityAgent: React.FC = () => {
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.1 }}
-                      className="flex items-start gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20"
+                      className="flex items-start gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20"
                     >
-                      <CheckCircle className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" />
-                      <span className="text-sm text-gray-200">{rec}</span>
+                      <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                      <span className="text-sm theme-text-primary">{rec}</span>
                     </motion.li>
                   ))}
                 </ul>
@@ -694,12 +693,12 @@ export const SecurityAgent: React.FC = () => {
 
             {/* Final Response */}
             <div>
-              <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-blue-400" />
+              <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 theme-text-primary">
+                <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 Agent Analysis
               </h3>
-              <div className="p-4 rounded-lg bg-gray-900 border border-gray-800 prose prose-invert max-w-none">
-                <div className="text-sm text-gray-300 whitespace-pre-wrap">
+              <div className="p-4 rounded-lg theme-bg-secondary border theme-border prose dark:prose-invert max-w-none">
+                <div className="text-sm theme-text-secondary whitespace-pre-wrap">
                   {result.final_response}
                 </div>
               </div>
@@ -708,12 +707,12 @@ export const SecurityAgent: React.FC = () => {
             {/* Structured Report */}
             {result.structured_report_json && (
               <div>
-                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-purple-400" />
+                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 theme-text-primary">
+                  <FileText className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                   Structured Report (JSON)
                 </h3>
-                <div className="p-4 rounded-lg bg-gray-900 border border-gray-800">
-                  <pre className="text-xs text-purple-200 overflow-x-auto">
+                <div className="p-4 rounded-lg theme-bg-secondary border theme-border">
+                  <pre className="text-xs text-purple-700 dark:text-purple-200 overflow-x-auto">
                     {result.structured_report_json}
                   </pre>
                 </div>

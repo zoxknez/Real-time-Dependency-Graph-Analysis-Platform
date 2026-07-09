@@ -28,7 +28,7 @@ import {
   Github,
   Heart,
 } from "lucide-react";
-import { useTheme } from "@/components/providers/theme-provider";
+import { useTheme, Theme } from "@/components/providers/theme-provider";
 import { cn } from "@/lib/utils";
 
 const sections = [
@@ -112,7 +112,7 @@ function usePersistedSettings<T>(key: string, defaultValue: T): [T, (value: T) =
 }
 
 export default function SettingsPage() {
-  const { theme, toggleTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const [activeSection, setActiveSection] = useState("appearance");
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
@@ -349,7 +349,7 @@ export default function SettingsPage() {
                   ].map((option) => (
                     <button
                       key={option.id}
-                      onClick={() => option.id !== "system" && toggleTheme()}
+                      onClick={() => setTheme(option.id as Theme)}
                       className={cn(
                         "relative p-4 rounded-xl border-2 transition-all",
                         theme === option.id

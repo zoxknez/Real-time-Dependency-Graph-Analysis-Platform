@@ -86,7 +86,7 @@ test.describe('Package Detail Page', () => {
   });
 
   test('should link to external registry', async ({ page }) => {
-    const externalLink = page.getByRole('link', { name: /npm|registry|view on/i });
+    const externalLink = page.getByRole('link', { name: 'View on registry' }).first();
     
     if (await externalLink.isVisible()) {
       const href = await externalLink.getAttribute('href');
@@ -164,16 +164,12 @@ test.describe('Package Detail - Interactions', () => {
     await page.goto('/package/npm/react');
     await page.waitForLoadState('networkidle');
     
-    const copyButton = page.getByTestId('copy-install').or(
-      page.getByRole('button', { name: /copy/i })
-    );
+    const copyButton = page.getByTestId('copy-install');
     
     if (await copyButton.isVisible()) {
       await copyButton.click();
       
-      // Check for copy confirmation
-      const confirmation = page.getByText(/copied/i);
-      await expect(confirmation).toBeVisible({ timeout: 2000 });
+      await expect(copyButton).toHaveAttribute("aria-label", /copied/i, { timeout: 2000 });
     }
   });
 

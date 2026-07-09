@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { TrendingUp, ExternalLink, Star, RefreshCw } from "lucide-react";
-import { useQuery } from "@apollo/client";
+import { useQuery } from "@apollo/client/react";
 import { gql } from "@apollo/client";
 import { cn, formatNumber, formatEcosystemName, getEcosystemBadgeClass } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,8 +37,18 @@ interface PackageData {
   dependents: number;
 }
 
+interface TopPackagesDataResponse {
+  tokio?: { totalCount: number };
+  serde?: { totalCount: number };
+  axum?: { totalCount: number };
+  hyper?: { totalCount: number };
+  clap?: { totalCount: number };
+}
+
+type TopPackageKey = keyof TopPackagesDataResponse;
+
 // Seed packages we want to track
-const SEED_PACKAGES = [
+const SEED_PACKAGES: Array<{ id: string; name: string; ecosystem: string; key: TopPackageKey }> = [
   { id: "cargo:tokio", name: "tokio", ecosystem: "CARGO", key: "tokio" },
   { id: "cargo:serde", name: "serde", ecosystem: "CARGO", key: "serde" },
   { id: "cargo:axum", name: "axum", ecosystem: "CARGO", key: "axum" },
@@ -47,7 +57,7 @@ const SEED_PACKAGES = [
 ];
 
 export function TopPackages() {
-  const { data, loading, error, refetch } = useQuery(GET_TOP_PACKAGES_DATA, {
+  const { data, loading, error, refetch } = useQuery<TopPackagesDataResponse>(GET_TOP_PACKAGES_DATA, {
     errorPolicy: "all",
     pollInterval: 60000, // Refresh every minute
   });

@@ -4,9 +4,11 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Clock, Package, ArrowUpRight, Activity, Bell, BellOff } from "lucide-react";
-import { useQuery, gql } from "@apollo/client";
+import { gql } from "@apollo/client";
+import { useQuery } from "@apollo/client/react";
 import { cn, formatEcosystemName, getEcosystemBadgeClass } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { Version } from "@/lib/graphql/types";
 
 // Query for versions of popular packages to show recent activity
 const GET_RECENT_VERSIONS = gql`
@@ -40,13 +42,21 @@ interface ActivityItem {
   timestamp: number;
 }
 
-const PACKAGE_INFO: Record<string, { name: string; ecosystem: string; id: string }> = {
+interface RecentVersionsResponse {
+  tokioVersions: Version[];
+  serdeVersions: Version[];
+  axumVersions: Version[];
+}
+
+type RecentVersionsKey = keyof RecentVersionsResponse;
+
+const PACKAGE_INFO: Record<RecentVersionsKey, { name: string; ecosystem: string; id: string }> = {
   tokioVersions: { name: "tokio", ecosystem: "CARGO", id: "cargo:tokio" },
   serdeVersions: { name: "serde", ecosystem: "CARGO", id: "cargo:serde" },
   axumVersions: { name: "axum", ecosystem: "CARGO", id: "cargo:axum" },
 };
 
-function formatTimeAgo(dateString: string | null): string {
+function formatTimeAgo(dateString?: string | null): string {
   if (!dateString) return "recently";
 
   const date = new Date(dateString);
@@ -66,7 +76,7 @@ function formatTimeAgo(dateString: string | null): string {
 export function RecentActivity() {
   const [isLive, setIsLive] = useState(true);
 
-  const { data, loading, error } = useQuery(GET_RECENT_VERSIONS, {
+  const { data, loading, error } = useQuery<RecentVersionsResponse>(GET_RECENT_VERSIONS, {
     pollInterval: isLive ? 30000 : 0, // Poll every 30 seconds if live
     errorPolicy: "all",
   });
@@ -77,8 +87,9 @@ export function RecentActivity() {
     const items: ActivityItem[] = [];
 
     Object.entries(PACKAGE_INFO).forEach(([key, info]) => {
-      const versions = data[key] || [];
-      versions.forEach((v: { id: string; version: string; publishedAt: string | null }) => {
+      const typedKey = key as RecentVersionsKey;
+      const versions = data[typedKey] || [];
+      versions.forEach((v) => {
         items.push({
           id: v.id,
           type: "version",

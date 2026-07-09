@@ -1,3 +1,5 @@
+const path = require('path');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // Enable React strict mode for better development experience
@@ -19,6 +21,11 @@ const nextConfig = {
 
   // Webpack configuration
   webpack: (config, { isServer }) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      '@': path.resolve(__dirname, 'src'),
+    };
+
     // Fix for canvas module in react-force-graph
     if (!isServer) {
       config.resolve.fallback = {
@@ -99,12 +106,6 @@ const nextConfig = {
     ignoreBuildErrors: false,
   },
 
-  // ESLint configuration
-  eslint: {
-    // Run ESLint on these directories during production builds
-    dirs: ['src', 'app', 'components', 'lib'],
-    ignoreDuringBuilds: false,
-  },
 };
 
 module.exports = nextConfig;

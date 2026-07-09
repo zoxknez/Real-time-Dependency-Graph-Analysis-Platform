@@ -4,7 +4,7 @@
  * React hooks for querying audit events and compliance reports.
  */
 
-import { useQuery, useLazyQuery } from "@apollo/client";
+import { useQuery, useLazyQuery } from "@apollo/client/react";
 import { useMemo, useCallback } from "react";
 import {
   GET_AUDIT_EVENTS,

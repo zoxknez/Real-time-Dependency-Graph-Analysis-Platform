@@ -34,11 +34,12 @@ export function SkipLink({
     <a
       href={href}
       data-testid="skip-link"
+      tabIndex={0}
       className={cn(
-        "fixed top-0 left-0 z-[100] p-3 m-2 bg-primary text-white rounded-lg",
-        "transform -translate-y-full focus:translate-y-0",
-        "transition-transform duration-200",
-        "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+        "fixed top-0 left-0 z-[100] p-3 m-2 bg-primary-700 text-white rounded-lg",
+        "opacity-0 pointer-events-none focus:opacity-100 focus:pointer-events-auto",
+        "transition-opacity duration-200",
+        "focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-400"
       )}
     >
       {children}

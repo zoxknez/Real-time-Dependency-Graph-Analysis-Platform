@@ -460,7 +460,7 @@ function SlsaView({ assessment, loading }: { assessment: SlsaAssessment | null; 
 }
 
 function SbomView({ packageId }: { packageId: string }) {
-  const [format, setFormat] = useState<"SPDX" | "CYCLONEDX">("SPDX");
+  const [format, setFormat] = useState<"SPDX" | "CYCLONE_DX">("SPDX");
   const [encoding, setEncoding] = useState<"JSON" | "XML">("JSON");
   const { sbom, loading, generate, download, downloadUrl } = useSbom({
     packageId,
@@ -489,11 +489,11 @@ function SbomView({ packageId }: { packageId: string }) {
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <select
             value={format}
-            onChange={(e) => setFormat(e.target.value as "SPDX" | "CYCLONEDX")}
+            onChange={(e) => setFormat(e.target.value as "SPDX" | "CYCLONE_DX")}
             className="px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900"
           >
             <option value="SPDX">SPDX 2.3</option>
-            <option value="CYCLONEDX">CycloneDX 1.5</option>
+            <option value="CYCLONE_DX">CycloneDX 1.5</option>
           </select>
           <select
             value={encoding}
@@ -801,5 +801,3 @@ function ComplianceCard({ name, version, status, details, link }: ComplianceCard
     </div>
   );
 }
-
-export { OverviewDashboard, ScorecardView, VulnerabilitiesView, SlsaView, SbomView };

@@ -115,7 +115,13 @@ export const GET_IMPACT_RADIUS = gql`
       vulnerableVersionRange
       maxDepth
       impactedPackages
+      directImpactedPackages
+      transitiveImpactedPackages
       impactedVersions
+      depthBuckets {
+        depth
+        packageCount
+      }
       topImpacted {
         package {
           ...PackageFields
@@ -400,8 +406,35 @@ export const GET_PACKAGE_METADATA = gql`
 // ═══════════════════════════════════════════════════════════════
 
 export const VERSION_EVENTS_SUBSCRIPTION = gql`
-  subscription OnVersionEvent($ecosystems: [Ecosystem!]) {
-    versionEvents(ecosystems: $ecosystems) {
+  subscription OnVersionEvent($ecosystem: Ecosystem) {
+    versionEvents: newVersion(ecosystem: $ecosystem) {
+      meta {
+        eventId
+        occurredAt
+        source
+      }
+      package {
+        ...PackageFields
+      }
+      version {
+        id
+        packageId
+        version
+        publishedAt
+        yanked
+      }
+    }
+  }
+  ${PACKAGE_FRAGMENT}
+`;
+
+// Real-time package activity subscription (aliases backend newVersion)
+export const LIVE_PACKAGE_ACTIVITY = gql`
+  subscription OnLivePackageActivity(
+    $ecosystem: Ecosystem
+    $packageId: ID
+  ) {
+    livePackageActivity: newVersion(ecosystem: $ecosystem, packageId: $packageId) {
       meta {
         eventId
         occurredAt
@@ -448,9 +481,6 @@ export const NEW_VERSION_SUBSCRIPTION = gql`
   }
   ${PACKAGE_FRAGMENT}
 `;
-
-// Alias for backwards compatibility
-export const LIVE_PACKAGE_ACTIVITY = NEW_VERSION_SUBSCRIPTION;
 
 // Breaking change detection subscription
 export const BREAKING_CHANGE_DETECTED = gql`
@@ -527,7 +557,7 @@ export const DEPENDENCY_IMPACT = gql`
 // Watch specific packages for updates (alias for newVersion with packageId)
 export const WATCH_PACKAGES = gql`
   subscription OnWatchPackages($packageId: ID!) {
-    newVersion(packageId: $packageId) {
+    watchPackages: packageEvents(packageId: $packageId) {
       meta {
         eventId
         occurredAt
@@ -548,8 +578,23 @@ export const WATCH_PACKAGES = gql`
   ${PACKAGE_FRAGMENT}
 `;
 
-// Dependency graph update subscription (for live graph updates)
-export const DEPENDENCY_GRAPH_UPDATES = DEPENDENCY_IMPACT;
+// Dependency graph update subscription (aliases backend dependencyImpact)
+export const DEPENDENCY_GRAPH_UPDATES = gql`
+  subscription OnDependencyGraphUpdate($minImpactScore: Float) {
+    dependencyGraphUpdate: dependencyImpact(minImpactScore: $minImpactScore) {
+      timestamp
+      package {
+        ...PackageFields
+      }
+      version
+      impactScore
+      affectedPackages
+      affectedVersions
+      criticalPath
+    }
+  }
+  ${PACKAGE_FRAGMENT}
+`;
 
 // ═══════════════════════════════════════════════════════════════
 // P1: SBOM GENERATION

@@ -3,9 +3,10 @@
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { useQuery } from "@apollo/client";
+import { useQuery } from "@apollo/client/react";
 import { formatEcosystemName, getEcosystemColor } from "@/lib/utils";
 import { GET_GRAPH_STATS } from "@/lib/graphql/queries";
+import type { GetGraphStatsResponse } from "@/lib/graphql/types";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
 import { SkeletonChart } from "@/components/ui/skeleton";
 import { RefreshCw, AlertCircle } from "lucide-react";
@@ -19,7 +20,7 @@ interface EcosystemData {
 
 export function EcosystemChart() {
   const router = useRouter();
-  const { data, loading, error, refetch } = useQuery(GET_GRAPH_STATS, {
+  const { data, loading, error, refetch } = useQuery<GetGraphStatsResponse>(GET_GRAPH_STATS, {
     pollInterval: 30000, // Auto-refresh every 30 seconds
   });
 

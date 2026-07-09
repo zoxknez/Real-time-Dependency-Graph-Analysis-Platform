@@ -63,7 +63,12 @@ npm start
 
 # Lint code
 npm run lint
+
+# Run local E2E suite
+npm run test:e2e
 ```
+
+Local E2E starts its own Next.js dev server on `http://127.0.0.1:3100` so it does not collide with the Docker frontend on port 3000. Set `PLAYWRIGHT_BASE_URL` when you explicitly want to test an already-running server. Set `E2E_ALL_BROWSERS=1` only when you want the heavier Firefox/WebKit matrix, and set `E2E_REPORTS=1` when you want HTML/JSON Playwright reports written to disk.
 
 ## 📁 Project Structure
 
@@ -158,9 +163,8 @@ query GetImpactRadius($packageId: ID!, $maxDepth: Int, $limit: Int) {
 Make sure the GraphQL API is running:
 
 ```bash
-# From project root
-cd apps/api
-cargo run
+# From project root, Docker stack
+docker compose -f docker-compose.yml -f docker-compose.apps.yml up -d api
 ```
 
 The API should be available at `http://localhost:8000/graphql`.
