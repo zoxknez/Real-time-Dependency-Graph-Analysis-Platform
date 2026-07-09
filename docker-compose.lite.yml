@@ -1,0 +1,170 @@
+# ═══════════════════════════════════════════════════════════════
+# LITE STACK — the fastest way to try the platform
+#
+#   docker compose -f docker-compose.lite.yml up -d --build
+#   docker compose -f docker-compose.lite.yml --profile seed run --rm seed
+#
+# Then open:
+#   http://localhost:3000          → Dashboard
+#   http://localhost:8000/graphql  → GraphQL Playground
+#
+# What's included: API + Frontend + Memgraph + PostgreSQL + Valkey + Qdrant.
+# What's NOT included: Kafka/Redpanda, RisingWave, ingestion/analysis
+# pipeline, Jaeger, Grafana. Queries work against seeded sample data;
+# live crawling and real-time subscriptions need the full stack
+# (see docker-compose.yml + docker-compose.apps.yml).
+# ═══════════════════════════════════════════════════════════════
+
+name: randomapp-lite
+
+services:
+  memgraph:
+    image: memgraph/memgraph-mage:3.9.0
+    container_name: idp-lite-memgraph
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+      - ./infra/memgraph/init:/usr/lib/memgraph/init-queries
+      - ./infra/memgraph/queries:/usr/lib/memgraph/query_modules:ro
+    environment:
+      - MEMGRAPH_QUERY_MODULES_DIRECTORY=/usr/lib/memgraph/query_modules
+    healthcheck:
+      test: [ "CMD-SHELL", "echo 'RETURN 1;' | mgconsole --host localhost --port 7687 || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  postgres:
+    image: postgres:17.9-alpine
+    container_name: idp-lite-postgres
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-idp}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-idp_secret}
+      - POSTGRES_DB=${POSTGRES_DB:-inverse_deps}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-idp} -d ${POSTGRES_DB:-inverse_deps}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: valkey/valkey:8.0-alpine
+    container_name: idp-lite-valkey
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:v1.17.0
+    container_name: idp-lite-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: [ "CMD-SHELL", "timeout 5 bash -c 'cat < /dev/null > /dev/tcp/localhost/6333' || exit 1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.api
+    image: idp-api:lite
+    container_name: idp-lite-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${IDP_API_PORT:-8000}:8080"
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8080
+      - RUST_LOG=info
+      - MEMGRAPH_URI=bolt://memgraph:7687
+      - REDIS_URL=redis://redis:6379
+      - CACHE_TTL_SECS=300
+      - DATABASE_URL=postgres://${POSTGRES_USER:-idp}:${POSTGRES_PASSWORD:-idp_secret}@postgres:5432/${POSTGRES_DB:-inverse_deps}
+      - QDRANT_ENABLED=true
+      - QDRANT_URL=http://qdrant:6334
+      - QDRANT_COLLECTION=package_embeddings
+      - QDRANT_DIMENSION=384
+      - EMBEDDING_PROVIDER=mock
+      - EMBEDDING_DIMENSION=384
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+    depends_on:
+      memgraph:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    init: true
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.frontend
+      args:
+        - NEXT_PUBLIC_GRAPHQL_ENDPOINT=${PUBLIC_GRAPHQL_ENDPOINT:-http://localhost:8000/graphql}
+        - NEXT_PUBLIC_WS_ENDPOINT=${PUBLIC_WS_ENDPOINT:-ws://localhost:8000/graphql/ws}
+        - NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=${PUBLIC_AGENT_STREAM_ENDPOINT:-http://localhost:8000/agent/stream}
+        - NEXT_PUBLIC_SEARCH_MODE=${PUBLIC_SEARCH_MODE:-semantic}
+    image: idp-frontend:lite
+    container_name: idp-lite-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${IDP_FRONTEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - api
+    init: true
+
+  # One-shot sample-data seeder:
+  #   docker compose -f docker-compose.lite.yml --profile seed run --rm seed
+  seed:
+    image: python:3.12-slim
+    container_name: idp-lite-seed
+    profiles: [ seed ]
+    restart: "no"
+    volumes:
+      - ./scripts/dev-seed.py:/dev-seed.py:ro
+    depends_on:
+      memgraph:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    entrypoint: [ "/bin/sh", "-c" ]
+    command:
+      - |
+        pip install --quiet --no-cache-dir neo4j qdrant-client && \
+        python /dev-seed.py --memgraph-host bolt://memgraph:7687 --qdrant-host qdrant --qdrant-port 6333
+
+volumes:
+  memgraph_data:
+  postgres_data:
+  qdrant_data:
+
+networks:
+  default:
+    name: idp-lite-network

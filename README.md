@@ -3,7 +3,11 @@
 [![CI](https://github.com/zoxknez/Real-time-Dependency-Graph-Analysis-Platform/actions/workflows/ci.yml/badge.svg)](https://github.com/zoxknez/Real-time-Dependency-Graph-Analysis-Platform/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Enterprise-grade platform for real-time analysis of 100M+ packages from npm/PyPI/Cargo with breaking change detection and sub-second graph queries.
+A self-hostable platform that continuously ingests packages from npm, PyPI, and crates.io, parses their public APIs with tree-sitter, and answers the question most registries can't: **"if this package ships a breaking change, who breaks?"**
+
+## Why does this exist?
+
+Registries tell you what a package depends on. Almost nothing tells you the *inverse* — which packages (and how many hops away) depend on yours, and whether a new release actually broke its public API. This project combines real-time registry feeds, AST-level API diffing, and a graph database to make impact analysis and breaking-change detection queryable in one GraphQL API.
 
 ## ✨ Features
 
@@ -15,13 +19,6 @@ Enterprise-grade platform for real-time analysis of 100M+ packages from npm/PyPI
 - **📈 Real-time Subscriptions** - WebSocket-based live updates
 - **🔒 Enterprise Security** - JWT auth, rate limiting, audit logging
 
-## 🏆 Gemini 3 Hackathon
-
-This project includes an **Autonomous Security Agent** powered by Gemini 3 function calling and structured outputs.
-
-- Submission summary: [docs/HACKATHON_SUBMISSION.md](docs/HACKATHON_SUBMISSION.md)
-- Demo script: [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)
-
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -30,7 +27,26 @@ This project includes an **Autonomous Security Agent** powered by Gemini 3 funct
 - Rust 1.85+ (for development, edition 2024)
 - Node.js 22+ (for frontend)
 
-### Option 1: Full Stack (Docker)
+### Option 1: Lite Stack (fastest way to try it)
+
+Runs the API, frontend, and the three databases — no Kafka, no stream processing. Queries work against seeded sample data.
+
+```bash
+git clone https://github.com/zoxknez/Real-time-Dependency-Graph-Analysis-Platform.git
+cd Real-time-Dependency-Graph-Analysis-Platform
+
+# Start the minimal stack (first run builds the images, ~10 min; afterwards seconds)
+docker compose -f docker-compose.lite.yml up -d --build
+
+# Seed sample data
+docker compose -f docker-compose.lite.yml --profile seed run --rm seed
+```
+
+Then open:
+- 🌐 **Dashboard**: http://localhost:3000
+- 🧪 **GraphQL Playground**: http://localhost:8000/graphql
+
+### Option 2: Full Stack (Docker)
 
 ```bash
 # Clone the repository
@@ -38,15 +54,13 @@ git clone https://github.com/zoxknez/Real-time-Dependency-Graph-Analysis-Platfor
 cd Real-time-Dependency-Graph-Analysis-Platform
 
 # Start all infrastructure services
-docker-compose up -d
+docker compose up -d
 
 # Wait for services to be healthy (about 30 seconds)
-docker-compose ps
+docker compose ps
 
-# Start all application services
-docker-compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.apps.yml up -d
-
-# Note: docker-compose.apps.yml must be combined with docker-compose.yml
+# Start all application services (crawlers, analysis pipeline, API, frontend)
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.apps.yml up -d
 
 # Seed sample data (optional)
 python scripts/dev-seed.py
@@ -58,7 +72,7 @@ python scripts/dev-seed.py
 - 🗄️ **Memgraph Lab**: http://localhost:3002
 - 📬 **Redpanda Console**: http://localhost:18080
 
-### Option 2: Development Mode
+### Option 3: Development Mode
 
 ```bash
 # Start infrastructure only
@@ -165,29 +179,6 @@ query ImpactAnalysis {
            │   Web Platform  │
            │  (Next.js/2D)   │
            └─────────────────┘
-```
-
-## Project Structure
-
-```
-├── Cargo.toml              # Workspace (7 crates)
-├── docker-compose.yml      # 10 services
-├── proto/
-│   ├── shared/             # Event Envelope
-│   └── domain/             # Package & Analysis
-├── apps/
-│   ├── ingestion/          # Registry crawler
-│   ├── analysis/           # AST & breaking detection
-│   ├── graph-writer/       # Memgraph writer
-│   ├── vector-writer/      # Qdrant writer
-│   └── api/                # GraphQL gateway
-├── packages/
-│   ├── models/             # Shared types
-│   └── storage/            # DB wrappers
-├── docs/adr/               # Architecture decisions
-├── tools/                  # Dev scripts
-├── observability/          # Monitoring configs
-└── infra/                  # K8s, Prometheus
 ```
 
 ## Services
@@ -326,24 +317,21 @@ helm install idp deploy/helm/idp \
   --namespace production
 ```
 
+## 🤖 Autonomous Security Agent (optional)
+
+The API ships with an experimental security agent built on Gemini function calling — it walks the dependency graph, cross-references OSV vulnerabilities, and produces structured risk reports. It needs a `GEMINI_API_KEY` (see `.env.example`) and is disabled without one. It was originally built for a Gemini hackathon; see [docs/archive/HACKATHON_SUBMISSION.md](docs/archive/HACKATHON_SUBMISSION.md).
+
 ## 📚 Documentation
 
 - [Architecture Overview](docs/ARCHITECTURE.md)
 - [Development Guide](docs/DEVELOPMENT.md)
 - [API Reference](docs/API.md)
-- [Security Guide](SECURITY.md)
+- [Security Guide](docs/SECURITY.md)
 - [Architecture Decision Records](docs/adr/)
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Install pre-commit hooks (`pre-commit install`)
-4. Make your changes
-5. Run tests (`make test`)
-6. Commit (`git commit -m 'feat: add amazing feature'`)
-7. Push (`git push origin feature/amazing-feature`)
-8. Open a Pull Request
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, and use the lite stack (`docker-compose.lite.yml`) for a quick development loop.
 
 ## 📄 License
 
