@@ -321,6 +321,7 @@ def seed_memgraph(driver, packages: list[dict]) -> None:
                 MERGE (p:Package {id: $id})
                 SET p.name = $name,
                     p.ecosystem = $ecosystem,
+                    p.tenant_id = 'public',
                     p.created_at = coalesce(p.created_at, $created_at),
                     p.updated_at = $updated_at
                 """,
@@ -341,6 +342,7 @@ def seed_memgraph(driver, packages: list[dict]) -> None:
                     MERGE (v:Version {id: $id})
                     SET v.package_id = $package_id,
                         v.version = $version,
+                        v.tenant_id = 'public',
                         v.published_at = $published_at,
                         v.yanked = $yanked,
                         v.created_at = $created_at
