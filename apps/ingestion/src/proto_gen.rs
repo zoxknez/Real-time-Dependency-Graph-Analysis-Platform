@@ -30,9 +30,8 @@ pub mod domain {
 }
 
 // Re-export commonly used types for convenience
-pub use shared::event::v1::EventMeta;
-pub use raw::npm::v1::NpmChange;
 pub use domain::package::v1::{
-    PackageUpserted, VersionUpserted, VersionYanked, PackageDeleted, IngestionError,
-    Dependency,
+    Dependency, IngestionError, PackageDeleted, PackageUpserted, VersionUpserted, VersionYanked,
 };
+pub use raw::npm::v1::NpmChange;
+pub use shared::event::v1::EventMeta;

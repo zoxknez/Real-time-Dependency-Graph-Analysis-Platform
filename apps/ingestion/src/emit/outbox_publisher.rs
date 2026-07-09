@@ -12,29 +12,29 @@
 // - **Dead-letter queue**: Events exceeding max_attempts move to DLQ status
 
 use crate::store::outbox::{OutboxRepo, OutboxRow};
-use anyhow::{Result, Context as _};
-use rdkafka::producer::{FutureProducer, FutureRecord};
+use anyhow::{Context as _, Result};
 use rdkafka::message::OwnedHeaders;
+use rdkafka::producer::{FutureProducer, FutureRecord};
 use sqlx::PgPool;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{info, warn, error, debug};
+use tracing::{debug, error, info, warn};
 
 /// Configuration for the outbox publisher
 #[derive(Debug, Clone)]
 pub struct OutboxPublisherConfig {
     /// Number of events to claim in each batch
     pub batch_size: i32,
-    
+
     /// Interval between polling cycles
     pub poll_interval: Duration,
-    
+
     /// Maximum attempts before moving to DLQ
     pub max_attempts: i32,
-    
+
     /// Lock timeout for stuck lock detection
     pub lock_timeout: Duration,
-    
+
     /// Whether to run stuck lock cleanup
     pub cleanup_stuck_locks: bool,
 }
@@ -108,7 +108,10 @@ impl OutboxPublisher {
     /// Process a single batch of events
     async fn process_batch(&self) -> Result<()> {
         // Claim batch using SKIP LOCKED
-        let events = self.repo.claim_batch(&self.worker_id, self.config.batch_size).await
+        let events = self
+            .repo
+            .claim_batch(&self.worker_id, self.config.batch_size)
+            .await
             .context("Failed to claim batch")?;
 
         if events.is_empty() {
@@ -116,7 +119,7 @@ impl OutboxPublisher {
             return Ok(());
         }
 
-        info!(count = events.len(), "Claimed batch");
+        debug!(count = events.len(), "Claimed batch");
 
         // Process each event
         for event in events {
@@ -127,9 +130,11 @@ impl OutboxPublisher {
                     error = ?e,
                     "Failed to publish event"
                 );
-                
+
                 // Mark failed with exponential backoff
-                self.repo.mark_failed(&event.event_id, &e.to_string(), self.config.max_attempts).await
+                self.repo
+                    .mark_failed(&event.event_id, &e.to_string(), self.config.max_attempts)
+                    .await
                     .context("Failed to mark event as failed")?;
             }
         }
@@ -153,7 +158,7 @@ impl OutboxPublisher {
 
         // Add headers
         let mut headers = OwnedHeaders::new();
-        
+
         // Add event metadata headers
         headers = headers.insert(rdkafka::message::Header {
             key: "event_id",
@@ -163,7 +168,7 @@ impl OutboxPublisher {
             key: "event_type",
             value: Some(&event.event_type),
         });
-        
+
         // Add custom headers as JSON string
         let headers_json = serde_json::to_string(&event.headers).unwrap_or_default();
         headers = headers.insert(rdkafka::message::Header {
@@ -174,22 +179,25 @@ impl OutboxPublisher {
         record = record.headers(headers);
 
         // Publish to Kafka
-        let delivery_status = self.producer
+        let delivery_status = self
+            .producer
             .send(record, Duration::from_secs(30))
             .await
             .map_err(|(err, _)| err)
             .context("Failed to send message to Kafka")?;
 
-        info!(
+        debug!(
             event_id = %event.event_id,
             topic = %event.topic,
-            partition = delivery_status.0,
-            offset = delivery_status.1,
+            partition = delivery_status.partition,
+            offset = delivery_status.offset,
             "Event published successfully"
         );
 
         // Mark as published in DB
-        self.repo.mark_published(&event.event_id).await
+        self.repo
+            .mark_published(&event.event_id)
+            .await
             .context("Failed to mark event as published")?;
 
         Ok(())
@@ -198,7 +206,10 @@ impl OutboxPublisher {
     /// Release locks that have been held too long (crashed workers)
     async fn cleanup_stuck_locks(&self) -> Result<()> {
         let timeout_minutes = (self.config.lock_timeout.as_secs() / 60) as i32;
-        let released = self.repo.release_stuck_locks(timeout_minutes).await
+        let released = self
+            .repo
+            .release_stuck_locks(timeout_minutes)
+            .await
             .context("Failed to release stuck locks")?;
 
         if released > 0 {
@@ -210,7 +221,10 @@ impl OutboxPublisher {
 
     /// Get current outbox statistics (for monitoring)
     pub async fn get_stats(&self) -> Result<OutboxStats> {
-        let stats_vec = self.repo.get_stats().await
+        let stats_vec = self
+            .repo
+            .get_stats()
+            .await
             .context("Failed to get outbox stats")?;
 
         let mut pending = 0;

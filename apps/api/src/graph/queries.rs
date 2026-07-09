@@ -1,5 +1,5 @@
 //! Cypher query templates for GraphQL resolvers
-//! 
+//!
 //! All queries use DEPENDS_ON_PKG (package-level projection) for performance.
 //! Version-level queries use DEPENDS_ON when semver precision is needed.
 
@@ -9,6 +9,22 @@ use neo4rs::Query;
 pub struct GraphQueries;
 
 impl GraphQueries {
+    fn traversal_depth(depth: i32) -> i32 {
+        depth.clamp(1, 10)
+    }
+
+    fn path_hops(hops: i32) -> i32 {
+        hops.clamp(1, 10)
+    }
+
+    fn result_limit(limit: i32) -> i64 {
+        limit.clamp(1, 100_000) as i64
+    }
+
+    fn result_offset(offset: i32) -> i64 {
+        offset.max(0) as i64
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // PACKAGE QUERIES
     // ═══════════════════════════════════════════════════════════════
@@ -104,7 +120,7 @@ impl GraphQueries {
         )
         .param("tenant_id", tenant_id.to_string())
         .param("package_id", package_id.to_string())
-        .param("limit", limit as i64)
+        .param("limit", Self::result_limit(limit))
     }
 
     /// Get a specific version
@@ -136,8 +152,7 @@ impl GraphQueries {
         neo4rs::query(
             r#"
             MATCH (target:Package {id: $package_id, tenant_id: $tenant_id})
-            MATCH (depV:Version {tenant_id: $tenant_id})-[:DEPENDS_ON]->(target)
-            MATCH (depV)-[:BELONGS_TO]->(dep:Package {tenant_id: $tenant_id})
+            MATCH (dep:Package {tenant_id: $tenant_id})-[:DEPENDS_ON_PKG]->(target)
             WHERE dep.deleted_at IS NULL AND dep <> target
             RETURN DISTINCT dep.id AS id,
                    dep.ecosystem AS ecosystem,
@@ -149,32 +164,131 @@ impl GraphQueries {
         )
         .param("tenant_id", tenant_id.to_string())
         .param("package_id", package_id.to_string())
-        .param("limit", limit as i64)
+        .param("limit", Self::result_limit(limit))
     }
 
-    /// Get transitive reverse dependents (variable depth)
-    /// For transitive, we need to follow: Version→Package, then find Versions that depend on those Packages
-    /// This is complex because DEPENDS_ON is Version→Package, not Version→Version
-    /// Get transitive reverse dependents (variable depth)
-    /// For transitive, we need to follow: Version→Package, then find Versions that depend on those Packages
-    /// This is complex because DEPENDS_ON is Version→Package, not Version→Version
-    pub fn reverse_dependents_transitive(tenant_id: &str, package_id: &str, _max_depth: i32, limit: i32) -> Query {
-        // For transitive reverse dependents with Version→Package edges:
-        // Depth 1: Find versions that depend on target package, get their parent packages
-        // Depth 2: Find versions that depend on depth-1 packages, etc.
-        // 
-        // With DEPENDS_ON_PKG (Package→Package), this would be simpler.
-        // For now, we'll only do direct (depth=1) reverse dependents efficiently
-        // and use DEPENDS_ON_PKG for deeper traversals once populated.
-        //
-        // MVP approach: Use direct for all depths (approximation)
-        neo4rs::query(
+    /// Get transitive reverse dependents using package-level dependency edges.
+    pub fn reverse_dependents_transitive(
+        tenant_id: &str,
+        package_id: &str,
+        max_depth: i32,
+        limit: i32,
+        offset: i32,
+    ) -> Query {
+        let depth = Self::traversal_depth(max_depth);
+        let cypher = format!(
             r#"
-            MATCH (target:Package {id: $package_id, tenant_id: $tenant_id})
-            MATCH (depV:Version {tenant_id: $tenant_id})-[:DEPENDS_ON]->(target)
-            MATCH (depV)-[:BELONGS_TO]->(dep:Package {tenant_id: $tenant_id})
+            MATCH (target:Package {{id: $package_id, tenant_id: $tenant_id}})
+            MATCH path = (dep:Package {{tenant_id: $tenant_id}})-[:DEPENDS_ON_PKG*1..{}]->(target)
             WHERE dep.deleted_at IS NULL AND dep <> target
-            WITH DISTINCT dep, 1 AS depth
+            WITH dep, min(length(path)) AS depth
+            RETURN dep.id AS id,
+                   dep.ecosystem AS ecosystem,
+                   dep.name AS name,
+                   depth
+            ORDER BY depth, dep.name
+            SKIP $offset
+            LIMIT $limit
+            "#,
+            depth
+        );
+
+        neo4rs::query(&cypher)
+            .param("tenant_id", tenant_id.to_string())
+            .param("package_id", package_id.to_string())
+            .param("limit", Self::result_limit(limit))
+            .param("offset", Self::result_offset(offset))
+    }
+
+    /// Count total reverse dependents (for pagination info)
+    pub fn reverse_dependents_count(tenant_id: &str, package_id: &str, max_depth: i32) -> Query {
+        let depth = Self::traversal_depth(max_depth);
+        let cypher = format!(
+            r#"
+            MATCH (target:Package {{id: $package_id, tenant_id: $tenant_id}})
+            MATCH path = (dep:Package {{tenant_id: $tenant_id}})-[:DEPENDS_ON_PKG*1..{}]->(target)
+            WHERE dep.deleted_at IS NULL AND dep <> target
+            RETURN count(DISTINCT dep) AS total
+            "#,
+            depth
+        );
+
+        neo4rs::query(&cypher)
+            .param("tenant_id", tenant_id.to_string())
+            .param("package_id", package_id.to_string())
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // DEPENDENCY PATH (shortest path between packages)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// Count reverse dependents with the same relationship filter as the extended view.
+    pub fn reverse_dependents_extended_count(
+        tenant_id: &str,
+        package_id: &str,
+        max_depth: i32,
+        relationship: Option<&str>,
+    ) -> Query {
+        let rel_filter = match relationship {
+            Some("DIRECT") => "WHERE depth = 1",
+            Some("TRANSITIVE") => "WHERE depth > 1",
+            _ => "",
+        };
+        let depth = Self::traversal_depth(max_depth);
+
+        let cypher = format!(
+            r#"
+            MATCH (target:Package {{id: $package_id, tenant_id: $tenant_id}})
+            MATCH path = (dep:Package {{tenant_id: $tenant_id}})-[:DEPENDS_ON_PKG*1..{}]->(target)
+            WHERE dep.deleted_at IS NULL AND dep <> target
+            WITH dep, min(length(path)) AS depth
+            {}
+            RETURN count(dep) AS total
+            "#,
+            depth, rel_filter
+        );
+
+        neo4rs::query(&cypher)
+            .param("tenant_id", tenant_id.to_string())
+            .param("package_id", package_id.to_string())
+    }
+
+    /// Find shortest dependency path from package A to package B
+    /// Memgraph uses BFS-based path finding instead of Neo4j's shortestPath function
+    pub fn dependency_path(tenant_id: &str, from_id: &str, to_id: &str, max_hops: i32) -> Query {
+        let hops = Self::path_hops(max_hops);
+        let cypher = format!(
+            r#"
+            MATCH (from:Package {{id: $from_id, tenant_id: $tenant_id}})
+            MATCH (to:Package {{id: $to_id, tenant_id: $tenant_id}})
+            MATCH path = (from)-[:DEPENDS_ON_PKG*1..{}]->(to)
+            WITH path, length(path) AS hops
+            ORDER BY hops ASC
+            LIMIT 1
+            RETURN [node IN nodes(path) | node.id] AS package_ids, hops
+            "#,
+            hops
+        );
+
+        neo4rs::query(&cypher)
+            .param("tenant_id", tenant_id.to_string())
+            .param("from_id", from_id.to_string())
+            .param("to_id", to_id.to_string())
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // IMPACT RADIUS (CVE propagation simulation)
+    // ═══════════════════════════════════════════════════════════════
+
+    /// Get impacted packages (reverse dependents) for CVE analysis.
+    pub fn impact_radius(tenant_id: &str, package_id: &str, max_depth: i32, limit: i32) -> Query {
+        let depth = Self::traversal_depth(max_depth);
+        let cypher = format!(
+            r#"
+            MATCH (target:Package {{id: $package_id, tenant_id: $tenant_id}})
+            MATCH path = (dep:Package {{tenant_id: $tenant_id}})-[:DEPENDS_ON_PKG*1..{}]->(target)
+            WHERE dep.deleted_at IS NULL AND dep <> target
+            WITH dep, min(length(path)) AS depth
             RETURN dep.id AS id,
                    dep.ecosystem AS ecosystem,
                    dep.name AS name,
@@ -182,111 +296,95 @@ impl GraphQueries {
             ORDER BY depth, dep.name
             LIMIT $limit
             "#,
-        )
-        .param("tenant_id", tenant_id.to_string())
-        .param("package_id", package_id.to_string())
-        .param("limit", limit as i64)
-    }
+            depth
+        );
 
-    /// Count total reverse dependents (for pagination info)
-    pub fn reverse_dependents_count(tenant_id: &str, package_id: &str, _max_depth: i32) -> Query {
-        neo4rs::query(
-            r#"
-            MATCH (target:Package {id: $package_id, tenant_id: $tenant_id})
-            MATCH (depV:Version {tenant_id: $tenant_id})-[:DEPENDS_ON]->(target)
-            MATCH (depV)-[:BELONGS_TO]->(dep:Package {tenant_id: $tenant_id})
-            WHERE dep.deleted_at IS NULL AND dep <> target
-            RETURN count(DISTINCT dep) AS total
-            "#,
-        )
-        .param("tenant_id", tenant_id.to_string())
-        .param("package_id", package_id.to_string())
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // DEPENDENCY PATH (shortest path between packages)
-    // ═══════════════════════════════════════════════════════════════
-
-    /// Find shortest dependency path from package A to package B
-    /// Memgraph uses BFS-based path finding instead of Neo4j's shortestPath function
-    pub fn dependency_path(tenant_id: &str, from_id: &str, to_id: &str, _max_hops: i32) -> Query {
-        // With DEPENDS_ON going Version→Package, path finding between packages is complex.
-        // For MVP: Check if there's a direct dependency relationship.
-        // For transitive paths, we'd need DEPENDS_ON_PKG edges.
-        neo4rs::query(
-            r#"
-            MATCH (a:Package {id: $from_id, tenant_id: $tenant_id})<-[:BELONGS_TO]-(aV:Version {tenant_id: $tenant_id})
-            MATCH (aV)-[:DEPENDS_ON]->(b:Package {id: $to_id, tenant_id: $tenant_id})
-            RETURN [a.id, b.id] AS package_ids, 1 AS hops
-            LIMIT 1
-            "#,
-        )
-        .param("tenant_id", tenant_id.to_string())
-        .param("from_id", from_id.to_string())
-        .param("to_id", to_id.to_string())
-    }
-
-    // ═══════════════════════════════════════════════════════════════
-    // IMPACT RADIUS (CVE propagation simulation)
-    // ═══════════════════════════════════════════════════════════════
-
-    /// Get impacted packages (reverse dependents) for CVE analysis
-    /// MVP: Direct dependents only (depth 1) with Version→Package schema
-    pub fn impact_radius(tenant_id: &str, package_id: &str, _max_depth: i32, limit: i32) -> Query {
-        // For Version→Package schema, impact radius = reverse dependents
-        neo4rs::query(
-            r#"
-            MATCH (target:Package {id: $package_id, tenant_id: $tenant_id})
-            MATCH (depV:Version {tenant_id: $tenant_id})-[:DEPENDS_ON]->(target)
-            MATCH (depV)-[:BELONGS_TO]->(dep:Package {tenant_id: $tenant_id})
-            WHERE dep.deleted_at IS NULL AND dep <> target
-            WITH DISTINCT dep
-            RETURN dep.id AS id,
-                   dep.ecosystem AS ecosystem,
-                   dep.name AS name,
-                   1 AS depth
-            ORDER BY dep.name
-            LIMIT $limit
-            "#,
-        )
-        .param("tenant_id", tenant_id.to_string())
-        .param("package_id", package_id.to_string())
-        .param("limit", limit as i64)
+        neo4rs::query(&cypher)
+            .param("tenant_id", tenant_id.to_string())
+            .param("package_id", package_id.to_string())
+            .param("limit", Self::result_limit(limit))
     }
 
     /// Count total impacted packages for impact radius
     #[allow(dead_code)]
-    pub fn impact_radius_count(tenant_id: &str, package_id: &str, _max_depth: i32) -> Query {
-        neo4rs::query(
+    pub fn impact_radius_count(tenant_id: &str, package_id: &str, max_depth: i32) -> Query {
+        let depth = Self::traversal_depth(max_depth);
+        let cypher = format!(
             r#"
-            MATCH (target:Package {id: $package_id, tenant_id: $tenant_id})
-            MATCH (depV:Version {tenant_id: $tenant_id})-[:DEPENDS_ON]->(target)
-            MATCH (depV)-[:BELONGS_TO]->(dep:Package {tenant_id: $tenant_id})
+            MATCH (target:Package {{id: $package_id, tenant_id: $tenant_id}})
+            MATCH path = (dep:Package {{tenant_id: $tenant_id}})-[:DEPENDS_ON_PKG*1..{}]->(target)
             WHERE dep.deleted_at IS NULL AND dep <> target
             RETURN count(DISTINCT dep) AS impacted_packages
             "#,
-        )
-        .param("tenant_id", tenant_id.to_string())
-        .param("package_id", package_id.to_string())
+            depth
+        );
+
+        neo4rs::query(&cypher)
+            .param("tenant_id", tenant_id.to_string())
+            .param("package_id", package_id.to_string())
+    }
+
+    /// Summarize direct and transitive package impact using minimum path depth.
+    pub fn impact_radius_summary(tenant_id: &str, package_id: &str, max_depth: i32) -> Query {
+        let depth = Self::traversal_depth(max_depth);
+        let cypher = format!(
+            r#"
+            MATCH (target:Package {{id: $package_id, tenant_id: $tenant_id}})
+            MATCH path = (dep:Package {{tenant_id: $tenant_id}})-[:DEPENDS_ON_PKG*1..{}]->(target)
+            WHERE dep.deleted_at IS NULL AND dep <> target
+            WITH dep, min(length(path)) AS depth
+            RETURN count(dep) AS impacted_packages,
+                   sum(CASE WHEN depth = 1 THEN 1 ELSE 0 END) AS direct_impacted_packages,
+                   sum(CASE WHEN depth > 1 THEN 1 ELSE 0 END) AS transitive_impacted_packages
+            "#,
+            depth
+        );
+
+        neo4rs::query(&cypher)
+            .param("tenant_id", tenant_id.to_string())
+            .param("package_id", package_id.to_string())
+    }
+
+    /// Count impacted packages per dependency depth.
+    pub fn impact_radius_depth_buckets(tenant_id: &str, package_id: &str, max_depth: i32) -> Query {
+        let depth = Self::traversal_depth(max_depth);
+        let cypher = format!(
+            r#"
+            MATCH (target:Package {{id: $package_id, tenant_id: $tenant_id}})
+            MATCH path = (dep:Package {{tenant_id: $tenant_id}})-[:DEPENDS_ON_PKG*1..{}]->(target)
+            WHERE dep.deleted_at IS NULL AND dep <> target
+            WITH dep, min(length(path)) AS depth
+            RETURN depth, count(dep) AS package_count
+            ORDER BY depth
+            "#,
+            depth
+        );
+
+        neo4rs::query(&cypher)
+            .param("tenant_id", tenant_id.to_string())
+            .param("package_id", package_id.to_string())
     }
 
     /// Count impacted versions (more detailed CVE analysis)
-    pub fn impact_radius_versions(tenant_id: &str, package_id: &str, _max_depth: i32) -> Query {
-        neo4rs::query(
+    pub fn impact_radius_versions(tenant_id: &str, package_id: &str, max_depth: i32) -> Query {
+        let depth = Self::traversal_depth(max_depth);
+        let cypher = format!(
             r#"
-            MATCH (target:Package {id: $package_id, tenant_id: $tenant_id})
-            MATCH (depV:Version {tenant_id: $tenant_id})-[:DEPENDS_ON]->(target)
-            MATCH (depV)-[:BELONGS_TO]->(dep:Package {tenant_id: $tenant_id})
+            MATCH (target:Package {{id: $package_id, tenant_id: $tenant_id}})
+            MATCH path = (dep:Package {{tenant_id: $tenant_id}})-[:DEPENDS_ON_PKG*1..{}]->(target)
             WHERE dep.deleted_at IS NULL AND dep <> target
             WITH DISTINCT dep
-            MATCH (v:Version {tenant_id: $tenant_id})-[:BELONGS_TO]->(dep)
+            OPTIONAL MATCH (v:Version {{tenant_id: $tenant_id}})-[:BELONGS_TO]->(dep)
             WHERE v.yanked = false OR v.yanked IS NULL
             RETURN count(DISTINCT dep) AS impacted_packages,
-                   count(v) AS impacted_versions
+                   count(DISTINCT v) AS impacted_versions
             "#,
-        )
-        .param("tenant_id", tenant_id.to_string())
-        .param("package_id", package_id.to_string())
+            depth
+        );
+
+        neo4rs::query(&cypher)
+            .param("tenant_id", tenant_id.to_string())
+            .param("package_id", package_id.to_string())
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -311,7 +409,7 @@ impl GraphQueries {
         )
         .param("tenant_id", tenant_id.to_string())
         .param("package_id", package_id.to_string())
-        .param("limit", limit as i64)
+        .param("limit", Self::result_limit(limit))
     }
 
     /// Get dependencies of a specific version (with version requirements)
@@ -371,9 +469,15 @@ impl GraphQueries {
     // ═══════════════════════════════════════════════════════════════
 
     /// Search packages by name (case-insensitive contains)
-    pub fn search_packages(tenant_id: &str, query: &str, ecosystem: Option<&str>, limit: i32) -> Query {
+    pub fn search_packages(
+        tenant_id: &str,
+        query: &str,
+        ecosystem: Option<&str>,
+        limit: i32,
+    ) -> Query {
         let cypher = match ecosystem {
-            Some(_) => r#"
+            Some(_) => {
+                r#"
                 MATCH (p:Package {tenant_id: $tenant_id})
                 WHERE p.deleted_at IS NULL 
                   AND (p.name_lc CONTAINS toLower($query) OR toLower(p.name) CONTAINS toLower($query))
@@ -385,8 +489,10 @@ impl GraphQueries {
                   CASE WHEN p.name_lc = toLower($query) THEN 0 ELSE 1 END,
                   size(p.name)
                 LIMIT $limit
-            "#,
-            None => r#"
+            "#
+            }
+            None => {
+                r#"
                 MATCH (p:Package {tenant_id: $tenant_id})
                 WHERE p.deleted_at IS NULL 
                   AND (p.name_lc CONTAINS toLower($query) OR toLower(p.name) CONTAINS toLower($query))
@@ -397,47 +503,52 @@ impl GraphQueries {
                   CASE WHEN p.name_lc = toLower($query) THEN 0 ELSE 1 END,
                   size(p.name)
                 LIMIT $limit
-            "#,
+            "#
+            }
         };
 
         let mut q = neo4rs::query(cypher)
             .param("tenant_id", tenant_id.to_string())
             .param("query", query.to_string())
             .param("limit", limit as i64);
-        
+
         if let Some(eco) = ecosystem {
             q = q.param("ecosystem", eco.to_string());
         }
-        
+
         q
     }
 
     /// Count search results for pagination
     pub fn search_packages_count(tenant_id: &str, query: &str, ecosystem: Option<&str>) -> Query {
         let cypher = match ecosystem {
-            Some(_) => r#"
+            Some(_) => {
+                r#"
                 MATCH (p:Package {tenant_id: $tenant_id})
                 WHERE p.deleted_at IS NULL 
                   AND (p.name_lc CONTAINS toLower($query) OR toLower(p.name) CONTAINS toLower($query))
                   AND toLower(p.ecosystem) = toLower($ecosystem)
                 RETURN count(p) AS total
-            "#,
-            None => r#"
+            "#
+            }
+            None => {
+                r#"
                 MATCH (p:Package {tenant_id: $tenant_id})
                 WHERE p.deleted_at IS NULL 
                   AND (p.name_lc CONTAINS toLower($query) OR toLower(p.name) CONTAINS toLower($query))
                 RETURN count(p) AS total
-            "#,
+            "#
+            }
         };
 
         let mut q = neo4rs::query(cypher)
             .param("tenant_id", tenant_id.to_string())
             .param("query", query.to_string());
-        
+
         if let Some(eco) = ecosystem {
             q = q.param("ecosystem", eco.to_string());
         }
-        
+
         q
     }
 }
@@ -448,26 +559,27 @@ mod tests {
 
     #[test]
     fn test_reverse_dependents_query_builds() {
-        let query = GraphQueries::reverse_dependents_transitive("test_tenant", "npm:express", 3, 100);
+        let _query =
+            GraphQueries::reverse_dependents_transitive("test_tenant", "npm:express", 3, 100, 0);
         // Just verify it builds without panic
         assert!(true);
     }
 
     #[test]
     fn test_dependency_path_query_builds() {
-        let query = GraphQueries::dependency_path("test_tenant", "npm:express", "npm:lodash", 6);
+        let _query = GraphQueries::dependency_path("test_tenant", "npm:express", "npm:lodash", 6);
         assert!(true);
     }
 
     #[test]
     fn test_impact_radius_query_builds() {
-        let query = GraphQueries::impact_radius("test_tenant", "npm:lodash", 3, 5000);
+        let _query = GraphQueries::impact_radius("test_tenant", "npm:lodash", 3, 5000);
         assert!(true);
     }
-    
+
     #[test]
     fn test_transitive_paths_query_builds() {
-        let query = GraphQueries::transitive_paths("test_tenant", "npm:express", "npm:lodash", 3);
+        let _query = GraphQueries::transitive_paths("test_tenant", "npm:express", "npm:lodash", 3);
         assert!(true);
     }
 }
@@ -480,39 +592,26 @@ mod tests {
 impl GraphQueries {
     /// Get shortest paths from root to target package
     /// Returns top N shortest paths (for "Show paths" UI feature)
-    /// 
+    ///
     /// Based on GitHub Dependency Graph transitive path visualization
     pub fn transitive_paths(tenant_id: &str, from_id: &str, to_id: &str, limit: i32) -> Query {
-        // Using BFS-based path finding in Memgraph
-        // Note: With Version→Package schema, we trace through versions
         neo4rs::query(
             r#"
             MATCH path = (root:Package {id: $from_id, tenant_id: $tenant_id})
-                         <-[:BELONGS_TO]-(rv:Version {tenant_id: $tenant_id})
-                         -[:DEPENDS_ON*1..5]->(target:Package {id: $to_id, tenant_id: $tenant_id})
-            WITH path, length(path) AS len
-            ORDER BY len
-            LIMIT $limit
-            WITH path, len
-            UNWIND nodes(path) AS n
-            WITH path, len, collect(
-                CASE 
-                    WHEN n:Package THEN n.id 
-                    ELSE null 
-                END
-            ) AS all_ids
-            WITH path, len, [x IN all_ids WHERE x IS NOT NULL] AS package_ids
-            RETURN DISTINCT package_ids, len AS length
+                         -[:DEPENDS_ON_PKG*1..5]->(target:Package {id: $to_id, tenant_id: $tenant_id})
+            WITH path, length(path) AS length
             ORDER BY length
             LIMIT $limit
+            RETURN [node IN nodes(path) | node.id] AS package_ids, length
+            ORDER BY length
             "#,
         )
         .param("tenant_id", tenant_id.to_string())
         .param("from_id", from_id.to_string())
         .param("to_id", to_id.to_string())
-        .param("limit", limit as i64)
+        .param("limit", Self::result_limit(limit))
     }
-    
+
     /// Get which direct dependencies introduced a transitive dependency
     /// Returns list of direct deps that bring in the target
     #[allow(dead_code)]
@@ -520,11 +619,9 @@ impl GraphQueries {
         neo4rs::query(
             r#"
             MATCH (root:Package {id: $root_id, tenant_id: $tenant_id})
-                  <-[:BELONGS_TO]-(rv:Version {tenant_id: $tenant_id})
-                  -[:DEPENDS_ON]->(direct:Package {tenant_id: $tenant_id})
+                  -[:DEPENDS_ON_PKG]->(direct:Package {tenant_id: $tenant_id})
             WHERE direct.deleted_at IS NULL AND direct.id <> $root_id
-            MATCH (direct)<-[:BELONGS_TO]-(dv:Version {tenant_id: $tenant_id})
-                  -[:DEPENDS_ON*0..4]->(target:Package {id: $target_id, tenant_id: $tenant_id})
+            MATCH (direct)-[:DEPENDS_ON_PKG*0..4]->(target:Package {id: $target_id, tenant_id: $tenant_id})
             RETURN DISTINCT direct.id AS id,
                    direct.ecosystem AS ecosystem,
                    direct.name AS name
@@ -535,7 +632,7 @@ impl GraphQueries {
         .param("root_id", root_id.to_string())
         .param("target_id", target_id.to_string())
     }
-    
+
     /// Get dependencies with extended info (relationship type, depth, introduced_by)
     /// For the extended dependency view with Direct/Transitive badges
     #[allow(dead_code)]
@@ -543,10 +640,7 @@ impl GraphQueries {
         neo4rs::query(
             r#"
             MATCH (src:Package {id: $package_id, tenant_id: $tenant_id})
-                  <-[:BELONGS_TO]-(v:Version {tenant_id: $tenant_id})
-            
-            // Direct dependencies
-            MATCH (v)-[:DEPENDS_ON]->(direct:Package {tenant_id: $tenant_id})
+                  -[:DEPENDS_ON_PKG]->(direct:Package {tenant_id: $tenant_id})
             WHERE direct.deleted_at IS NULL AND direct <> src
             
             WITH DISTINCT src, direct, 'DIRECT' AS rel, 1 AS depth
@@ -563,47 +657,50 @@ impl GraphQueries {
         )
         .param("tenant_id", tenant_id.to_string())
         .param("package_id", package_id.to_string())
-        .param("limit", limit as i64)
+        .param("limit", Self::result_limit(limit))
     }
-    
+
     /// Get reverse dependents with extended relationship info
     pub fn reverse_dependents_extended(
-        tenant_id: &str, 
-        package_id: &str, 
+        tenant_id: &str,
+        package_id: &str,
+        max_depth: i32,
         relationship: Option<&str>,
-        limit: i32
+        limit: i32,
+        offset: i32,
     ) -> Query {
-        // For now, all reverse deps are "DIRECT" since they directly depend on target
-        // Transitive reverse deps would be packages that depend on packages that depend on target
         let rel_filter = match relationship {
-            Some("DIRECT") => "AND depth = 1",
-            Some("TRANSITIVE") => "AND depth > 1",
+            Some("DIRECT") => "WHERE depth = 1",
+            Some("TRANSITIVE") => "WHERE depth > 1",
             _ => "",
         };
-        
+        let depth = Self::traversal_depth(max_depth);
+
         let cypher = format!(
             r#"
             MATCH (target:Package {{id: $package_id, tenant_id: $tenant_id}})
-            MATCH (depV:Version {{tenant_id: $tenant_id}})-[:DEPENDS_ON]->(target)
-            MATCH (depV)-[:BELONGS_TO]->(dep:Package {{tenant_id: $tenant_id}})
+            MATCH path = (dep:Package {{tenant_id: $tenant_id}})-[:DEPENDS_ON_PKG*1..{}]->(target)
             WHERE dep.deleted_at IS NULL AND dep <> target
-            WITH DISTINCT dep, 1 AS depth, 'DIRECT' AS relationship
+            WITH dep, min(length(path)) AS depth
             {}
+            WITH dep, depth, CASE WHEN depth = 1 THEN 'DIRECT' ELSE 'TRANSITIVE' END AS relationship
             RETURN dep.id AS id,
                    dep.ecosystem AS ecosystem,
                    dep.name AS name,
                    depth,
                    relationship,
                    [] AS introduced_by_ids
-            ORDER BY dep.name
+            ORDER BY depth, dep.name
+            SKIP $offset
             LIMIT $limit
             "#,
-            rel_filter
+            depth, rel_filter
         );
-        
+
         neo4rs::query(&cypher)
             .param("tenant_id", tenant_id.to_string())
             .param("package_id", package_id.to_string())
-            .param("limit", limit as i64)
+            .param("limit", Self::result_limit(limit))
+            .param("offset", Self::result_offset(offset))
     }
 }

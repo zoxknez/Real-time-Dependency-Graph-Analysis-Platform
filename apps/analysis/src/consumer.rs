@@ -8,18 +8,24 @@
 
 use crate::breaking_detector::BreakingChange;
 use crate::config::KafkaConfig;
+use crate::proto_gen::domain::package::v1::VersionUpserted;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use prost::Message as ProstMessage;
+use rdkafka::Message;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
+use rdkafka::message::Headers;
 use rdkafka::producer::{FutureProducer, FutureRecord, Producer};
-use rdkafka::Message;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, instrument, warn};
+
+const EVENT_TYPE_VERSION_UPSERTED: &str = "version.upserted";
+const EVENT_TYPE_DOMAIN_VERSION_UPSERT: &str = "domain.version.upsert.v1";
 
 // ═══════════════════════════════════════════════════════════════
 // EVENT TYPES
@@ -32,6 +38,8 @@ pub struct PackagePublishedEvent {
     pub version: String,
     pub ecosystem: String,
     pub tarball_url: String,
+    #[serde(default)]
+    pub size_bytes: Option<i64>,
     pub previous_version: Option<String>,
     pub published_at: DateTime<Utc>,
 }
@@ -153,12 +161,31 @@ impl EventConsumer {
                     .payload()
                     .ok_or_else(|| anyhow::anyhow!("Empty message payload"))?;
 
-                let event: PackagePublishedEvent = serde_json::from_slice(payload)
-                    .context("Failed to deserialize event")?;
+                let event_type = self.get_header(&msg, "event_type");
+                if let Some(event_type) = event_type.as_deref() {
+                    if !is_version_upsert_event_type(event_type) {
+                        debug!(event_type = %event_type, "Skipping non-analysis package event");
+                        self.commit_offset(&msg).await?;
+                        return Ok(None);
+                    }
+                }
+
+                let event = match decode_package_event(payload) {
+                    Ok(event) => event,
+                    Err(err) => {
+                        warn!(
+                            error = %err,
+                            event_type = event_type.as_deref().unwrap_or("unknown"),
+                            "Skipping package event analysis cannot decode"
+                        );
+                        self.commit_offset(&msg).await?;
+                        return Ok(None);
+                    }
+                };
 
                 // Check for duplicate
                 let event_id = format!("{}:{}", event.package_id, event.version);
-                
+
                 {
                     let processed = self.processed_ids.read().await;
                     if processed.contains(&event_id) {
@@ -172,16 +199,20 @@ impl EventConsumer {
                 // Mark as processed
                 {
                     let mut processed = self.processed_ids.write().await;
-                    
+
                     // Evict old entries if cache is full
                     if processed.len() >= self.max_cache_size {
                         // Simple eviction: clear half the cache
-                        let to_remove: Vec<_> = processed.iter().take(self.max_cache_size / 2).cloned().collect();
+                        let to_remove: Vec<_> = processed
+                            .iter()
+                            .take(self.max_cache_size / 2)
+                            .cloned()
+                            .collect();
                         for id in to_remove {
                             processed.remove(&id);
                         }
                     }
-                    
+
                     processed.insert(event_id);
                 }
 
@@ -214,6 +245,65 @@ impl EventConsumer {
             .context("Failed to commit offset")?;
         Ok(())
     }
+
+    fn get_header(&self, msg: &rdkafka::message::BorrowedMessage<'_>, key: &str) -> Option<String> {
+        msg.headers().and_then(|headers| {
+            for i in 0..headers.count() {
+                let header = headers.get(i);
+                if header.key == key {
+                    if let Some(value) = header.value {
+                        return String::from_utf8(value.to_vec()).ok();
+                    }
+                }
+            }
+            None
+        })
+    }
+}
+
+fn is_version_upsert_event_type(event_type: &str) -> bool {
+    matches!(
+        event_type,
+        EVENT_TYPE_VERSION_UPSERTED | EVENT_TYPE_DOMAIN_VERSION_UPSERT
+    )
+}
+
+fn decode_package_event(payload: &[u8]) -> Result<PackagePublishedEvent> {
+    if let Ok(event) = serde_json::from_slice::<PackagePublishedEvent>(payload) {
+        return Ok(event);
+    }
+
+    let event = VersionUpserted::decode(payload)
+        .context("Failed to deserialize event as JSON or VersionUpserted protobuf")?;
+
+    if event.yanked {
+        anyhow::bail!("VersionUpserted is marked yanked");
+    }
+
+    if event.tarball_url.trim().is_empty() {
+        anyhow::bail!("VersionUpserted is missing tarball_url");
+    }
+
+    let published_at = event
+        .published_at
+        .as_ref()
+        .and_then(timestamp_to_datetime)
+        .unwrap_or_else(Utc::now);
+
+    Ok(PackagePublishedEvent {
+        package_id: format!("{}:{}", event.ecosystem, event.package_name),
+        version: event.version,
+        ecosystem: event.ecosystem,
+        tarball_url: event.tarball_url,
+        size_bytes: (event.size_bytes > 0).then_some(event.size_bytes),
+        previous_version: None,
+        published_at,
+    })
+}
+
+fn timestamp_to_datetime(timestamp: &prost_types::Timestamp) -> Option<DateTime<Utc>> {
+    let nanos = timestamp.nanos.clamp(0, 999_999_999) as u32;
+    DateTime::<Utc>::from_timestamp(timestamp.seconds, nanos)
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -264,8 +354,12 @@ impl EventProducer {
             .payload(&payload);
 
         match self.producer.send(record, Duration::from_secs(5)).await {
-            Ok((partition, offset)) => {
-                debug!(partition, offset, "Event sent successfully");
+            Ok(delivery) => {
+                debug!(
+                    partition = delivery.partition,
+                    offset = delivery.offset,
+                    "Event sent successfully"
+                );
                 Ok(())
             }
             Err((e, _)) => {
@@ -293,17 +387,18 @@ impl EventProducer {
             original_offset: 0,
         };
 
-        let payload = serde_json::to_vec(&dlq_message).context("Failed to serialize DLQ message")?;
+        let payload =
+            serde_json::to_vec(&dlq_message).context("Failed to serialize DLQ message")?;
 
         let record = FutureRecord::to(dlq_topic)
             .key(&event.package_id)
             .payload(&payload);
 
         match self.producer.send(record, Duration::from_secs(5)).await {
-            Ok((partition, offset)) => {
+            Ok(delivery) => {
                 warn!(
-                    partition,
-                    offset,
+                    partition = delivery.partition,
+                    offset = delivery.offset,
                     package_id = %event.package_id,
                     "Message sent to DLQ"
                 );
@@ -339,7 +434,9 @@ mod tests {
             package_id: "test-package".to_string(),
             version: "1.0.0".to_string(),
             ecosystem: "npm".to_string(),
-            tarball_url: "https://registry.npmjs.org/test-package/-/test-package-1.0.0.tgz".to_string(),
+            tarball_url: "https://registry.npmjs.org/test-package/-/test-package-1.0.0.tgz"
+                .to_string(),
+            size_bytes: Some(1234),
             previous_version: Some("0.9.0".to_string()),
             published_at: Utc::now(),
         };
@@ -391,6 +488,7 @@ mod tests {
             version: "1.0.0".to_string(),
             ecosystem: "npm".to_string(),
             tarball_url: "https://registry.npmjs.org/test/-/test-1.0.0.tgz".to_string(),
+            size_bytes: None,
             previous_version: None,
             published_at: Utc::now(),
         };

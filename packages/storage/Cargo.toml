@@ -15,6 +15,8 @@ tracing.workspace = true
 chrono.workspace = true
 uuid.workspace = true
 metrics.workspace = true
+async-trait.workspace = true
+redis.workspace = true
 
 # Database clients
 neo4rs.workspace = true
@@ -27,5 +29,7 @@ deadpool = { version = "0.10", features = ["managed"] }
 # Circuit breaker and resilience
 dashmap = "6.0"
 rand = "0.8"
+lru = "0.16"
+zstd = "0.13"
 
 models = { path = "../models" }

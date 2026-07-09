@@ -11,19 +11,19 @@
 #![allow(dead_code)]
 
 use axum::{
+    Json,
     body::Body,
     extract::{Request, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
-use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode};
+use models::tenant::{Permission, RateTier, TenantContext};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tracing::{warn, info};
-use models::tenant::{TenantContext, Permission, RateTier};
 use std::collections::HashSet;
+use std::sync::Arc;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::config::Environment;
@@ -53,7 +53,7 @@ pub struct JwtConfig {
 
 impl JwtConfig {
     /// Create JwtConfig from environment variables.
-    /// 
+    ///
     /// Environment variables:
     /// - JWT_SECRET: Primary signing secret (REQUIRED in production)
     /// - JWT_SECRETS: Comma-separated list of valid secrets for rotation
@@ -62,7 +62,7 @@ impl JwtConfig {
     /// - ENVIRONMENT: production/staging/development
     pub fn from_env() -> Self {
         let environment = Environment::from_env();
-        
+
         // Get primary secret
         let primary_secret = match std::env::var("JWT_SECRET") {
             Ok(secret) => {
@@ -75,23 +75,27 @@ impl JwtConfig {
                         );
                     }
                     if secret.starts_with("dev") || secret.contains("development") {
-                        panic!("❌ SECURITY ERROR: JWT_SECRET contains development values in production!");
+                        panic!(
+                            "❌ SECURITY ERROR: JWT_SECRET contains development values in production!"
+                        );
                     }
                 }
                 secret
             }
             Err(_) => {
                 if environment.is_production() {
-                    panic!("❌ SECURITY ERROR: JWT_SECRET environment variable MUST be set in production!");
+                    panic!(
+                        "❌ SECURITY ERROR: JWT_SECRET environment variable MUST be set in production!"
+                    );
                 }
-                
+
                 // Development default with warning
                 let dev_secret = "dev-only-insecure-secret-do-not-use-in-prod-32chars!".to_string();
                 warn!("⚠️  JWT_SECRET not set - using insecure development default!");
                 dev_secret
             }
         };
-        
+
         // Get validation secrets (for key rotation)
         // Format: JWT_SECRETS=current_secret,old_secret_1,old_secret_2
         let validation_secrets: Vec<String> = std::env::var("JWT_SECRETS")
@@ -102,20 +106,20 @@ impl JwtConfig {
                     .collect()
             })
             .unwrap_or_else(|_| vec![primary_secret.clone()]);
-        
+
         // Ensure primary secret is in validation list
         let mut all_secrets = validation_secrets;
         if !all_secrets.contains(&primary_secret) {
             all_secrets.insert(0, primary_secret.clone());
         }
-        
+
         if all_secrets.len() > 1 {
             info!(
                 "🔑 JWT key rotation enabled with {} validation keys",
                 all_secrets.len()
             );
         }
-        
+
         Self {
             primary_secret,
             validation_secrets: all_secrets,
@@ -126,11 +130,11 @@ impl JwtConfig {
             environment,
         }
     }
-    
+
     /// Validate a token against any valid secret (supports key rotation)
     pub fn validate_token(&self, token: &str) -> Result<Claims, AuthError> {
         let mut last_error = None;
-        
+
         // Try each secret in order (newest first)
         for secret in &self.validation_secrets {
             match self.try_validate_with_secret(token, secret) {
@@ -141,28 +145,28 @@ impl JwtConfig {
                 }
             }
         }
-        
+
         // All secrets failed
         Err(last_error.unwrap_or(AuthError {
             error: "VALIDATION_FAILED",
             message: "Token validation failed with all available keys".to_string(),
         }))
     }
-    
+
     fn try_validate_with_secret(&self, token: &str, secret: &str) -> Result<Claims, AuthError> {
         let mut validation = Validation::new(self.algorithm);
         validation.validate_exp = self.validate_exp;
-        
+
         if let Some(ref iss) = self.issuer {
             validation.set_issuer(&[iss]);
         }
-        
+
         if let Some(ref aud) = self.audience {
             validation.set_audience(&[aud]);
         }
-        
+
         let decoding_key = DecodingKey::from_secret(secret.as_bytes());
-        
+
         decode::<Claims>(token, &decoding_key, &validation)
             .map(|data| data.claims)
             .map_err(|e| AuthError {
@@ -238,7 +242,6 @@ impl Claims {
         }
     }
 
-
     /// Convert claims to TenantContext
     pub fn to_tenant_context(&self) -> TenantContext {
         let tenant_id = self.tenant_id.unwrap_or_else(Uuid::new_v4);
@@ -246,7 +249,7 @@ impl Claims {
         let user_id = Uuid::parse_str(&self.sub).unwrap_or_else(|_| Uuid::new_v4());
 
         let mut permissions = HashSet::new();
-        
+
         // Map roles to permissions
         for role in &self.roles {
             match role.as_str() {
@@ -301,10 +304,12 @@ pub async fn jwt_auth_middleware(
         Ok(claims) => {
             // Create tenant context
             let tenant_context = claims.to_tenant_context();
-            
+
             // Inject claims and context into request extensions
             request.extensions_mut().insert(claims);
-            request.extensions_mut().insert::<Option<TenantContext>>(Some(tenant_context));
+            request
+                .extensions_mut()
+                .insert::<Option<TenantContext>>(Some(tenant_context));
             next.run(request).await
         }
         Err(error) => error.into_response(),
@@ -322,9 +327,13 @@ pub async fn optional_jwt_middleware(
     if let Ok(claims) = extract_and_validate_token(&config, &request) {
         let tenant_context = claims.to_tenant_context();
         request.extensions_mut().insert(claims);
-        request.extensions_mut().insert::<Option<TenantContext>>(Some(tenant_context));
+        request
+            .extensions_mut()
+            .insert::<Option<TenantContext>>(Some(tenant_context));
     } else {
-        request.extensions_mut().insert::<Option<TenantContext>>(None);
+        request
+            .extensions_mut()
+            .insert::<Option<TenantContext>>(None);
     }
     next.run(request).await
 }
@@ -387,7 +396,13 @@ fn extract_bearer_token(request: &Request<Body>) -> Result<String, (StatusCode, 
 // ═══════════════════════════════════════════════════════════════
 
 /// Middleware to require specific role
-pub fn require_role(required_role: &'static str) -> impl Fn(Request<Body>, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>> + Clone {
+pub fn require_role(
+    required_role: &'static str,
+) -> impl Fn(
+    Request<Body>,
+    Next,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>
++ Clone {
     move |request: Request<Body>, next: Next| {
         let role = required_role;
         Box::pin(async move {
@@ -423,7 +438,7 @@ pub fn require_role(required_role: &'static str) -> impl Fn(Request<Body>, Next)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jsonwebtoken::{encode, EncodingKey, Header};
+    use jsonwebtoken::{EncodingKey, Header, encode};
 
     fn create_test_token(claims: &Claims, secret: &str) -> String {
         encode(
@@ -468,10 +483,16 @@ mod tests {
         };
         assert_eq!(free.rate_limit(), 100);
 
-        let pro = Claims { tier: "pro".to_string(), ..free.clone() };
+        let pro = Claims {
+            tier: "pro".to_string(),
+            ..free.clone()
+        };
         assert_eq!(pro.rate_limit(), 1000);
 
-        let enterprise = Claims { tier: "enterprise".to_string(), ..free };
+        let enterprise = Claims {
+            tier: "enterprise".to_string(),
+            ..free
+        };
         assert_eq!(enterprise.rate_limit(), 10000);
     }
 

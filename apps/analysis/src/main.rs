@@ -27,26 +27,29 @@ mod consumer;
 mod embeddings;
 mod feature_extraction;
 mod health;
+#[cfg(feature = "onnx")]
 mod onnx_model;
+mod proto_gen;
 
 use anyhow::{Context, Result};
-use config::Config;
+use config::{Config, ParserConfig};
 use consumer::{AnalysisEvent, EventConsumer, EventProducer, PackagePublishedEvent};
+use futures::StreamExt;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use std::time::Duration;
-use tokio::sync::{mpsc, watch, Mutex, Semaphore};
+use tokio::sync::{Mutex, Semaphore, mpsc, watch};
 use tokio::task::JoinSet;
-use tracing::{error, info, warn};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing::{debug, error, info, warn};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::ast_parser::{Language, ParserPool, PublicApiSnapshot};
-use std::path::PathBuf;
-use tokio::io::AsyncWriteExt;
 use crate::breaking_detector::{BreakingDetector, SeverityLevel};
 use crate::embeddings::EmbeddingGenerator;
+use std::path::{Path, PathBuf};
+use tokio::io::AsyncWriteExt;
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN ENTRY POINT
@@ -134,10 +137,7 @@ async fn run_service(
     // Initialize components
     info!("Initializing AST Parser Pool...");
     let parse_timeout = Duration::from_secs(config.workers.parse_timeout_secs);
-    let parser_pool = Arc::new(ParserPool::new(
-        parse_timeout,
-        config.parser.max_file_size,
-    ));
+    let parser_pool = Arc::new(ParserPool::new(parse_timeout, config.parser.max_file_size));
 
     info!("Initializing Embedding Generator...");
     let embedding_generator = Arc::new(
@@ -182,6 +182,7 @@ async fn run_service(
         breaking_detector: breaking_detector.clone(),
         producer: producer.clone(),
         semaphore: semaphore.clone(),
+        parser: config.parser.clone(),
         dlq_topic: config.kafka.dlq_topic.clone(),
         max_retries: config.kafka.max_retries,
     };
@@ -257,6 +258,7 @@ struct WorkerCfg {
     breaking_detector: Arc<BreakingDetector>,
     producer: Arc<EventProducer>,
     semaphore: Arc<Semaphore>,
+    parser: ParserConfig,
     dlq_topic: String,
     max_retries: u32,
 }
@@ -407,13 +409,41 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
     let event = &item.event;
     let mut analysis_events = Vec::new();
 
-    info!("Processing package");
+    debug!(
+        package_id = %event.package_id,
+        version = %event.version,
+        "Processing package"
+    );
 
-    // 1. Download and extract tarball
-    let tarball_path = download_tarball(&event.tarball_url).await?;
+    if let Some(size_bytes) = event.size_bytes {
+        if size_bytes > config.parser.max_unpacked_size_bytes as i64 {
+            warn!(
+                package_id = %event.package_id,
+                version = %event.version,
+                size_bytes,
+                max_unpacked_size_bytes = config.parser.max_unpacked_size_bytes,
+                "Skipping oversized package"
+            );
+            return Ok(analysis_events);
+        }
+    }
 
-    // 2. Extract source files
-    let source_files = extract_source_files(&tarball_path).await?;
+    // 1. Download tarball with a hard compressed-size limit.
+    let Some(tarball_path) =
+        download_tarball(&event.tarball_url, config.parser.max_tarball_size_bytes).await?
+    else {
+        return Ok(analysis_events);
+    };
+
+    // 2. Stream source files from the archive without unpacking the whole package.
+    let source_files = match extract_source_files(&tarball_path, &config.parser).await {
+        Ok(files) => files,
+        Err(err) => {
+            cleanup_tarball(&tarball_path).await;
+            return Err(err);
+        }
+    };
+    cleanup_tarball(&tarball_path).await;
 
     // 3. Parse source and extract public API
     let mut api_snapshot = PublicApiSnapshot::new(event.package_id.clone(), event.version.clone());
@@ -431,7 +461,9 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
                         api_snapshot.files_parsed += 1;
                     }
                     Err(e) => {
-                        api_snapshot.parse_errors.push(format!("{}: {}", file_path, e));
+                        api_snapshot
+                            .parse_errors
+                            .push(format!("{}: {}", file_path, e));
                     }
                 }
             }
@@ -439,7 +471,7 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
     }
 
     api_snapshot.compute_hash();
-    info!(
+    debug!(
         symbols = api_snapshot.symbols.len(),
         files = api_snapshot.files_parsed,
         hash = %api_snapshot.api_hash,
@@ -456,7 +488,7 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
 
         match config.embedding_generator.generate_batch(&texts).await {
             Ok(embeddings) => {
-                info!(count = embeddings.len(), "Generated embeddings");
+                debug!(count = embeddings.len(), "Generated embeddings");
                 // Emit embedding event
                 analysis_events.push(AnalysisEvent::EmbeddingsGenerated {
                     package_id: event.package_id.clone(),
@@ -472,13 +504,20 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
     }
 
     // Persist snapshot for future comparisons
-    if let Err(e) = save_snapshot(&api_snapshot).await {
+    if let Err(e) = save_snapshot(
+        &api_snapshot,
+        config.parser.snapshot_max_bytes,
+        config.parser.snapshot_versions_per_package,
+        config.parser.snapshot_total_max_bytes,
+    )
+    .await
+    {
         warn!(error = %e, "Failed to persist API snapshot");
     }
 
     // 5. Detect breaking changes (if previous version exists)
     if let Some(ref prev_version) = event.previous_version {
-        info!(previous = %prev_version, "Checking for breaking changes");
+        debug!(previous = %prev_version, "Checking for breaking changes");
 
         // Load previous API snapshot (from cache/storage)
         if let Some(prev_snapshot) = load_previous_snapshot(&event.package_id, prev_version).await {
@@ -517,9 +556,6 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
         api_hash: api_snapshot.api_hash.clone(),
     });
 
-    // Cleanup
-    cleanup_tarball(&tarball_path).await;
-
     Ok(analysis_events)
 }
 
@@ -527,58 +563,119 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
 // HELPER FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
 
-async fn download_tarball(url: &str) -> Result<String> {
-    info!(url, "Downloading tarball");
+async fn download_tarball(url: &str, max_bytes: usize) -> Result<Option<String>> {
+    debug!(url, "Downloading tarball");
 
     let client = reqwest::Client::new();
     let response = client.get(url).send().await?.error_for_status()?;
-    let bytes = response.bytes().await?;
+    if let Some(content_length) = response.content_length() {
+        if content_length > max_bytes as u64 {
+            warn!(
+                url,
+                content_length, max_bytes, "Skipping tarball because Content-Length exceeds limit"
+            );
+            return Ok(None);
+        }
+    }
 
     let base_dir = std::env::temp_dir().join("randomapp-tarballs");
     tokio::fs::create_dir_all(&base_dir).await?;
     let file_path = base_dir.join(format!("tarball-{}.tgz", uuid::Uuid::new_v4()));
 
     let mut file = tokio::fs::File::create(&file_path).await?;
-    file.write_all(&bytes).await?;
+    let mut downloaded = 0usize;
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        downloaded += chunk.len();
+        if downloaded > max_bytes {
+            cleanup_tarball(&file_path.to_string_lossy()).await;
+            warn!(
+                url,
+                downloaded, max_bytes, "Skipping tarball because streamed body exceeds limit"
+            );
+            return Ok(None);
+        }
+        file.write_all(&chunk).await?;
+    }
     file.flush().await?;
 
-    Ok(file_path.to_string_lossy().to_string())
+    Ok(Some(file_path.to_string_lossy().to_string()))
 }
 
-async fn extract_source_files(tarball_path: &str) -> Result<Vec<(String, String)>> {
-    info!(path = tarball_path, "Extracting source files");
-    let extract_dir = std::env::temp_dir().join(format!("randomapp-extract-{}", uuid::Uuid::new_v4()));
-    tokio::fs::create_dir_all(&extract_dir).await?;
-
+async fn extract_source_files(
+    tarball_path: &str,
+    parser_config: &ParserConfig,
+) -> Result<Vec<(String, String)>> {
+    debug!(path = tarball_path, "Extracting source files");
     let tarball_path = tarball_path.to_string();
-    let extract_dir_clone = extract_dir.clone();
+    let max_file_size = parser_config.max_file_size;
+    let max_files = parser_config.max_files_per_package;
+    let max_unpacked_size = parser_config.max_unpacked_size_bytes;
 
     let files = tokio::task::spawn_blocking(move || -> Result<Vec<(String, String)>> {
+        use std::io::Read;
+
         let file = std::fs::File::open(&tarball_path)?;
         let decoder = flate2::read::GzDecoder::new(file);
         let mut archive = tar::Archive::new(decoder);
-        archive.unpack(&extract_dir_clone)?;
 
         let mut results = Vec::new();
-        let max_size = 1_000_000usize;
+        let mut inspected_unpacked_bytes = 0usize;
 
-        for entry in walkdir::WalkDir::new(&extract_dir_clone).into_iter().filter_map(|e| e.ok()) {
-            if !entry.file_type().is_file() {
+        for entry in archive.entries()? {
+            let mut entry = match entry {
+                Ok(entry) => entry,
+                Err(err) => {
+                    debug!(error = %err, "Skipping unreadable tar entry");
+                    continue;
+                }
+            };
+
+            if !entry.header().entry_type().is_file() {
                 continue;
             }
 
-            let metadata = entry.metadata().ok();
-            if let Some(meta) = metadata {
-                if meta.len() as usize > max_size {
+            let path = match entry.path() {
+                Ok(path) => path.into_owned(),
+                Err(err) => {
+                    debug!(error = %err, "Skipping tar entry with invalid path");
                     continue;
                 }
+            };
+
+            let Some(rel_path) = safe_relative_path(&path) else {
+                continue;
+            };
+
+            let Some(ext) = Path::new(&rel_path).extension().and_then(|e| e.to_str()) else {
+                continue;
+            };
+            if Language::from_extension(ext).is_none() {
+                continue;
             }
 
-            let path = entry.path();
-            let bytes = match std::fs::read(path) {
-                Ok(b) => b,
-                Err(_) => continue,
-            };
+            let entry_size = entry.header().size().unwrap_or(0) as usize;
+            inspected_unpacked_bytes = inspected_unpacked_bytes.saturating_add(entry_size);
+            if inspected_unpacked_bytes > max_unpacked_size {
+                warn!(
+                    inspected_unpacked_bytes,
+                    max_unpacked_size,
+                    "Stopping package extraction because unpacked-size budget was reached"
+                );
+                break;
+            }
+
+            if entry_size > max_file_size {
+                continue;
+            }
+
+            let mut bytes = Vec::with_capacity(entry_size.min(max_file_size));
+            let mut limited = entry.by_ref().take(max_file_size as u64 + 1);
+            limited.read_to_end(&mut bytes)?;
+            if bytes.len() > max_file_size {
+                continue;
+            }
 
             if bytes.iter().any(|b| *b == 0) {
                 continue;
@@ -589,25 +686,40 @@ async fn extract_source_files(tarball_path: &str) -> Result<Vec<(String, String)
                 Err(_) => continue,
             };
 
-            let rel_path = path.strip_prefix(&extract_dir_clone).ok()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.to_string_lossy().to_string());
-
             results.push((rel_path, content));
+            if results.len() >= max_files {
+                debug!(
+                    max_files,
+                    "Stopping package extraction because file limit was reached"
+                );
+                break;
+            }
         }
 
-        let _ = std::fs::remove_dir_all(&extract_dir_clone);
         Ok(results)
-    }).await??;
+    })
+    .await??;
 
     Ok(files)
 }
 
-async fn load_previous_snapshot(
-    package_id: &str,
-    version: &str,
-) -> Option<PublicApiSnapshot> {
-    info!(package_id, version, "Loading previous API snapshot");
+fn safe_relative_path(path: &Path) -> Option<String> {
+    let mut parts = Vec::new();
+    for component in path.components() {
+        if let std::path::Component::Normal(part) = component {
+            parts.push(part.to_string_lossy().to_string());
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("/"))
+    }
+}
+
+async fn load_previous_snapshot(package_id: &str, version: &str) -> Option<PublicApiSnapshot> {
+    debug!(package_id, version, "Loading previous API snapshot");
     let path = snapshot_path(package_id, version);
     if !path.exists() {
         return None;
@@ -620,7 +732,7 @@ async fn load_previous_snapshot(
 }
 
 async fn cleanup_tarball(path: &str) {
-    info!(path, "Cleaning up tarball");
+    debug!(path, "Cleaning up tarball");
     let _ = tokio::fs::remove_file(path).await;
 }
 
@@ -631,25 +743,126 @@ fn snapshot_base_dir() -> PathBuf {
 }
 
 fn sanitize_segment(value: &str) -> String {
-    value
-        .replace('/', "_")
-        .replace('\\', "_")
-        .replace(':', "_")
+    value.replace('/', "_").replace('\\', "_").replace(':', "_")
 }
 
 fn snapshot_path(package_id: &str, version: &str) -> PathBuf {
     let base = snapshot_base_dir();
     let pkg = sanitize_segment(package_id);
-    base.join(pkg).join(format!("{}.json", sanitize_segment(version)))
+    base.join(pkg)
+        .join(format!("{}.json", sanitize_segment(version)))
 }
 
-async fn save_snapshot(snapshot: &PublicApiSnapshot) -> Result<()> {
+async fn save_snapshot(
+    snapshot: &PublicApiSnapshot,
+    max_bytes: usize,
+    keep_versions: usize,
+    total_max_bytes: usize,
+) -> Result<()> {
     let path = snapshot_path(&snapshot.package_id, &snapshot.version);
+    let base_dir = snapshot_base_dir();
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-    let data = serde_json::to_string_pretty(snapshot)?;
+    let data = serde_json::to_string(snapshot)?;
+    if data.len() > max_bytes {
+        warn!(
+            package_id = %snapshot.package_id,
+            version = %snapshot.version,
+            snapshot_bytes = data.len(),
+            max_bytes,
+            "Skipping oversized API snapshot cache write"
+        );
+        return Ok(());
+    }
     tokio::fs::write(path, data).await?;
+    if let Some(parent) = snapshot_path(&snapshot.package_id, &snapshot.version).parent() {
+        prune_package_snapshots(parent, keep_versions).await?;
+    }
+    prune_snapshot_cache(base_dir, total_max_bytes).await?;
+    Ok(())
+}
+
+async fn prune_package_snapshots(package_dir: &Path, keep_versions: usize) -> Result<()> {
+    if keep_versions == 0 {
+        tokio::fs::remove_dir_all(package_dir).await.ok();
+        return Ok(());
+    }
+
+    let mut entries = match tokio::fs::read_dir(package_dir).await {
+        Ok(entries) => entries,
+        Err(_) => return Ok(()),
+    };
+    let mut files = Vec::new();
+
+    while let Some(entry) = entries.next_entry().await? {
+        let metadata = match entry.metadata().await {
+            Ok(metadata) if metadata.is_file() => metadata,
+            _ => continue,
+        };
+        let modified = metadata
+            .modified()
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+        files.push((modified, entry.path()));
+    }
+
+    files.sort_by(|a, b| b.0.cmp(&a.0));
+    for (_, path) in files.into_iter().skip(keep_versions) {
+        let _ = tokio::fs::remove_file(path).await;
+    }
+
+    Ok(())
+}
+
+async fn prune_snapshot_cache(base_dir: PathBuf, max_total_bytes: usize) -> Result<()> {
+    if max_total_bytes == 0 {
+        tokio::fs::remove_dir_all(base_dir).await.ok();
+        return Ok(());
+    }
+
+    tokio::task::spawn_blocking(move || -> Result<()> {
+        let mut total_bytes = 0u64;
+        let mut files = Vec::new();
+
+        for entry in walkdir::WalkDir::new(&base_dir)
+            .min_depth(1)
+            .into_iter()
+            .filter_map(|entry| entry.ok())
+        {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(_) => continue,
+            };
+            let len = metadata.len();
+            total_bytes = total_bytes.saturating_add(len);
+            let modified = metadata
+                .modified()
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            files.push((modified, len, entry.path().to_path_buf()));
+        }
+
+        if total_bytes <= max_total_bytes as u64 {
+            return Ok(());
+        }
+
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        for (_, len, path) in files {
+            if total_bytes <= max_total_bytes as u64 {
+                break;
+            }
+            if std::fs::remove_file(&path).is_ok() {
+                total_bytes = total_bytes.saturating_sub(len);
+            }
+        }
+
+        Ok(())
+    })
+    .await??;
+
     Ok(())
 }
 
@@ -667,7 +880,9 @@ mod tests {
             package_id: "test-package".to_string(),
             version: "1.0.0".to_string(),
             ecosystem: "npm".to_string(),
-            tarball_url: "https://registry.npmjs.org/test-package/-/test-package-1.0.0.tgz".to_string(),
+            tarball_url: "https://registry.npmjs.org/test-package/-/test-package-1.0.0.tgz"
+                .to_string(),
+            size_bytes: None,
             previous_version: None,
             published_at: chrono::Utc::now(),
         };

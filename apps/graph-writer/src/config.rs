@@ -171,8 +171,14 @@ impl Config {
             .set_default("service_name", default_service_name())?
             .set_default("memgraph.uri", default_memgraph_uri())?
             .set_default("memgraph.pool_size", default_pool_size() as i64)?
-            .set_default("memgraph.connection_timeout_secs", default_connection_timeout() as i64)?
-            .set_default("memgraph.query_timeout_secs", default_query_timeout() as i64)?
+            .set_default(
+                "memgraph.connection_timeout_secs",
+                default_connection_timeout() as i64,
+            )?
+            .set_default(
+                "memgraph.query_timeout_secs",
+                default_query_timeout() as i64,
+            )?
             .set_default("kafka.brokers", default_kafka_brokers())?
             .set_default("kafka.group_id", default_group_id())?
             .set_default("kafka.topic", default_topic())?

@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use reqwest::Client;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -193,7 +193,12 @@ async fn main() -> Result<()> {
 
     if let Some(min) = min_mrr {
         if mrr < min {
-            return Err(anyhow!("MRR@{} below threshold: {:.4} < {:.4}", golden.k, mrr, min));
+            return Err(anyhow!(
+                "MRR@{} below threshold: {:.4} < {:.4}",
+                golden.k,
+                mrr,
+                min
+            ));
         }
     }
     if let Some(min) = min_recall {

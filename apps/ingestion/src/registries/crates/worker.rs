@@ -10,13 +10,15 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use prost::Message;
 use rdkafka::{
-    consumer::{Consumer, StreamConsumer},
     Message as KafkaMessage,
+    consumer::{Consumer, StreamConsumer},
 };
 use sqlx::PgPool;
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, instrument};
-use uuid::Uuid;
+
+use crate::event_utils;
+use crate::proto_gen;
 
 use super::diff::{calculate_diff, is_initial_sync};
 use super::fetcher::CargoFetcher;
@@ -93,9 +95,8 @@ impl CargoWorker {
     /// Process a single Kafka message
     async fn process_message(&self, message: &rdkafka::message::BorrowedMessage<'_>) -> Result<()> {
         let payload = message.payload().context("Empty message payload")?;
-        
-        let index_change = IndexChange::decode(payload)
-            .context("Failed to decode IndexChange")?;
+
+        let index_change = IndexChange::decode(payload).context("Failed to decode IndexChange")?;
 
         self.process_index_change(&index_change).await
     }
@@ -168,6 +169,14 @@ impl CargoWorker {
         // Package upsert (always on first sync or when we have new versions)
         if is_initial || !diff.added.is_empty() {
             let package_event = PackageUpsertEvent {
+                event_id: event_utils::generate_package_upsert_event_id(
+                    "cargo",
+                    crate_name,
+                    &event_utils::hash_json(&serde_json::json!({
+                        "name": crate_name,
+                        "latest_version": find_latest_version(&new_entries),
+                    })),
+                ),
                 ecosystem: "cargo".to_string(),
                 name: crate_name.clone(),
                 latest_version: find_latest_version(&new_entries),
@@ -178,9 +187,11 @@ impl CargoWorker {
 
             write_outbox_event(
                 &mut tx,
+                &package_event.event_id,
+                DOMAIN_PACKAGE_UPSERT_TOPIC,
                 DOMAIN_PACKAGE_UPSERT_TOPIC,
                 &format!("cargo:{}", crate_name),
-                &package_event,
+                package_event.encode_to_vec(),
                 &event_time,
             )
             .await?;
@@ -189,6 +200,12 @@ impl CargoWorker {
         // Version upserts for new versions
         for entry in &diff.added {
             let version_event = VersionUpsertEvent {
+                event_id: event_utils::generate_version_upsert_event_id(
+                    "cargo",
+                    crate_name,
+                    &entry.version,
+                    &entry.cksum,
+                ),
                 ecosystem: "cargo".to_string(),
                 package_name: crate_name.clone(),
                 version: entry.version.clone(),
@@ -207,9 +224,11 @@ impl CargoWorker {
 
             write_outbox_event(
                 &mut tx,
+                &version_event.event_id,
+                DOMAIN_VERSION_UPSERT_TOPIC,
                 DOMAIN_VERSION_UPSERT_TOPIC,
                 &format!("cargo:{}:{}", crate_name, entry.version),
-                &version_event,
+                version_event.encode_to_vec(),
                 &event_time,
             )
             .await?;
@@ -218,6 +237,9 @@ impl CargoWorker {
         // Version yanked events
         for version in &diff.yanked {
             let yank_event = VersionYankedEvent {
+                event_id: event_utils::generate_version_yanked_event_id(
+                    "cargo", crate_name, version,
+                ),
                 ecosystem: "cargo".to_string(),
                 package_name: crate_name.clone(),
                 version: version.clone(),
@@ -226,9 +248,11 @@ impl CargoWorker {
 
             write_outbox_event(
                 &mut tx,
+                &yank_event.event_id,
+                DOMAIN_VERSION_YANKED_TOPIC,
                 DOMAIN_VERSION_YANKED_TOPIC,
                 &format!("cargo:{}:{}", crate_name, version),
-                &yank_event,
+                yank_event.encode_to_vec(),
                 &event_time,
             )
             .await?;
@@ -236,18 +260,24 @@ impl CargoWorker {
 
         // Version unyanked events
         for version in &diff.unyanked {
-            let yank_event = VersionYankedEvent {
+            let version_event = VersionUpsertEvent {
+                event_id: event_utils::generate_version_upsert_event_id(
+                    "cargo", crate_name, version, "unyanked",
+                ),
                 ecosystem: "cargo".to_string(),
                 package_name: crate_name.clone(),
                 version: version.clone(),
                 yanked: false,
+                dependencies: Vec::new(),
             };
 
             write_outbox_event(
                 &mut tx,
-                DOMAIN_VERSION_YANKED_TOPIC,
+                &version_event.event_id,
+                DOMAIN_VERSION_UPSERT_TOPIC,
+                DOMAIN_VERSION_UPSERT_TOPIC,
                 &format!("cargo:{}:{}", crate_name, version),
-                &yank_event,
+                version_event.encode_to_vec(),
                 &event_time,
             )
             .await?;
@@ -337,25 +367,33 @@ fn calculate_versions_hash(versions: &[VersionState]) -> String {
 }
 
 /// Write event to outbox table
-async fn write_outbox_event<T: serde::Serialize>(
+async fn write_outbox_event(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    event_id: &str,
+    event_type: &str,
     topic: &str,
     key: &str,
-    payload: &T,
+    payload: Vec<u8>,
     event_time: &chrono::DateTime<Utc>,
 ) -> Result<()> {
-    let payload_json = serde_json::to_value(payload)?;
-
     sqlx::query(
         r#"
-        INSERT INTO ingestion_outbox (id, topic, partition_key, payload, created_at)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO ingestion_outbox (
+            event_id, event_type, topic, partition_key, payload, headers, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (event_id) DO NOTHING
         "#,
     )
-    .bind(Uuid::new_v4())
+    .bind(event_id)
+    .bind(event_type)
     .bind(topic)
     .bind(key)
-    .bind(&payload_json)
+    .bind(payload)
+    .bind(serde_json::json!({
+        "ecosystem": "cargo",
+        "content_type": "application/x-protobuf",
+    }))
     .bind(event_time)
     .execute(&mut **tx)
     .await?;
@@ -366,6 +404,7 @@ async fn write_outbox_event<T: serde::Serialize>(
 // Domain event types
 #[derive(Debug, serde::Serialize)]
 struct PackageUpsertEvent {
+    event_id: String,
     ecosystem: String,
     name: String,
     latest_version: Option<String>,
@@ -376,6 +415,7 @@ struct PackageUpsertEvent {
 
 #[derive(Debug, serde::Serialize)]
 struct VersionUpsertEvent {
+    event_id: String,
     ecosystem: String,
     package_name: String,
     version: String,
@@ -392,8 +432,83 @@ struct DependencyRef {
 
 #[derive(Debug, serde::Serialize)]
 struct VersionYankedEvent {
+    event_id: String,
     ecosystem: String,
     package_name: String,
     version: String,
     yanked: bool,
+}
+
+impl PackageUpsertEvent {
+    fn encode_to_vec(&self) -> Vec<u8> {
+        proto_gen::PackageUpserted {
+            meta: Some(event_meta(&self.event_id, "cargo-ingestion")),
+            ecosystem: self.ecosystem.clone(),
+            package_name: self.name.clone(),
+            latest_version: self.latest_version.clone().unwrap_or_default(),
+            repository_url: self.repository.clone().unwrap_or_default(),
+            packument_sha256: self.event_id.clone(),
+            description: self.description.clone().unwrap_or_default(),
+            homepage: self.homepage.clone().unwrap_or_default(),
+            license: String::new(),
+            maintainers: Vec::new(),
+        }
+        .encode_to_vec()
+    }
+}
+
+impl VersionUpsertEvent {
+    fn encode_to_vec(&self) -> Vec<u8> {
+        proto_gen::VersionUpserted {
+            meta: Some(event_meta(&self.event_id, "cargo-ingestion")),
+            ecosystem: self.ecosystem.clone(),
+            package_name: self.package_name.clone(),
+            version: self.version.clone(),
+            yanked: self.yanked,
+            tarball_url: String::new(),
+            integrity: String::new(),
+            size_bytes: 0,
+            published_at: None,
+            dependencies: self
+                .dependencies
+                .iter()
+                .map(|dep| proto_gen::Dependency {
+                    name: dep.name.clone(),
+                    version_range: dep.version_req.clone(),
+                    is_peer: false,
+                })
+                .collect(),
+            dev_dependencies: Vec::new(),
+            optional_dependencies: Vec::new(),
+        }
+        .encode_to_vec()
+    }
+}
+
+impl VersionYankedEvent {
+    fn encode_to_vec(&self) -> Vec<u8> {
+        proto_gen::VersionYanked {
+            meta: Some(event_meta(&self.event_id, "cargo-ingestion")),
+            ecosystem: self.ecosystem.clone(),
+            package_name: self.package_name.clone(),
+            version: self.version.clone(),
+            reason: if self.yanked {
+                "cargo_yanked".to_string()
+            } else {
+                "cargo_unyanked".to_string()
+            },
+            yanked_at: Some(prost_types::Timestamp::from(std::time::SystemTime::now())),
+        }
+        .encode_to_vec()
+    }
+}
+
+fn event_meta(event_id: &str, source: &str) -> proto_gen::EventMeta {
+    proto_gen::EventMeta {
+        event_id: event_id.to_string(),
+        source: source.to_string(),
+        traceparent: String::new(),
+        occurred_at: Some(prost_types::Timestamp::from(std::time::SystemTime::now())),
+        schema_version: "v1".to_string(),
+    }
 }

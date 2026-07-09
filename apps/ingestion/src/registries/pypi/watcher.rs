@@ -5,15 +5,15 @@
 //!
 //! API: https://warehouse.pypa.io/api-reference/xml-rpc.html
 
-use crate::store::PostgresCheckpointStore;
 use crate::producer::EventProducer;
+use crate::store::PostgresCheckpointStore;
 use crate::traits::CheckpointStore;
-use anyhow::{Result, Context};
-use serde::{Deserialize, Serialize};
-use std::time::Duration;
-use tracing::{info, warn, error, instrument, debug};
-use std::sync::Arc;
+use anyhow::{Context, Result};
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::time::Duration;
+use tracing::{debug, error, info, instrument, warn};
 
 const PYPI_XMLRPC_URL: &str = "https://pypi.org/pypi";
 const BATCH_SIZE: i64 = 1000;
@@ -58,7 +58,7 @@ impl PypiWatcher {
     #[instrument(skip(self), name = "pypi_watcher_loop")]
     pub async fn run(&self) -> Result<()> {
         info!("Starting PyPI Watcher (serial-based changelog)...");
-        
+
         loop {
             match self.poll_changes().await {
                 Ok(count) => {
@@ -79,7 +79,8 @@ impl PypiWatcher {
 
     async fn poll_changes(&self) -> Result<usize> {
         // 1. Get last serial from checkpoint
-        let since_serial: i64 = self.checkpoint_store
+        let since_serial: i64 = self
+            .checkpoint_store
             .get_cursor("pypi")
             .await?
             .and_then(|s| s.parse().ok())
@@ -87,24 +88,30 @@ impl PypiWatcher {
 
         // 2. Call XML-RPC changelog(since_serial)
         let changes = self.fetch_changelog(since_serial).await?;
-        
+
         if changes.is_empty() {
             return Ok(0);
         }
 
-        let last_serial = changes.iter().map(|c| c.serial).max().unwrap_or(since_serial);
+        let last_serial = changes
+            .iter()
+            .map(|c| c.serial)
+            .max()
+            .unwrap_or(since_serial);
 
         // 3. Group changes by project and emit to RAW topic
         let mut projects_seen = std::collections::HashSet::new();
         for change in &changes {
             if !projects_seen.contains(&change.project_name) {
                 projects_seen.insert(change.project_name.clone());
-                
+
                 // Emit to raw.pypi.journal.v1
                 let payload = serde_json::to_vec(&change)?;
                 let key = format!("pypi:{}", change.project_name);
-                
-                self.producer.publish_raw(&self.topic, &key, &payload).await?;
+
+                self.producer
+                    .publish_raw(&self.topic, &key, &payload)
+                    .await?;
             }
         }
 
@@ -124,7 +131,7 @@ impl PypiWatcher {
     }
 
     /// Fetch changelog from PyPI XML-RPC API
-    /// 
+    ///
     /// The changelog() method returns list of (name, version, timestamp, action, serial)
     async fn fetch_changelog(&self, since_serial: i64) -> Result<Vec<PypiChangeEntry>> {
         // XML-RPC request body for changelog(since_serial)
@@ -139,7 +146,8 @@ impl PypiWatcher {
             since_serial
         );
 
-        let response = self.client
+        let response = self
+            .client
             .post(PYPI_XMLRPC_URL)
             .header("Content-Type", "text/xml")
             .body(xml_body)
@@ -153,7 +161,7 @@ impl PypiWatcher {
         }
 
         let body = response.text().await?;
-        
+
         // Parse XML-RPC response
         self.parse_changelog_response(&body)
     }
@@ -165,7 +173,7 @@ impl PypiWatcher {
 
         let mut entries = Vec::new();
         let mut reader = Reader::from_str(xml);
-        reader.trim_text(true);
+        reader.config_mut().trim_text(true);
 
         let mut in_data = false;
         let mut in_value = false;
@@ -174,13 +182,11 @@ impl PypiWatcher {
 
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(Event::Start(ref e)) => {
-                    match e.name().as_ref() {
-                        b"data" => in_data = true,
-                        b"value" if in_data => in_value = true,
-                        _ => {}
-                    }
-                }
+                Ok(Event::Start(ref e)) => match e.name().as_ref() {
+                    b"data" => in_data = true,
+                    b"value" if in_data => in_value = true,
+                    _ => {}
+                },
                 Ok(Event::End(ref e)) => {
                     match e.name().as_ref() {
                         b"data" => {
@@ -189,10 +195,10 @@ impl PypiWatcher {
                             if current_values.len() >= 5 {
                                 let entry = PypiChangeEntry {
                                     project_name: current_values[0].clone(),
-                                    version: if current_values[1].is_empty() { 
-                                        None 
-                                    } else { 
-                                        Some(current_values[1].clone()) 
+                                    version: if current_values[1].is_empty() {
+                                        None
+                                    } else {
+                                        Some(current_values[1].clone())
                                     },
                                     timestamp: current_values[2].parse().unwrap_or(0),
                                     action: current_values[3].clone(),
@@ -243,7 +249,7 @@ mod tests {
             action: "new release".to_string(),
             serial: 12345678,
         };
-        
+
         assert_eq!(entry.project_name, "requests");
         assert!(entry.version.is_some());
     }

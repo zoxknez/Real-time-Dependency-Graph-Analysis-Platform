@@ -10,24 +10,31 @@
 //! - Advanced caching with L1/L2 tiers
 //! - Enhanced circuit breaker with half-open state
 
+pub mod advanced_cache;
+pub mod bulkhead;
+pub mod circuit_breaker;
+pub mod enhanced_circuit_breaker;
 pub mod memgraph;
 pub mod qdrant;
-pub mod risingwave;
-pub mod circuit_breaker;
 pub mod resilience;
-pub mod bulkhead;
-pub mod advanced_cache;
-pub mod enhanced_circuit_breaker;
+pub mod risingwave;
 
 // Re-exports for convenience
-pub use memgraph::{MemgraphClient, MemgraphConfig, QueryBuilder, GraphStats, MemoryStats};
-pub use qdrant::{QdrantClient, QdrantConfig, VectorPoint, SearchResult, FilterBuilder};
-pub use risingwave::{RisingWaveClient, RisingWaveConfig, EcosystemStats, DependencyCount};
-pub use circuit_breaker::{CircuitBreaker, CircuitBreakerConfig, CircuitBreakerRegistry, CircuitState};
-pub use resilience::{ResilienceConfig, with_resilience, with_idempotency, IdempotencyToken, IsRetryable, ErrorClass};
+pub use advanced_cache::{AdvancedCache, CacheConfig, CacheStats, CacheStrategy};
 pub use bulkhead::{Bulkhead, BulkheadConfig};
-pub use advanced_cache::{AdvancedCache, CacheConfig, CacheStrategy, CacheStats};
-pub use enhanced_circuit_breaker::{EnhancedCircuitBreaker, CircuitBreakerConfig as EnhancedCircuitBreakerConfig, CircuitBreakerState, CircuitBreakerStats};
+pub use circuit_breaker::{
+    CircuitBreaker, CircuitBreakerConfig, CircuitBreakerRegistry, CircuitState,
+};
+pub use enhanced_circuit_breaker::{
+    CircuitBreakerConfig as EnhancedCircuitBreakerConfig, CircuitBreakerStats,
+    CircuitState as EnhancedCircuitBreakerState, EnhancedCircuitBreaker,
+};
+pub use memgraph::{GraphStats, MemgraphClient, MemgraphConfig, MemoryStats, QueryBuilder};
+pub use qdrant::{FilterBuilder, QdrantClient, QdrantConfig, SearchResult, VectorPoint};
+pub use resilience::{
+    ErrorClass, IdempotencyToken, IsRetryable, ResilienceConfig, with_idempotency, with_resilience,
+};
+pub use risingwave::{DependencyCount, EcosystemStats, RisingWaveClient, RisingWaveConfig};
 
 use anyhow::Result;
 
@@ -65,7 +72,7 @@ pub async fn init_storage(config: &StorageConfig) -> Result<StorageClients> {
     let memgraph = MemgraphClient::new(config.memgraph.clone()).await?;
     let qdrant = QdrantClient::new(config.qdrant.clone()).await?;
     let risingwave = RisingWaveClient::new(config.risingwave.clone()).await?;
-    
+
     Ok(StorageClients {
         memgraph,
         qdrant,

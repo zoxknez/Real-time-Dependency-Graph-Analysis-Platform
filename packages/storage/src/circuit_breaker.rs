@@ -7,13 +7,13 @@
 //! - Prometheus metrics integration
 //! - Configurable thresholds
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use dashmap::DashMap;
 use metrics::{counter, gauge, histogram};
-use tracing::{warn, info};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::{info, warn};
 
 /// Circuit breaker state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,16 +71,21 @@ pub struct CircuitBreaker {
 }
 
 impl CircuitBreaker {
-    pub fn new(service: impl Into<String>, operation: impl Into<String>, config: CircuitBreakerConfig) -> Self {
+    pub fn new(
+        service: impl Into<String>,
+        operation: impl Into<String>,
+        config: CircuitBreakerConfig,
+    ) -> Self {
         let service = service.into();
         let operation = operation.into();
-        
+
         // Initialize metrics
         gauge!(
             "circuit_breaker_state",
             "service" => service.clone(),
             "operation" => operation.clone()
-        ).set(CircuitState::Closed as u32 as f64);
+        )
+        .set(CircuitState::Closed as u32 as f64);
 
         Self {
             service,
@@ -125,8 +130,13 @@ impl CircuitBreaker {
                         "circuit_breaker_rejected_total",
                         "service" => self.service.clone(),
                         "operation" => self.operation.clone()
-                    ).increment(1);
-                    return Err(anyhow!("Circuit breaker is OPEN for {}/{}", self.service, self.operation));
+                    )
+                    .increment(1);
+                    return Err(anyhow!(
+                        "Circuit breaker is OPEN for {}/{}",
+                        self.service,
+                        self.operation
+                    ));
                 }
             }
             CircuitState::HalfOpen => {
@@ -138,8 +148,11 @@ impl CircuitBreaker {
                         "circuit_breaker_rejected_total",
                         "service" => self.service.clone(),
                         "operation" => self.operation.clone()
-                    ).increment(1);
-                    return Err(anyhow!("Circuit breaker is HALF_OPEN with max concurrent requests"));
+                    )
+                    .increment(1);
+                    return Err(anyhow!(
+                        "Circuit breaker is HALF_OPEN with max concurrent requests"
+                    ));
                 }
             }
             CircuitState::Closed => {}
@@ -154,7 +167,8 @@ impl CircuitBreaker {
             "circuit_breaker_call_duration_seconds",
             "service" => self.service.clone(),
             "operation" => self.operation.clone()
-        ).record(duration.as_secs_f64());
+        )
+        .record(duration.as_secs_f64());
 
         // Handle result
         match result {
@@ -172,12 +186,12 @@ impl CircuitBreaker {
     /// Handle successful operation
     fn on_success(&self) {
         let current_state = self.state();
-        
+
         match current_state {
             CircuitState::HalfOpen => {
                 let successes = self.success_count.fetch_add(1, Ordering::SeqCst) + 1;
                 self.half_open_calls.fetch_sub(1, Ordering::SeqCst);
-                
+
                 if successes >= self.config.success_threshold {
                     self.transition_to_closed();
                 }
@@ -196,13 +210,14 @@ impl CircuitBreaker {
             "circuit_breaker_success_total",
             "service" => self.service.clone(),
             "operation" => self.operation.clone()
-        ).increment(1);
+        )
+        .increment(1);
     }
 
     /// Handle failed operation
     fn on_failure(&self) {
         let current_state = self.state();
-        
+
         match current_state {
             CircuitState::HalfOpen => {
                 self.half_open_calls.fetch_sub(1, Ordering::SeqCst);
@@ -210,7 +225,7 @@ impl CircuitBreaker {
             }
             CircuitState::Closed => {
                 let failures = self.failure_count.fetch_add(1, Ordering::SeqCst) + 1;
-                
+
                 if failures >= self.config.failure_threshold {
                     self.transition_to_open();
                 }
@@ -229,20 +244,22 @@ impl CircuitBreaker {
             "circuit_breaker_failure_total",
             "service" => self.service.clone(),
             "operation" => self.operation.clone()
-        ).increment(1);
+        )
+        .increment(1);
     }
 
     /// Transition to OPEN state
     fn transition_to_open(&self) {
         let old_state = self.state();
-        self.state.store(CircuitState::Open as u32, Ordering::Release);
-        
+        self.state
+            .store(CircuitState::Open as u32, Ordering::Release);
+
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
         self.last_failure_time.store(now, Ordering::Release);
-        
+
         self.failure_count.store(0, Ordering::Release);
         self.success_count.store(0, Ordering::Release);
 
@@ -250,7 +267,8 @@ impl CircuitBreaker {
             "circuit_breaker_state",
             "service" => self.service.clone(),
             "operation" => self.operation.clone()
-        ).set(CircuitState::Open as u32 as f64);
+        )
+        .set(CircuitState::Open as u32 as f64);
 
         counter!(
             "circuit_breaker_transitions_total",
@@ -258,7 +276,8 @@ impl CircuitBreaker {
             "operation" => self.operation.clone(),
             "from" => format!("{:?}", old_state),
             "to" => "Open"
-        ).increment(1);
+        )
+        .increment(1);
 
         warn!(
             service = %self.service,
@@ -271,8 +290,9 @@ impl CircuitBreaker {
     /// Transition to HALF_OPEN state
     fn transition_to_half_open(&self) {
         let old_state = self.state();
-        self.state.store(CircuitState::HalfOpen as u32, Ordering::Release);
-        
+        self.state
+            .store(CircuitState::HalfOpen as u32, Ordering::Release);
+
         self.success_count.store(0, Ordering::Release);
         self.half_open_calls.store(0, Ordering::Release);
 
@@ -280,7 +300,8 @@ impl CircuitBreaker {
             "circuit_breaker_state",
             "service" => self.service.clone(),
             "operation" => self.operation.clone()
-        ).set(CircuitState::HalfOpen as u32 as f64);
+        )
+        .set(CircuitState::HalfOpen as u32 as f64);
 
         counter!(
             "circuit_breaker_transitions_total",
@@ -288,7 +309,8 @@ impl CircuitBreaker {
             "operation" => self.operation.clone(),
             "from" => format!("{:?}", old_state),
             "to" => "HalfOpen"
-        ).increment(1);
+        )
+        .increment(1);
 
         info!(
             service = %self.service,
@@ -301,8 +323,9 @@ impl CircuitBreaker {
     /// Transition to CLOSED state
     fn transition_to_closed(&self) {
         let old_state = self.state();
-        self.state.store(CircuitState::Closed as u32, Ordering::Release);
-        
+        self.state
+            .store(CircuitState::Closed as u32, Ordering::Release);
+
         self.failure_count.store(0, Ordering::Release);
         self.success_count.store(0, Ordering::Release);
         self.half_open_calls.store(0, Ordering::Release);
@@ -311,7 +334,8 @@ impl CircuitBreaker {
             "circuit_breaker_state",
             "service" => self.service.clone(),
             "operation" => self.operation.clone()
-        ).set(CircuitState::Closed as u32 as f64);
+        )
+        .set(CircuitState::Closed as u32 as f64);
 
         counter!(
             "circuit_breaker_transitions_total",
@@ -319,7 +343,8 @@ impl CircuitBreaker {
             "operation" => self.operation.clone(),
             "from" => format!("{:?}", old_state),
             "to" => "Closed"
-        ).increment(1);
+        )
+        .increment(1);
 
         info!(
             service = %self.service,
@@ -391,12 +416,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_circuit_breaker_opens_after_threshold() {
-        let breaker = CircuitBreaker::new("test", "operation", CircuitBreakerConfig {
-            failure_threshold: 3,
-            success_threshold: 2,
-            timeout_ms: 1000,
-            half_open_requests: 2,
-        });
+        let breaker = CircuitBreaker::new(
+            "test",
+            "operation",
+            CircuitBreakerConfig {
+                failure_threshold: 3,
+                success_threshold: 2,
+                timeout_ms: 1000,
+                half_open_requests: 2,
+            },
+        );
 
         // Simulate 3 failures
         for _ in 0..3 {
@@ -410,12 +439,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_circuit_breaker_half_open_after_timeout() {
-        let breaker = CircuitBreaker::new("test", "operation", CircuitBreakerConfig {
-            failure_threshold: 2,
-            success_threshold: 2,
-            timeout_ms: 100, // 100ms timeout
-            half_open_requests: 2,
-        });
+        let breaker = CircuitBreaker::new(
+            "test",
+            "operation",
+            CircuitBreakerConfig {
+                failure_threshold: 2,
+                success_threshold: 2,
+                timeout_ms: 100, // 100ms timeout
+                half_open_requests: 2,
+            },
+        );
 
         // Open the circuit
         for _ in 0..2 {
@@ -435,12 +468,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_circuit_breaker_closes_after_successes() {
-        let breaker = CircuitBreaker::new("test_close", "operation", CircuitBreakerConfig {
-            failure_threshold: 2,
-            success_threshold: 1,  // Close after just 1 success in half-open
-            timeout_ms: 50,
-            half_open_requests: 10,
-        });
+        let breaker = CircuitBreaker::new(
+            "test_close",
+            "operation",
+            CircuitBreakerConfig {
+                failure_threshold: 2,
+                success_threshold: 1, // Close after just 1 success in half-open
+                timeout_ms: 50,
+                half_open_requests: 10,
+            },
+        );
 
         // Open the circuit with 2 failures
         for _ in 0..2 {

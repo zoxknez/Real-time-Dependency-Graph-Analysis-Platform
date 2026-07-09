@@ -16,7 +16,8 @@ pub fn calculate_diff(old_versions: &[String], new_versions: &[String]) -> DiffR
         .cloned()
         .collect();
 
-    let yanked_v: Vec<String> = old_versions.iter()
+    let yanked_v: Vec<String> = old_versions
+        .iter()
         .filter(|v| !new_set.contains(v))
         .cloned()
         .collect();

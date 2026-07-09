@@ -67,8 +67,7 @@ impl Config {
                 brokers: env::var("KAFKA_BROKERS").unwrap_or_else(|_| "localhost:9092".to_string()),
                 group_id: env::var("KAFKA_GROUP_ID")
                     .unwrap_or_else(|_| "vector-writer".to_string()),
-                topic: env::var("KAFKA_TOPIC")
-                    .unwrap_or_else(|_| "analysis-events".to_string()),
+                topic: env::var("KAFKA_TOPIC").unwrap_or_else(|_| "analysis-events".to_string()),
                 dlq_topic: env::var("KAFKA_DLQ_TOPIC")
                     .unwrap_or_else(|_| "vector-writer-dlq".to_string()),
             },

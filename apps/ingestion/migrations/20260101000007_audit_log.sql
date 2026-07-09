@@ -10,6 +10,8 @@
 -- Tenant Settings Table (if not exists)
 -- ============================================================================
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS tenant_settings (
     tenant_id UUID PRIMARY KEY,
     audit_retention_days INT DEFAULT 90,
@@ -26,6 +28,26 @@ COMMENT ON TABLE tenant_settings IS 'Per-tenant configuration settings including
 -- ============================================================================
 -- Audit Log Table (Partitioned by Month)
 -- ============================================================================
+
+DO $$
+DECLARE
+    legacy_name TEXT;
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        LEFT JOIN pg_partitioned_table pt ON pt.partrelid = c.oid
+        WHERE n.nspname = 'public'
+          AND c.relname = 'audit_log'
+          AND c.relkind = 'r'
+          AND pt.partrelid IS NULL
+    ) THEN
+        legacy_name := 'audit_log_legacy_' || to_char(clock_timestamp(), 'YYYYMMDDHH24MISSMS');
+        EXECUTE format('ALTER TABLE audit_log RENAME TO %I', legacy_name);
+        RAISE NOTICE 'Renamed non-partitioned audit_log table to %', legacy_name;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS audit_log (
     id UUID DEFAULT gen_random_uuid(),

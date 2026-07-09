@@ -1,6 +1,6 @@
+use crate::model::PackageMetadata;
 use anyhow::Result;
-use async_trait::async_trait;
-use crate::model::PackageMetadata; // TBD: Normalized model
+use async_trait::async_trait; // TBD: Normalized model
 
 /// Unique identifier for a unit of work (e.g. "npm:react:cursor-123")
 #[derive(Debug, Clone)]
@@ -26,7 +26,7 @@ pub trait Watcher: Send + Sync {
     /// Start watching the registry and return a stream or channel of items
     /// For this version, we might just poll and return a batch
     async fn poll(&self, last_cursor: &str) -> Result<(Vec<WorkItem>, String)>;
-    
+
     /// Return unique ID of the registry
     fn registry_name(&self) -> &'static str;
 }

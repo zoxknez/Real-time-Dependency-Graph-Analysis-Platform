@@ -11,11 +11,11 @@
 #![allow(dead_code)]
 
 use anyhow::Result;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use tracing::{debug, instrument, warn};
 
 use super::CacheClient;
@@ -62,8 +62,8 @@ pub struct CacheConfig {
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
-            stale_after_secs: 60,      // 1 minute before stale
-            expire_after_secs: 300,    // 5 minutes hard expiry
+            stale_after_secs: 60,   // 1 minute before stale
+            expire_after_secs: 300, // 5 minutes hard expiry
         }
     }
 }
@@ -98,11 +98,7 @@ impl SingleflightCache {
     /// 3. If stale → return immediately, trigger background refresh
     /// 4. If miss → use singleflight to deduplicate concurrent fetches
     #[instrument(skip(self, fetch_fn), fields(key = %key))]
-    pub async fn get_or_fetch<T, F, Fut>(
-        &self,
-        key: &str,
-        fetch_fn: F,
-    ) -> Result<T>
+    pub async fn get_or_fetch<T, F, Fut>(&self, key: &str, fetch_fn: F) -> Result<T>
     where
         T: Serialize + DeserializeOwned + Clone + Send + Sync + 'static,
         F: FnOnce() -> Fut + Clone + Send + 'static,
@@ -111,23 +107,29 @@ impl SingleflightCache {
         // Check cache first
         if let Some(entry) = self.cache.get::<TimestampedEntry<T>>(key).await {
             metrics::counter!("cache_requests", "result" => "hit").increment(1);
-            
+
             if entry.is_stale(self.config.stale_after_secs) {
                 // Stale-while-revalidate: return stale data, refresh in background
-                debug!(key = key, "Cache STALE - returning stale, refreshing in background");
+                debug!(
+                    key = key,
+                    "Cache STALE - returning stale, refreshing in background"
+                );
                 metrics::counter!("cache_requests", "result" => "stale").increment(1);
-                
+
                 let cache = self.cache.clone();
                 let key_owned = key.to_string();
                 let expire_after = self.config.expire_after_secs;
                 let fetch_fn_clone = fetch_fn.clone();
-                
+
                 // Spawn background refresh
                 tokio::spawn(async move {
                     match fetch_fn_clone().await {
                         Ok(fresh_value) => {
                             let new_entry = TimestampedEntry::new(fresh_value);
-                            if let Err(e) = cache.set_with_ttl(&key_owned, &new_entry, expire_after).await {
+                            if let Err(e) = cache
+                                .set_with_ttl(&key_owned, &new_entry, expire_after)
+                                .await
+                            {
                                 warn!(key = %key_owned, error = %e, "Failed to refresh stale cache entry");
                             }
                         }
@@ -136,7 +138,7 @@ impl SingleflightCache {
                         }
                     }
                 });
-                
+
                 return Ok(entry.value);
             } else {
                 // Fresh data
@@ -148,9 +150,9 @@ impl SingleflightCache {
         // Cache miss - use singleflight to deduplicate
         debug!(key = key, "Cache MISS - using singleflight");
         metrics::counter!("cache_requests", "result" => "miss").increment(1);
-        
+
         let start = Instant::now();
-        
+
         // Check if there's already an in-flight request for this key
         {
             let inflight = self.inflight.read().await;
@@ -158,10 +160,10 @@ impl SingleflightCache {
                 // Subscribe to existing in-flight request
                 let mut rx = sender.subscribe();
                 drop(inflight); // Release read lock before awaiting
-                
+
                 metrics::counter!("singleflight_flights", "status" => "deduplicated").increment(1);
                 debug!(key = key, "Singleflight: waiting for existing request");
-                
+
                 match rx.recv().await {
                     Ok(Ok(bytes)) => {
                         let entry: TimestampedEntry<T> = serde_json::from_slice(&bytes)?;
@@ -176,42 +178,46 @@ impl SingleflightCache {
                 }
             }
         }
-        
+
         // No in-flight request - create one
         let (tx, _) = broadcast::channel(1);
         {
             let mut inflight = self.inflight.write().await;
             inflight.insert(key.to_string(), tx.clone());
         }
-        
+
         metrics::counter!("singleflight_flights", "status" => "started").increment(1);
-        
+
         // Execute the fetch
         let result = fetch_fn().await;
-        
+
         let elapsed = start.elapsed();
         metrics::histogram!("singleflight_duration_seconds").record(elapsed.as_secs_f64());
-        
+
         // Remove from in-flight map
         {
             let mut inflight = self.inflight.write().await;
             inflight.remove(key);
         }
-        
+
         // Broadcast result to any waiters
         match &result {
             Ok(value) => {
                 let entry = TimestampedEntry::new(value.clone());
                 let bytes = serde_json::to_vec(&entry)?;
-                
+
                 // Cache the result
-                if let Err(e) = self.cache.set_with_ttl(key, &entry, self.config.expire_after_secs).await {
+                if let Err(e) = self
+                    .cache
+                    .set_with_ttl(key, &entry, self.config.expire_after_secs)
+                    .await
+                {
                     warn!(key = key, error = %e, "Failed to cache singleflight result");
                 }
-                
+
                 // Broadcast to waiters (ignore errors if no receivers)
                 let _ = tx.send(Ok(bytes));
-                
+
                 metrics::counter!("singleflight_flights", "status" => "success").increment(1);
                 Ok(value.clone())
             }
@@ -231,10 +237,10 @@ mod tests {
     #[test]
     fn test_timestamped_entry_freshness() {
         let entry = TimestampedEntry::new("test".to_string());
-        
+
         // Should not be stale immediately with 60s max age
         assert!(!entry.is_stale(60));
-        
+
         // With 0 max_age, entry is stale if any time has passed
         // Since we just created it, it might be 0 seconds old (same second)
         // So is_stale(0) returns false when age == 0 (not > 0)

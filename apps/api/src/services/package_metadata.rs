@@ -40,20 +40,40 @@ fn encode_package(name: &str) -> String {
 async fn fetch_npm_license(name: &str) -> Result<Option<String>> {
     let client = Client::new();
     let url = format!("https://registry.npmjs.org/{}", encode_package(name));
-    let data: Value = client.get(url).send().await?.error_for_status()?.json().await?;
+    let data: Value = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
 
-    if let Some(dist) = data.get("dist-tags").and_then(|v| v.get("latest")).and_then(|v| v.as_str()) {
+    if let Some(dist) = data
+        .get("dist-tags")
+        .and_then(|v| v.get("latest"))
+        .and_then(|v| v.as_str())
+    {
         if let Some(license) = data
             .get("versions")
             .and_then(|v| v.get(dist))
             .and_then(|v| v.get("license"))
         {
-            return Ok(license.as_str().map(|s| s.to_string()).or_else(|| license.get("type").and_then(|v| v.as_str()).map(|s| s.to_string())));
+            return Ok(license.as_str().map(|s| s.to_string()).or_else(|| {
+                license
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            }));
         }
     }
 
     if let Some(license) = data.get("license") {
-        return Ok(license.as_str().map(|s| s.to_string()).or_else(|| license.get("type").and_then(|v| v.as_str()).map(|s| s.to_string())));
+        return Ok(license.as_str().map(|s| s.to_string()).or_else(|| {
+            license
+                .get("type")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        }));
     }
 
     Ok(None)
@@ -62,9 +82,19 @@ async fn fetch_npm_license(name: &str) -> Result<Option<String>> {
 async fn fetch_npm_repository(name: &str) -> Result<Option<String>> {
     let client = Client::new();
     let url = format!("https://registry.npmjs.org/{}", encode_package(name));
-    let data: Value = client.get(url).send().await?.error_for_status()?.json().await?;
+    let data: Value = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
 
-    if let Some(dist) = data.get("dist-tags").and_then(|v| v.get("latest")).and_then(|v| v.as_str()) {
+    if let Some(dist) = data
+        .get("dist-tags")
+        .and_then(|v| v.get("latest"))
+        .and_then(|v| v.as_str())
+    {
         if let Some(repo) = data
             .get("versions")
             .and_then(|v| v.get(dist))
@@ -80,7 +110,13 @@ async fn fetch_npm_repository(name: &str) -> Result<Option<String>> {
 async fn fetch_npm_latest_version(name: &str) -> Result<Option<String>> {
     let client = Client::new();
     let url = format!("https://registry.npmjs.org/{}", encode_package(name));
-    let data: Value = client.get(url).send().await?.error_for_status()?.json().await?;
+    let data: Value = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     Ok(data
         .get("dist-tags")
         .and_then(|v| v.get("latest"))
@@ -91,14 +127,28 @@ async fn fetch_npm_latest_version(name: &str) -> Result<Option<String>> {
 async fn fetch_pypi_license(name: &str) -> Result<Option<String>> {
     let client = Client::new();
     let url = format!("https://pypi.org/pypi/{}/json", name);
-    let data: Value = client.get(url).send().await?.error_for_status()?.json().await?;
-    if let Some(license) = data.get("info").and_then(|v| v.get("license")).and_then(|v| v.as_str()) {
+    let data: Value = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    if let Some(license) = data
+        .get("info")
+        .and_then(|v| v.get("license"))
+        .and_then(|v| v.as_str())
+    {
         if !license.trim().is_empty() {
             return Ok(Some(license.to_string()));
         }
     }
 
-    if let Some(classifiers) = data.get("info").and_then(|v| v.get("classifiers")).and_then(|v| v.as_array()) {
+    if let Some(classifiers) = data
+        .get("info")
+        .and_then(|v| v.get("classifiers"))
+        .and_then(|v| v.as_array())
+    {
         for classifier in classifiers {
             if let Some(text) = classifier.as_str() {
                 if text.starts_with("License :: ") {
@@ -114,13 +164,23 @@ async fn fetch_pypi_license(name: &str) -> Result<Option<String>> {
 async fn fetch_pypi_repository(name: &str) -> Result<Option<String>> {
     let client = Client::new();
     let url = format!("https://pypi.org/pypi/{}/json", name);
-    let data: Value = client.get(url).send().await?.error_for_status()?.json().await?;
+    let data: Value = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     if let Some(project_urls) = data.get("info").and_then(|v| v.get("project_urls")) {
         if let Some(url) = project_urls.get("Source").and_then(|v| v.as_str()) {
             return Ok(Some(url.to_string()));
         }
     }
-    if let Some(url) = data.get("info").and_then(|v| v.get("home_page")).and_then(|v| v.as_str()) {
+    if let Some(url) = data
+        .get("info")
+        .and_then(|v| v.get("home_page"))
+        .and_then(|v| v.as_str())
+    {
         if !url.is_empty() {
             return Ok(Some(url.to_string()));
         }
@@ -131,7 +191,13 @@ async fn fetch_pypi_repository(name: &str) -> Result<Option<String>> {
 async fn fetch_pypi_latest_version(name: &str) -> Result<Option<String>> {
     let client = Client::new();
     let url = format!("https://pypi.org/pypi/{}/json", name);
-    let data: Value = client.get(url).send().await?.error_for_status()?.json().await?;
+    let data: Value = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     Ok(data
         .get("info")
         .and_then(|v| v.get("version"))
@@ -142,7 +208,13 @@ async fn fetch_pypi_latest_version(name: &str) -> Result<Option<String>> {
 async fn fetch_crates_license(name: &str) -> Result<Option<String>> {
     let client = Client::new();
     let url = format!("https://crates.io/api/v1/crates/{}", name);
-    let data: Value = client.get(url).send().await?.error_for_status()?.json().await?;
+    let data: Value = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     Ok(data
         .get("crate")
         .and_then(|v| v.get("license"))
@@ -153,7 +225,13 @@ async fn fetch_crates_license(name: &str) -> Result<Option<String>> {
 async fn fetch_crates_repository(name: &str) -> Result<Option<String>> {
     let client = Client::new();
     let url = format!("https://crates.io/api/v1/crates/{}", name);
-    let data: Value = client.get(url).send().await?.error_for_status()?.json().await?;
+    let data: Value = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     Ok(data
         .get("crate")
         .and_then(|v| v.get("repository"))
@@ -164,7 +242,13 @@ async fn fetch_crates_repository(name: &str) -> Result<Option<String>> {
 async fn fetch_crates_latest_version(name: &str) -> Result<Option<String>> {
     let client = Client::new();
     let url = format!("https://crates.io/api/v1/crates/{}", name);
-    let data: Value = client.get(url).send().await?.error_for_status()?.json().await?;
+    let data: Value = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     Ok(data
         .get("crate")
         .and_then(|v| v.get("max_version"))

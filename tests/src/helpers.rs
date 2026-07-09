@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use std::time::Duration;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Initialize tracing for tests (call once at test start)
 pub fn init_test_tracing() {
@@ -24,16 +24,16 @@ where
     Fut: std::future::Future<Output = bool>,
 {
     let start = std::time::Instant::now();
-    
+
     loop {
         if condition().await {
             return Ok(());
         }
-        
+
         if start.elapsed() > timeout {
             anyhow::bail!("Timeout waiting for: {}", description);
         }
-        
+
         tokio::time::sleep(interval).await;
     }
 }
@@ -51,7 +51,7 @@ where
 {
     let mut delay = initial_delay;
     let mut last_err = None;
-    
+
     for attempt in 0..max_retries {
         match operation().await {
             Ok(result) => return Ok(result),
@@ -68,7 +68,7 @@ where
             }
         }
     }
-    
+
     Err(last_err.expect("Should have at least one error"))
 }
 
@@ -79,14 +79,14 @@ pub fn unique_test_id() -> String {
 
 /// Kafka helpers
 pub mod kafka {
+    use anyhow::Result;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::config::ClientConfig;
-    use rdkafka::producer::{FutureProducer, FutureRecord};
     use rdkafka::consumer::StreamConsumer;
-    use anyhow::Result;
+    use rdkafka::producer::{FutureProducer, FutureRecord};
     use std::time::Duration;
-    
+
     /// Create an admin client for topic management
     pub fn create_admin_client(brokers: &str) -> Result<AdminClient<DefaultClientContext>> {
         let admin: AdminClient<DefaultClientContext> = ClientConfig::new()
@@ -94,15 +94,18 @@ pub mod kafka {
             .create()?;
         Ok(admin)
     }
-    
+
     /// Create a topic for testing
-    pub async fn create_topic(admin: &AdminClient<DefaultClientContext>, topic: &str) -> Result<()> {
+    pub async fn create_topic(
+        admin: &AdminClient<DefaultClientContext>,
+        topic: &str,
+    ) -> Result<()> {
         let topics = [NewTopic::new(topic, 1, TopicReplication::Fixed(1))];
         let opts = AdminOptions::new();
         admin.create_topics(&topics, &opts).await?;
         Ok(())
     }
-    
+
     /// Create a producer for testing
     pub fn create_producer(brokers: &str) -> Result<FutureProducer> {
         let producer: FutureProducer = ClientConfig::new()
@@ -111,7 +114,7 @@ pub mod kafka {
             .create()?;
         Ok(producer)
     }
-    
+
     /// Create a consumer for testing
     pub fn create_consumer(brokers: &str, group_id: &str) -> Result<StreamConsumer> {
         let consumer: StreamConsumer = ClientConfig::new()
@@ -122,7 +125,7 @@ pub mod kafka {
             .create()?;
         Ok(consumer)
     }
-    
+
     /// Send a test message
     pub async fn send_message(
         producer: &FutureProducer,
@@ -132,9 +135,7 @@ pub mod kafka {
     ) -> Result<()> {
         producer
             .send(
-                FutureRecord::to(topic)
-                    .key(key)
-                    .payload(payload),
+                FutureRecord::to(topic).key(key).payload(payload),
                 Duration::from_secs(5),
             )
             .await
@@ -148,7 +149,7 @@ pub mod api {
     use anyhow::Result;
     use reqwest::Client;
     use serde_json::Value;
-    
+
     /// Execute a GraphQL query against the API
     pub async fn execute_graphql(
         client: &Client,
@@ -160,17 +161,13 @@ pub mod api {
             "query": query,
             "variables": variables.unwrap_or(Value::Null),
         });
-        
-        let response = client
-            .post(endpoint)
-            .json(&body)
-            .send()
-            .await?;
-        
+
+        let response = client.post(endpoint).json(&body).send().await?;
+
         let result: Value = response.json().await?;
         Ok(result)
     }
-    
+
     /// Check if API is healthy
     pub async fn health_check(endpoint: &str) -> Result<bool> {
         let client = Client::new();
@@ -183,29 +180,31 @@ pub mod api {
 pub mod db {
     use anyhow::Result;
     use neo4rs::{Graph, Query};
-    
+
     /// Create a Memgraph connection
     pub async fn connect_memgraph(url: &str) -> Result<Graph> {
         let graph = Graph::new(url, "", "").await?;
         Ok(graph)
     }
-    
+
     /// Clear all data in Memgraph (for test cleanup)
     pub async fn clear_memgraph(graph: &Graph) -> Result<()> {
-        graph.run(Query::new("MATCH (n) DETACH DELETE n".to_string())).await?;
+        graph
+            .run(Query::new("MATCH (n) DETACH DELETE n".to_string()))
+            .await?;
         Ok(())
     }
-    
+
     /// Count nodes in Memgraph
     pub async fn count_nodes(graph: &Graph, label: &str) -> Result<i64> {
         let query = Query::new(format!("MATCH (n:{}) RETURN count(n) as count", label));
         let mut result = graph.execute(query).await?;
-        
+
         if let Some(row) = result.next().await? {
             let count: i64 = row.get("count")?;
             return Ok(count);
         }
-        
+
         Ok(0)
     }
 }
@@ -213,7 +212,7 @@ pub mod db {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_unique_test_id() {
         let id1 = unique_test_id();
@@ -221,7 +220,7 @@ mod tests {
         assert_ne!(id1, id2);
         assert_eq!(id1.len(), 8);
     }
-    
+
     #[tokio::test]
     async fn test_wait_for_success() {
         let result = wait_for(
@@ -231,10 +230,10 @@ mod tests {
             || async { true },
         )
         .await;
-        
+
         assert!(result.is_ok());
     }
-    
+
     #[tokio::test]
     async fn test_wait_for_timeout() {
         let result = wait_for(
@@ -244,7 +243,7 @@ mod tests {
             || async { false },
         )
         .await;
-        
+
         assert!(result.is_err());
     }
 }

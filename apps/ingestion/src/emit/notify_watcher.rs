@@ -12,11 +12,11 @@
 //! - Proper async notification handling via sqlx::postgres::PgListener
 
 use anyhow::{Context, Result};
-use sqlx::postgres::PgListener;
 use sqlx::PgPool;
+use sqlx::postgres::PgListener;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, watch, RwLock};
+use tokio::sync::{RwLock, broadcast, watch};
 use tracing::{debug, error, info, warn};
 
 /// Configuration for the notification watcher
@@ -98,9 +98,12 @@ pub struct NotifyWatcher {
 
 impl NotifyWatcher {
     /// Create a new watcher with the given database pool
-    pub fn new(pool: PgPool, config: NotifyWatcherConfig) -> (Self, broadcast::Receiver<OutboxNotification>) {
+    pub fn new(
+        pool: PgPool,
+        config: NotifyWatcherConfig,
+    ) -> (Self, broadcast::Receiver<OutboxNotification>) {
         let (tx, rx) = broadcast::channel(1024);
-        
+
         (
             Self {
                 pool,
@@ -129,7 +132,7 @@ impl NotifyWatcher {
     }
 
     /// Run the watcher with automatic reconnection
-    /// 
+    ///
     /// This function runs indefinitely until:
     /// - shutdown_rx receives true
     /// - max_failures is reached (if configured)
@@ -165,7 +168,9 @@ impl NotifyWatcher {
                     *self.state.write().await = ConnectionState::Reconnecting;
 
                     // Check max failures
-                    if self.config.max_failures > 0 && consecutive_failures >= self.config.max_failures {
+                    if self.config.max_failures > 0
+                        && consecutive_failures >= self.config.max_failures
+                    {
                         error!(
                             failures = consecutive_failures,
                             max = self.config.max_failures,
@@ -206,8 +211,10 @@ impl NotifyWatcher {
 
                     // Increase backoff for next failure
                     current_backoff = Duration::from_millis(
-                        ((current_backoff.as_millis() as f64) * self.config.backoff_multiplier) as u64
-                    ).min(self.config.max_backoff);
+                        ((current_backoff.as_millis() as f64) * self.config.backoff_multiplier)
+                            as u64,
+                    )
+                    .min(self.config.max_backoff);
                 }
             }
 
@@ -226,7 +233,8 @@ impl NotifyWatcher {
             .context("Failed to create PgListener")?;
 
         // Subscribe to the channel
-        listener.listen(&self.config.channel)
+        listener
+            .listen(&self.config.channel)
             .await
             .context("Failed to LISTEN on channel")?;
 
@@ -257,7 +265,7 @@ impl NotifyWatcher {
                     match result {
                         Ok(Ok(notification)) => {
                             let now = chrono::Utc::now();
-                            
+
                             debug!(
                                 channel = %notification.channel(),
                                 payload = %notification.payload(),
@@ -290,7 +298,7 @@ impl NotifyWatcher {
                         Err(_) => {
                             // Timeout - this is normal, just continue loop
                             // Update uptime stats
-                            self.stats.write().await.connection_uptime_secs = 
+                            self.stats.write().await.connection_uptime_secs =
                                 connection_start.elapsed().as_secs();
                             debug!("Notification receive timeout, still connected");
                         }
@@ -302,15 +310,20 @@ impl NotifyWatcher {
 }
 
 /// Parse notification payload into OutboxNotification
-fn parse_notification_payload(payload: &str, received_at: chrono::DateTime<chrono::Utc>) -> OutboxNotification {
+fn parse_notification_payload(
+    payload: &str,
+    received_at: chrono::DateTime<chrono::Utc>,
+) -> OutboxNotification {
     // Try JSON first
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(payload) {
         return OutboxNotification {
-            event_id: json.get("event_id")
+            event_id: json
+                .get("event_id")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown")
                 .to_string(),
-            event_type: json.get("event_type")
+            event_type: json
+                .get("event_type")
                 .and_then(|v| v.as_str())
                 .unwrap_or("unknown")
                 .to_string(),
@@ -332,7 +345,7 @@ fn parse_notification_payload(payload: &str, received_at: chrono::DateTime<chron
 /// Calculate backoff duration with optional jitter
 fn calculate_backoff(current: Duration, max: Duration, use_jitter: bool) -> Duration {
     let base_ms = current.as_millis() as u64;
-    
+
     if use_jitter {
         // Add 0-25% jitter
         let jitter = {
@@ -355,7 +368,7 @@ fn calculate_backoff(current: Duration, max: Duration, use_jitter: bool) -> Dura
 // ============================================================================
 
 /// Hybrid outbox watcher that combines LISTEN/NOTIFY with polling fallback
-/// 
+///
 /// This is the recommended way to use the watcher - it provides real-time
 /// notifications when available, but falls back to polling if notifications
 /// are missed or the connection fails.
@@ -370,10 +383,7 @@ pub struct HybridOutboxWatcher {
 
 impl HybridOutboxWatcher {
     /// Create a new hybrid watcher from an existing NotifyWatcher
-    pub fn new(
-        watcher: &NotifyWatcher,
-        fallback_poll_interval: Duration,
-    ) -> Self {
+    pub fn new(watcher: &NotifyWatcher, fallback_poll_interval: Duration) -> Self {
         Self {
             notify_rx: watcher.subscribe(),
             fallback_poll_interval,
@@ -382,11 +392,12 @@ impl HybridOutboxWatcher {
     }
 
     /// Wait for next event (either notification or poll timeout)
-    /// 
+    ///
     /// Returns `Some(notification)` if woken by notification,
     /// `None` if woken by poll timeout.
     pub async fn wait_for_event(&mut self) -> Option<OutboxNotification> {
-        let remaining = self.fallback_poll_interval
+        let remaining = self
+            .fallback_poll_interval
             .checked_sub(self.last_poll.elapsed())
             .unwrap_or(Duration::ZERO);
 
@@ -443,9 +454,9 @@ impl HybridOutboxWatcher {
 // ============================================================================
 
 /// SQL to create the notification trigger
-/// 
+///
 /// Run this as a migration to enable NOTIFY on outbox inserts:
-/// 
+///
 /// ```sql
 /// CREATE OR REPLACE FUNCTION notify_outbox_event()
 /// RETURNS TRIGGER AS $$
@@ -460,7 +471,7 @@ impl HybridOutboxWatcher {
 ///     RETURN NEW;
 /// END;
 /// $$ LANGUAGE plpgsql;
-/// 
+///
 /// DROP TRIGGER IF EXISTS outbox_notify_trigger ON outbox;
 /// CREATE TRIGGER outbox_notify_trigger
 ///     AFTER INSERT ON outbox
@@ -507,7 +518,7 @@ mod tests {
     fn test_parse_notification_json() {
         let payload = r#"{"event_id":"abc123","event_type":"package.created"}"#;
         let notification = parse_notification_payload(payload, chrono::Utc::now());
-        
+
         assert_eq!(notification.event_id, "abc123");
         assert_eq!(notification.event_type, "package.created");
     }
@@ -516,7 +527,7 @@ mod tests {
     fn test_parse_notification_colon_separated() {
         let payload = "abc123:package.created";
         let notification = parse_notification_payload(payload, chrono::Utc::now());
-        
+
         assert_eq!(notification.event_id, "abc123");
         assert_eq!(notification.event_type, "package.created");
     }
@@ -525,28 +536,20 @@ mod tests {
     fn test_parse_notification_simple() {
         let payload = "abc123";
         let notification = parse_notification_payload(payload, chrono::Utc::now());
-        
+
         assert_eq!(notification.event_id, "abc123");
         assert_eq!(notification.event_type, "unknown");
     }
 
     #[test]
     fn test_calculate_backoff_no_jitter() {
-        let backoff = calculate_backoff(
-            Duration::from_millis(100),
-            Duration::from_secs(30),
-            false,
-        );
+        let backoff = calculate_backoff(Duration::from_millis(100), Duration::from_secs(30), false);
         assert_eq!(backoff, Duration::from_millis(100));
     }
 
     #[test]
     fn test_calculate_backoff_max_cap() {
-        let backoff = calculate_backoff(
-            Duration::from_secs(60),
-            Duration::from_secs(30),
-            false,
-        );
+        let backoff = calculate_backoff(Duration::from_secs(60), Duration::from_secs(30), false);
         assert_eq!(backoff, Duration::from_secs(30));
     }
 }

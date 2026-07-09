@@ -12,16 +12,16 @@ use std::collections::{HashMap, HashSet};
 pub struct CargoDiff {
     /// New versions (not in previous state)
     pub added: Vec<CrateIndexEntry>,
-    
+
     /// Versions no longer in index (rare, but possible)
     pub removed: Vec<String>,
-    
+
     /// Versions that were yanked (yanked: false -> true)
     pub yanked: Vec<String>,
-    
+
     /// Versions that were unyanked (yanked: true -> false)
     pub unyanked: Vec<String>,
-    
+
     /// Versions with other changes (cksum, deps - very rare)
     pub modified: Vec<String>,
 }
@@ -129,10 +129,7 @@ mod tests {
     #[test]
     fn test_initial_sync() {
         let old_state = HashMap::new();
-        let new_entries = vec![
-            make_entry("1.0.0", false),
-            make_entry("1.1.0", false),
-        ];
+        let new_entries = vec![make_entry("1.0.0", false), make_entry("1.1.0", false)];
 
         let diff = calculate_diff(&old_state, &new_entries);
 
@@ -147,10 +144,7 @@ mod tests {
         let mut old_state = HashMap::new();
         old_state.insert("1.0.0".to_string(), make_state("1.0.0", false));
 
-        let new_entries = vec![
-            make_entry("1.0.0", false),
-            make_entry("1.1.0", false),
-        ];
+        let new_entries = vec![make_entry("1.0.0", false), make_entry("1.1.0", false)];
 
         let diff = calculate_diff(&old_state, &new_entries);
 

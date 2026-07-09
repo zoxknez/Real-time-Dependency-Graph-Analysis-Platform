@@ -45,5 +45,5 @@ models = { path = "../../packages/models" }
 storage = { path = "../../packages/storage" }
 
 [build-dependencies]
-tonic-build = "0.14"
+prost-build.workspace = true
 protoc-bin-vendored = "3.0"

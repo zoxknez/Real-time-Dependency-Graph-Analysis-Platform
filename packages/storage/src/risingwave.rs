@@ -131,10 +131,7 @@ impl RisingWaveClient {
 
     /// Health check
     pub async fn health_check(&self) -> bool {
-        match sqlx::query("SELECT 1")
-            .execute(&self.pool)
-            .await
-        {
+        match sqlx::query("SELECT 1").execute(&self.pool).await {
             Ok(_) => true,
             Err(e) => {
                 error!(error = %e, "RisingWave health check failed");

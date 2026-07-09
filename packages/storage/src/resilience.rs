@@ -7,12 +7,12 @@
 //! - Idempotency token support
 //! - Prometheus metrics
 
-use std::time::Duration;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use metrics::{counter, histogram};
 use rand::Rng;
+use std::time::Duration;
 use tokio::time::timeout;
-use tracing::{warn, debug};
+use tracing::{debug, warn};
 
 /// Resilience configuration for external calls
 #[derive(Debug, Clone)]
@@ -154,19 +154,23 @@ where
             "resilience_call_duration_seconds",
             "service" => service.to_string(),
             "operation" => operation.to_string()
-        ).record(duration.as_secs_f64());
+        )
+        .record(duration.as_secs_f64());
 
         match result {
             // Timeout
-            Ok(Err(e)) if e.classify() == ErrorClass::Retryable && attempt <= config.max_retries => {
+            Ok(Err(e))
+                if e.classify() == ErrorClass::Retryable && attempt <= config.max_retries =>
+            {
                 _last_error = Some(e.to_string());
-                
+
                 counter!(
                     "resilience_retry_total",
                     "service" => service.to_string(),
                     "operation" => operation.to_string(),
                     "reason" => "error"
-                ).increment(1);
+                )
+                .increment(1);
 
                 warn!(
                     service = %service,
@@ -188,7 +192,8 @@ where
                     "service" => service.to_string(),
                     "operation" => operation.to_string(),
                     "error_class" => format!("{:?}", e.classify())
-                ).increment(1);
+                )
+                .increment(1);
 
                 return Err(anyhow!("Operation failed: {}", e));
             }
@@ -198,7 +203,8 @@ where
                         "resilience_success_after_retry_total",
                         "service" => service.to_string(),
                         "operation" => operation.to_string()
-                    ).increment(1);
+                    )
+                    .increment(1);
 
                     debug!(
                         service = %service,
@@ -212,7 +218,8 @@ where
                     "resilience_success_total",
                     "service" => service.to_string(),
                     "operation" => operation.to_string()
-                ).increment(1);
+                )
+                .increment(1);
 
                 return Ok(value);
             }
@@ -220,19 +227,21 @@ where
                 // Timeout occurred
                 if attempt <= config.max_retries {
                     _last_error = Some("timeout".to_string());
-                    
+
                     counter!(
                         "resilience_timeout_total",
                         "service" => service.to_string(),
                         "operation" => operation.to_string()
-                    ).increment(1);
+                    )
+                    .increment(1);
 
                     counter!(
                         "resilience_retry_total",
                         "service" => service.to_string(),
                         "operation" => operation.to_string(),
                         "reason" => "timeout"
-                    ).increment(1);
+                    )
+                    .increment(1);
 
                     warn!(
                         service = %service,
@@ -251,7 +260,8 @@ where
                         "service" => service.to_string(),
                         "operation" => operation.to_string(),
                         "error_class" => "timeout"
-                    ).increment(1);
+                    )
+                    .increment(1);
 
                     return Err(anyhow!(
                         "Operation timed out after {} attempts (timeout: {:?})",
@@ -267,8 +277,8 @@ where
 /// Calculate exponential backoff with optional jitter
 fn calculate_backoff(attempt: u32, config: &ResilienceConfig) -> Duration {
     // Exponential backoff: base * 2^(attempt - 1)
-    let exponential_ms = config.base_delay.as_millis() as u64
-        * 2u64.saturating_pow(attempt.saturating_sub(1));
+    let exponential_ms =
+        config.base_delay.as_millis() as u64 * 2u64.saturating_pow(attempt.saturating_sub(1));
 
     // Cap at max_delay
     let capped_ms = exponential_ms.min(config.max_delay.as_millis() as u64);
@@ -354,10 +364,8 @@ mod tests {
             use_jitter: false,
         };
 
-        let result = with_resilience("test", "op", &config, || async {
-            Ok::<_, TestError>(42)
-        })
-        .await;
+        let result =
+            with_resilience("test", "op", &config, || async { Ok::<_, TestError>(42) }).await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);

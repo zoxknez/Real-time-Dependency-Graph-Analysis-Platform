@@ -11,23 +11,23 @@
 
 use anyhow::Result;
 use axum::{
+    Json,
     body::Body,
-    http::{Request, StatusCode, HeaderMap, HeaderValue},
+    http::{HeaderMap, HeaderValue, Request, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 use redis::aio::MultiplexedConnection;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::RwLock;
-use tracing::{debug, warn, instrument};
+use tracing::{debug, instrument, warn};
 
 /// Rate limit tiers with different limits
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RateTier {
-    /// Anonymous/free tier: 60 requests per minute
+    /// Anonymous/free tier: 300 requests per minute
     Free,
     /// Pro tier: 600 requests per minute
     Pro,
@@ -53,17 +53,17 @@ impl RateTier {
             Self::Unlimited => u32::MAX,
         }
     }
-    
+
     /// Get burst allowance (percentage of limit)
     pub fn burst_allowance(&self) -> f64 {
         match self {
-            Self::Free => 1.0,      // No burst
-            Self::Pro => 1.5,       // 50% burst
+            Self::Free => 1.0,       // No burst
+            Self::Pro => 1.5,        // 50% burst
             Self::Enterprise => 2.0, // 100% burst
             Self::Unlimited => f64::MAX,
         }
     }
-    
+
     /// Get the header value for this tier
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -160,7 +160,7 @@ impl DistributedRateLimiter {
             local_fallback: Arc::new(RwLock::new(LocalFallbackState::default())),
         }
     }
-    
+
     /// Create a rate limiter without Redis (local only - for testing)
     pub fn local_only(config: DistributedRateLimiterConfig) -> Self {
         Self {
@@ -169,7 +169,7 @@ impl DistributedRateLimiter {
             local_fallback: Arc::new(RwLock::new(LocalFallbackState::default())),
         }
     }
-    
+
     /// Check rate limit for a key with specified tier
     #[instrument(skip(self), fields(key = %key, tier = ?tier))]
     pub async fn check(&self, key: &str, tier: RateTier) -> RateLimitResult {
@@ -182,18 +182,20 @@ impl DistributedRateLimiter {
                 tier,
             };
         }
-        
+
         let limit = tier.requests_per_minute();
         let burst_limit = (limit as f64 * tier.burst_allowance()) as u32;
-        
+
         // Try Redis first
         if let Some(redis) = &self.redis {
             match self.check_redis(redis, key, burst_limit).await {
-                Ok(result) => return RateLimitResult {
-                    tier,
-                    limit,
-                    ..result
-                },
+                Ok(result) => {
+                    return RateLimitResult {
+                        tier,
+                        limit,
+                        ..result
+                    };
+                }
                 Err(e) => {
                     warn!(error = %e, "Redis rate limit check failed, using fallback");
                     if !self.config.allow_on_redis_failure {
@@ -208,11 +210,11 @@ impl DistributedRateLimiter {
                 }
             }
         }
-        
+
         // Fallback to local counter
         self.check_local(key, limit).await
     }
-    
+
     /// Check rate limit using Redis sliding window
     async fn check_redis(
         &self,
@@ -223,11 +225,12 @@ impl DistributedRateLimiter {
         let now = current_timestamp();
         let window_start = now - self.config.window_size_secs;
         let redis_key = format!("{}:{}", self.config.key_prefix, key);
-        
+
         let mut conn = redis.write().await;
-        
+
         // Lua script for atomic sliding window rate limiting
-        let script = redis::Script::new(r#"
+        let script = redis::Script::new(
+            r#"
             local key = KEYS[1]
             local now = tonumber(ARGV[1])
             local window_start = tonumber(ARGV[2])
@@ -256,8 +259,9 @@ impl DistributedRateLimiter {
                 end
                 return {0, 0, reset_after}  -- denied, remaining, reset_after
             end
-        "#);
-        
+        "#,
+        );
+
         let result: Vec<i64> = script
             .key(&redis_key)
             .arg(now)
@@ -266,13 +270,16 @@ impl DistributedRateLimiter {
             .arg(self.config.window_size_secs)
             .invoke_async(&mut *conn)
             .await?;
-        
+
         let allowed = result.first().copied().unwrap_or(0) == 1;
         let remaining = result.get(1).copied().unwrap_or(0) as u32;
-        let reset_after = result.get(2).copied().unwrap_or(self.config.window_size_secs as i64) as u64;
-        
+        let reset_after = result
+            .get(2)
+            .copied()
+            .unwrap_or(self.config.window_size_secs as i64) as u64;
+
         debug!(allowed, remaining, reset_after, "Redis rate limit check");
-        
+
         Ok(RateLimitResult {
             allowed,
             remaining,
@@ -281,29 +288,30 @@ impl DistributedRateLimiter {
             tier: RateTier::Free, // Will be overwritten by caller
         })
     }
-    
+
     /// Check rate limit using local fallback
     async fn check_local(&self, key: &str, limit: u32) -> RateLimitResult {
         let now = current_timestamp();
         let window_start = now - self.config.window_size_secs;
-        
+
         let mut state = self.local_fallback.write().await;
-        
+
         // Periodic cleanup of old entries
-        if now - state.last_cleanup > 300 { // Every 5 minutes
+        if now - state.last_cleanup > 300 {
+            // Every 5 minutes
             state.counters.retain(|_, (_, ts)| *ts > window_start);
             state.last_cleanup = now;
         }
-        
+
         let entry = state.counters.entry(key.to_string()).or_insert((0, now));
-        
+
         // Reset if outside window
         if entry.1 < window_start {
             *entry = (0, now);
         }
-        
+
         let effective_limit = self.config.fallback_limit.min(limit);
-        
+
         if entry.0 < effective_limit {
             entry.0 += 1;
             RateLimitResult {
@@ -323,7 +331,7 @@ impl DistributedRateLimiter {
             }
         }
     }
-    
+
     /// Extract client identifier from request headers
     pub fn extract_client_key(headers: &HeaderMap) -> String {
         // Check for API key first
@@ -332,7 +340,7 @@ impl DistributedRateLimiter {
                 return format!("apikey:{}", key);
             }
         }
-        
+
         // Fall back to IP address
         // Check X-Forwarded-For first (for proxied requests)
         if let Some(forwarded) = headers.get("X-Forwarded-For") {
@@ -342,18 +350,18 @@ impl DistributedRateLimiter {
                 }
             }
         }
-        
+
         // Check X-Real-IP
         if let Some(real_ip) = headers.get("X-Real-IP") {
             if let Ok(ip) = real_ip.to_str() {
                 return format!("ip:{}", ip);
             }
         }
-        
+
         // Default to "anonymous"
         "anonymous".to_string()
     }
-    
+
     /// Determine tier from API key (stub - would lookup in database)
     pub async fn determine_tier(&self, client_key: &str) -> RateTier {
         // In production, this would look up the API key in a database.
@@ -411,13 +419,13 @@ pub async fn distributed_rate_limit_middleware(
 ) -> Response {
     // Extract client identifier
     let client_key = DistributedRateLimiter::extract_client_key(request.headers());
-    
+
     // Determine tier
     let tier = limiter.determine_tier(&client_key).await;
-    
+
     // Check rate limit
     let result = limiter.check(&client_key, tier).await;
-    
+
     // Build response with rate limit headers
     let mut response = if result.allowed {
         next.run(request).await
@@ -434,19 +442,16 @@ pub async fn distributed_rate_limit_middleware(
             tier: tier.as_str().to_string(),
             limit: result.limit,
         };
-        
+
         warn!(
             client_key = %client_key,
             tier = %tier.as_str(),
             "Rate limit exceeded"
         );
-        
-        (
-            StatusCode::TOO_MANY_REQUESTS,
-            Json(error_response),
-        ).into_response()
+
+        (StatusCode::TOO_MANY_REQUESTS, Json(error_response)).into_response()
     };
-    
+
     // Add rate limit headers
     let headers = response.headers_mut();
     headers.insert(
@@ -461,32 +466,29 @@ pub async fn distributed_rate_limit_middleware(
         "X-RateLimit-Reset",
         HeaderValue::from_str(&result.reset_after.to_string()).unwrap(),
     );
-    headers.insert(
-        "X-RateLimit-Tier",
-        HeaderValue::from_static(tier.as_str()),
-    );
-    
+    headers.insert("X-RateLimit-Tier", HeaderValue::from_static(tier.as_str()));
+
     if !result.allowed {
         headers.insert(
             "Retry-After",
             HeaderValue::from_str(&result.reset_after.to_string()).unwrap(),
         );
     }
-    
+
     response
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_tier_limits() {
-        assert_eq!(RateTier::Free.requests_per_minute(), 60);
+        assert_eq!(RateTier::Free.requests_per_minute(), 300);
         assert_eq!(RateTier::Pro.requests_per_minute(), 600);
         assert_eq!(RateTier::Enterprise.requests_per_minute(), 6000);
     }
-    
+
     #[tokio::test]
     async fn test_local_rate_limiter() {
         let config = DistributedRateLimiterConfig {
@@ -494,54 +496,73 @@ mod tests {
             ..Default::default()
         };
         let limiter = DistributedRateLimiter::local_only(config);
-        
+
         // First 3 requests should succeed
         for i in 0..3 {
             let result = limiter.check("test-key", RateTier::Free).await;
             assert!(result.allowed, "Request {} should be allowed", i + 1);
         }
-        
+
         // 4th request should fail
         let result = limiter.check("test-key", RateTier::Free).await;
         assert!(!result.allowed, "4th request should be denied");
     }
-    
+
     #[test]
     fn test_extract_client_key() {
         let mut headers = HeaderMap::new();
-        
+
         // Anonymous
-        assert_eq!(DistributedRateLimiter::extract_client_key(&headers), "anonymous");
-        
+        assert_eq!(
+            DistributedRateLimiter::extract_client_key(&headers),
+            "anonymous"
+        );
+
         // API key
         headers.insert("X-API-Key", HeaderValue::from_static("pro_abc123"));
         assert_eq!(
             DistributedRateLimiter::extract_client_key(&headers),
             "apikey:pro_abc123"
         );
-        
+
         // IP fallback
         headers.remove("X-API-Key");
-        headers.insert("X-Forwarded-For", HeaderValue::from_static("1.2.3.4, 5.6.7.8"));
+        headers.insert(
+            "X-Forwarded-For",
+            HeaderValue::from_static("1.2.3.4, 5.6.7.8"),
+        );
         assert_eq!(
             DistributedRateLimiter::extract_client_key(&headers),
             "ip:1.2.3.4"
         );
     }
-    
+
     #[tokio::test]
     async fn test_tier_detection() {
-        std::env::set_var(
-            "RATE_LIMIT_API_KEYS",
-            "enterprise:ent_123;pro:pro_456;unlimited:internal_svc",
-        );
+        unsafe {
+            std::env::set_var(
+                "RATE_LIMIT_API_KEYS",
+                "enterprise:ent_123;pro:pro_456;unlimited:internal_svc",
+            );
+        }
         let config = DistributedRateLimiterConfig::default();
         let limiter = DistributedRateLimiter::local_only(config);
-        
-        assert_eq!(limiter.determine_tier("apikey:ent_123").await, RateTier::Enterprise);
-        assert_eq!(limiter.determine_tier("apikey:pro_456").await, RateTier::Pro);
+
+        assert_eq!(
+            limiter.determine_tier("apikey:ent_123").await,
+            RateTier::Enterprise
+        );
+        assert_eq!(
+            limiter.determine_tier("apikey:pro_456").await,
+            RateTier::Pro
+        );
         assert_eq!(limiter.determine_tier("ip:1.2.3.4").await, RateTier::Free);
-        assert_eq!(limiter.determine_tier("apikey:internal_svc").await, RateTier::Unlimited);
-        std::env::remove_var("RATE_LIMIT_API_KEYS");
+        assert_eq!(
+            limiter.determine_tier("apikey:internal_svc").await,
+            RateTier::Unlimited
+        );
+        unsafe {
+            std::env::remove_var("RATE_LIMIT_API_KEYS");
+        }
     }
 }

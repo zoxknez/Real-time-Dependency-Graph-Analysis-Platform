@@ -1,13 +1,13 @@
 //! GraphQL module - types, resolvers, loaders, subscriptions
 
-pub mod types;
+pub mod context;
 pub mod loaders;
 pub mod query;
-pub mod subscription;
 pub mod schema;
-pub mod context;
+pub mod subscription;
+pub mod types;
 
-pub use schema::{build_schema, ApiSchema};
+pub use schema::{ApiSchema, build_schema};
 // GqlContext and EventChannels re-exported for external use
 #[allow(unused_imports)]
-pub use context::{GqlContext, EventChannels};
+pub use context::{EventChannels, GqlContext};

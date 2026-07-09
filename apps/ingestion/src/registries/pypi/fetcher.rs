@@ -5,13 +5,13 @@
 //! - Simple API: https://pypi.org/simple/{package}/ (yank detection, PEP 691)
 
 use crate::http::rate_limit::RateLimiter;
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, warn, instrument};
+use tracing::{debug, instrument, warn};
 
 const PYPI_JSON_API: &str = "https://pypi.org/pypi";
 const PYPI_SIMPLE_API: &str = "https://pypi.org/simple";
@@ -35,7 +35,7 @@ pub struct PypiInfo {
     pub license: Option<String>,
     pub home_page: Option<String>,
     pub project_url: Option<String>,
-    pub requires_dist: Option<Vec<String>>,  // PEP 508 dependency specs
+    pub requires_dist: Option<Vec<String>>, // PEP 508 dependency specs
     pub requires_python: Option<String>,
     pub keywords: Option<String>,
     pub classifiers: Option<Vec<String>>,
@@ -47,6 +47,8 @@ pub struct PypiRelease {
     pub url: String,
     pub size: u64,
     pub digests: PypiDigests,
+    #[serde(default)]
+    pub upload_time_iso_8601: Option<String>,
     pub requires_python: Option<String>,
     pub yanked: Option<bool>,
     pub yanked_reason: Option<String>,
@@ -105,17 +107,21 @@ impl PypiFetcher {
             .timeout(Duration::from_secs(30))
             .build()?;
 
-        Ok(Self { client, rate_limiter })
+        Ok(Self {
+            client,
+            rate_limiter,
+        })
     }
 
     /// Fetch full package metadata from JSON API
     #[instrument(skip(self), fields(package = %name))]
     pub async fn fetch_package(&self, name: &str) -> Result<Option<PypiPackageMetadata>> {
         self.rate_limiter.acquire().await;
-        
+
         let url = format!("{}/{}/json", PYPI_JSON_API, name);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(&url)
             .send()
             .await
@@ -124,7 +130,11 @@ impl PypiFetcher {
         match response.status().as_u16() {
             200 => {
                 let metadata: PypiPackageMetadata = response.json().await?;
-                debug!(package = name, versions = metadata.releases.len(), "Fetched PyPI package");
+                debug!(
+                    package = name,
+                    versions = metadata.releases.len(),
+                    "Fetched PyPI package"
+                );
                 Ok(Some(metadata))
             }
             404 => {
@@ -147,11 +157,12 @@ impl PypiFetcher {
     #[instrument(skip(self), fields(package = %name))]
     pub async fn fetch_simple(&self, name: &str) -> Result<Option<SimpleApiResponse>> {
         self.rate_limiter.acquire().await;
-        
+
         // Request JSON format via Accept header (PEP 691)
         let url = format!("{}/{}/", PYPI_SIMPLE_API, name);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(&url)
             .header("Accept", "application/vnd.pypi.simple.v1+json")
             .send()
@@ -161,7 +172,11 @@ impl PypiFetcher {
         match response.status().as_u16() {
             200 => {
                 let simple: SimpleApiResponse = response.json().await?;
-                debug!(package = name, files = simple.files.len(), "Fetched Simple API");
+                debug!(
+                    package = name,
+                    files = simple.files.len(),
+                    "Fetched Simple API"
+                );
                 Ok(Some(simple))
             }
             404 => Ok(None),
@@ -169,26 +184,27 @@ impl PypiFetcher {
                 self.rate_limiter.report_429(Duration::from_secs(60)).await;
                 Ok(None)
             }
-            _ => Ok(None)
+            _ => Ok(None),
         }
     }
 
     /// Extract dependencies from requires_dist (PEP 508 format)
-    /// 
+    ///
     /// Format: "package (>=1.0,<2.0) ; extra == 'dev'"
     pub fn parse_requires_dist(requires: &[String]) -> Vec<ParsedDependency> {
-        requires.iter().filter_map(|spec| {
-            Self::parse_pep508_spec(spec)
-        }).collect()
+        requires
+            .iter()
+            .filter_map(|spec| Self::parse_pep508_spec(spec))
+            .collect()
     }
 
     /// Parse a single PEP 508 dependency specification
     fn parse_pep508_spec(spec: &str) -> Option<ParsedDependency> {
         // Simple parsing - full PEP 508 is complex
         // Format: name [extras] (version) ; markers
-        
+
         let spec = spec.trim();
-        
+
         // Split on ';' to separate markers
         let (main_part, marker) = match spec.split_once(';') {
             Some((m, marker)) => (m.trim(), Some(marker.trim().to_string())),
@@ -196,9 +212,13 @@ impl PypiFetcher {
         };
 
         // Extract name and version constraint
-        let (name, version_req) = if let Some(idx) = main_part.find(|c: char| c == '(' || c == '<' || c == '>' || c == '=' || c == '!' || c == '~') {
+        let (name, version_req) = if let Some(idx) = main_part
+            .find(|c: char| c == '(' || c == '<' || c == '>' || c == '=' || c == '!' || c == '~')
+        {
             let name = main_part[..idx].trim();
-            let version = main_part[idx..].trim().trim_matches(|c| c == '(' || c == ')');
+            let version = main_part[idx..]
+                .trim()
+                .trim_matches(|c| c == '(' || c == ')');
             (name.to_string(), Some(version.to_string()))
         } else {
             (main_part.to_string(), None)
@@ -211,7 +231,10 @@ impl PypiFetcher {
             return None;
         }
 
-        let is_optional = marker.as_ref().map(|m| m.contains("extra")).unwrap_or(false);
+        let is_optional = marker
+            .as_ref()
+            .map(|m| m.contains("extra"))
+            .unwrap_or(false);
 
         Some(ParsedDependency {
             name: clean_name,

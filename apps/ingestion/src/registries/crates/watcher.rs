@@ -35,7 +35,7 @@ struct WatchedCrate {
 }
 
 /// Cargo Index Watcher
-/// 
+///
 /// Maintains a list of crates to watch and polls their index files.
 /// Uses ETag/Last-Modified for efficient conditional requests.
 pub struct CargoWatcher {
@@ -81,7 +81,7 @@ impl CargoWatcher {
     }
 
     /// Run the watcher loop
-    /// 
+    ///
     /// For seed mode, pass in a list of crates to watch.
     /// For production, crates are discovered from downstream events.
     #[instrument(skip(self))]
@@ -92,7 +92,7 @@ impl CargoWatcher {
             if let Err(e) = self.poll_all_crates().await {
                 error!(error = %e, "Error in poll cycle");
             }
-            
+
             tokio::time::sleep(self.poll_interval).await;
         }
     }
@@ -116,7 +116,7 @@ impl CargoWatcher {
                 warn!(crate_name = %crate_name, error = %e, "Failed to poll crate");
                 // Continue with other crates
             }
-            
+
             // Small delay between crates to avoid hammering the index
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
@@ -130,18 +130,18 @@ impl CargoWatcher {
         let (etag, last_modified, old_hash) = {
             let state = self.watch_state.read().await;
             match state.get(crate_name) {
-                Some(s) => (s.etag.clone(), s.last_modified.clone(), s.versions_hash.clone()),
+                Some(s) => (
+                    s.etag.clone(),
+                    s.last_modified.clone(),
+                    s.versions_hash.clone(),
+                ),
                 None => return Ok(()), // Not in watch list
             }
         };
 
         let result = self
             .fetcher
-            .fetch_crate_index_conditional(
-                crate_name,
-                etag.as_deref(),
-                last_modified.as_deref(),
-            )
+            .fetch_crate_index_conditional(crate_name, etag.as_deref(), last_modified.as_deref())
             .await?;
 
         let Some(fetch_result) = result else {
@@ -171,7 +171,8 @@ impl CargoWatcher {
         );
 
         // Emit raw event
-        self.emit_index_change(crate_name, &fetch_result.entries).await?;
+        self.emit_index_change(crate_name, &fetch_result.entries)
+            .await?;
 
         // Update state
         let mut state = self.watch_state.write().await;
@@ -185,11 +186,7 @@ impl CargoWatcher {
     }
 
     /// Emit a raw index change event to Kafka
-    async fn emit_index_change(
-        &self,
-        crate_name: &str,
-        entries: &[CrateIndexEntry],
-    ) -> Result<()> {
+    async fn emit_index_change(&self, crate_name: &str, entries: &[CrateIndexEntry]) -> Result<()> {
         // Create protobuf message
         let version_records: Vec<_> = entries
             .iter()
@@ -197,19 +194,27 @@ impl CargoWatcher {
                 version: e.version.clone(),
                 yanked: e.yanked,
                 cksum: e.cksum.clone(),
-                deps: e.deps.iter().map(|d| CrateDependencyProto {
-                    name: d.name.clone(),
-                    req: d.req.clone(),
-                    features: d.features.clone(),
-                    optional: d.optional,
-                    target: d.target.clone().unwrap_or_default(),
-                    kind: match d.kind {
-                        super::index::DependencyKind::Normal => "normal".to_string(),
-                        super::index::DependencyKind::Dev => "dev".to_string(),
-                        super::index::DependencyKind::Build => "build".to_string(),
-                    },
-                }).collect(),
-                features: e.features.iter().map(|(k, v)| (k.clone(), v.join(","))).collect(),
+                deps: e
+                    .deps
+                    .iter()
+                    .map(|d| CrateDependencyProto {
+                        name: d.name.clone(),
+                        req: d.req.clone(),
+                        features: d.features.clone(),
+                        optional: d.optional,
+                        target: d.target.clone().unwrap_or_default(),
+                        kind: match d.kind {
+                            super::index::DependencyKind::Normal => "normal".to_string(),
+                            super::index::DependencyKind::Dev => "dev".to_string(),
+                            super::index::DependencyKind::Build => "build".to_string(),
+                        },
+                    })
+                    .collect(),
+                features: e
+                    .features
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.join(",")))
+                    .collect(),
                 rust_version: e.rust_version.clone().unwrap_or_default(),
             })
             .collect();
@@ -247,7 +252,7 @@ fn calculate_versions_hash(entries: &[CrateIndexEntry]) -> String {
     use std::hash::{Hash, Hasher};
 
     let mut hasher = DefaultHasher::new();
-    
+
     for entry in entries {
         entry.version.hash(&mut hasher);
         entry.yanked.hash(&mut hasher);

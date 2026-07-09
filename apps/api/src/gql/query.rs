@@ -6,13 +6,13 @@
 //! - dependencyPath(fromPackageId, toPackageId, maxHops)
 //! - impactRadius(packageId, vulnerableVersionRange, maxDepth, limit)
 
-use async_graphql::{Context, ErrorExtensions, Object, Result, ID};
-use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
-use tracing::{debug, instrument};
+use async_graphql::{Context, ErrorExtensions, ID, Object, Result};
 use reqwest::Client;
 use serde_json::Value;
 use sqlx::{PgPool, QueryBuilder, Row};
+use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+use tracing::{debug, instrument};
 
 use crate::embeddings::EmbeddingError;
 use crate::gql::context::GqlContext;
@@ -21,8 +21,6 @@ use crate::graph::GraphQueries;
 use crate::services::execute_security_agent_tool;
 use crate::services::{osv, package_metadata, scorecard};
 use models::tenant::TenantContext;
-
-
 
 fn qdrant_error_code(message: &str) -> &'static str {
     let m = message.to_ascii_lowercase();
@@ -61,11 +59,13 @@ impl QueryRoot {
     async fn package(&self, ctx: &Context<'_>, id: ID) -> Result<Option<Package>> {
         let gql_ctx = ctx.data::<GqlContext>()?;
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
-        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
-        
+        let tenant_id = tenant_ctx
+            .map(|c| c.tenant_id.to_string())
+            .unwrap_or_else(|| "public".to_string());
+
         let query = GraphQueries::get_package(&tenant_id, &id.to_string());
         let row = gql_ctx.graph.query_one(query, tenant_ctx).await?;
-        
+
         Ok(row.map(|r| Package {
             id: ID(r.get::<String>("id").unwrap_or_default()),
             ecosystem: Ecosystem::from(r.get::<String>("ecosystem").unwrap_or_default().as_str()),
@@ -77,7 +77,11 @@ impl QueryRoot {
 
     /// Fetch package metadata (latest version, license, repository)
     #[instrument(skip(self, _ctx))]
-    async fn package_metadata(&self, _ctx: &Context<'_>, package_id: ID) -> Result<PackageMetadataResult> {
+    async fn package_metadata(
+        &self,
+        _ctx: &Context<'_>,
+        package_id: ID,
+    ) -> Result<PackageMetadataResult> {
         let (eco_raw, name_raw, _version_raw) = osv::parse_package_id(&package_id.to_string());
         let ecosystem = eco_raw.ok_or_else(|| async_graphql::Error::new("Invalid packageId"))?;
         let name = name_raw.ok_or_else(|| async_graphql::Error::new("Invalid packageId"))?;
@@ -118,21 +122,22 @@ impl QueryRoot {
         // Apply guardrails
         let effective_depth = max_depth.min(guardrails.max_traversal_depth);
         let effective_limit = first.min(guardrails.max_results);
-        
+
         // Parse cursor for offset
         let offset: i32 = after
             .and_then(|c| base64_decode_cursor(&c))
+            .map(|idx| idx.saturating_add(1))
             .unwrap_or(0);
 
         debug!(
             effective_depth,
-            effective_limit,
-            offset,
-            "Executing reverseDependents query"
+            effective_limit, offset, "Executing reverseDependents query"
         );
 
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
-        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+        let tenant_id = tenant_ctx
+            .map(|c| c.tenant_id.to_string())
+            .unwrap_or_else(|| "public".to_string());
 
         // Execute query
         let query = GraphQueries::reverse_dependents_transitive(
@@ -140,10 +145,11 @@ impl QueryRoot {
             &package_id.to_string(),
             effective_depth,
             effective_limit + 1, // +1 to check if there's a next page
+            offset,
         );
 
         let rows = gql_ctx.graph.query(query, tenant_ctx).await?;
-        
+
         // Check if there's a next page
         let has_next_page = rows.len() as i32 > effective_limit;
         let rows: Vec<_> = rows.into_iter().take(effective_limit as usize).collect();
@@ -153,13 +159,11 @@ impl QueryRoot {
         for (idx, row) in rows.iter().enumerate() {
             let id: String = row.get("id").unwrap_or_default();
             let depth: i64 = row.get("depth").unwrap_or(1);
-            
+
             let pkg = Package {
                 id: ID(id.clone()),
                 ecosystem: Ecosystem::from(
-                    row.get::<String>("ecosystem")
-                        .unwrap_or_default()
-                        .as_str(),
+                    row.get::<String>("ecosystem").unwrap_or_default().as_str(),
                 ),
                 name: row.get::<String>("name").unwrap_or_default(),
                 created_at: None,
@@ -223,7 +227,9 @@ impl QueryRoot {
         debug!(effective_hops, "Executing dependencyPath query");
 
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
-        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+        let tenant_id = tenant_ctx
+            .map(|c| c.tenant_id.to_string())
+            .unwrap_or_else(|| "public".to_string());
 
         let query = GraphQueries::dependency_path(
             &tenant_id,
@@ -238,8 +244,11 @@ impl QueryRoot {
                 let hops: i64 = row.get("hops").unwrap_or(0);
 
                 // Batch load packages
-                let packages_map = gql_ctx.package_loader.load_many(&package_ids, &tenant_id).await;
-                
+                let packages_map = gql_ctx
+                    .package_loader
+                    .load_many(&package_ids, &tenant_id)
+                    .await;
+
                 // Preserve order
                 let packages: Vec<Package> = package_ids
                     .iter()
@@ -288,12 +297,13 @@ impl QueryRoot {
 
         debug!(
             effective_depth,
-            effective_limit,
-            "Executing impactRadius query"
+            effective_limit, "Executing impactRadius query"
         );
 
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
-        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+        let tenant_id = tenant_ctx
+            .map(|c| c.tenant_id.to_string())
+            .unwrap_or_else(|| "public".to_string());
 
         // Get impacted packages with depth
         let query = GraphQueries::impact_radius(
@@ -314,9 +324,7 @@ impl QueryRoot {
             let pkg = Package {
                 id: ID(id.clone()),
                 ecosystem: Ecosystem::from(
-                    row.get::<String>("ecosystem")
-                        .unwrap_or_default()
-                        .as_str(),
+                    row.get::<String>("ecosystem").unwrap_or_default().as_str(),
                 ),
                 name: row.get::<String>("name").unwrap_or_default(),
                 created_at: None,
@@ -330,27 +338,60 @@ impl QueryRoot {
             });
         }
 
-        // Get total counts
+        let summary_query = GraphQueries::impact_radius_summary(
+            &tenant_id,
+            &package_id.to_string(),
+            effective_depth,
+        );
+
+        let (summary_impacted_packages, direct_impacted_packages, transitive_impacted_packages) =
+            match gql_ctx.graph.query_one(summary_query, tenant_ctx).await? {
+                Some(row) => (
+                    row.get::<i64>("impacted_packages").unwrap_or(0) as i32,
+                    row.get::<i64>("direct_impacted_packages").unwrap_or(0) as i32,
+                    row.get::<i64>("transitive_impacted_packages").unwrap_or(0) as i32,
+                ),
+                None => (0, 0, 0),
+            };
+
+        let buckets_query = GraphQueries::impact_radius_depth_buckets(
+            &tenant_id,
+            &package_id.to_string(),
+            effective_depth,
+        );
+        let bucket_rows = gql_ctx.graph.query(buckets_query, tenant_ctx).await?;
+        let depth_buckets = bucket_rows
+            .into_iter()
+            .map(|row| ImpactDepthBucket {
+                depth: row.get::<i64>("depth").unwrap_or(0) as i32,
+                package_count: row.get::<i64>("package_count").unwrap_or(0) as i32,
+            })
+            .collect();
+
         let count_query = GraphQueries::impact_radius_versions(
             &tenant_id,
             &package_id.to_string(),
             effective_depth,
         );
-        
-        let (impacted_packages, impacted_versions) = match gql_ctx.graph.query_one(count_query, tenant_ctx).await? {
-            Some(row) => (
-                row.get::<i64>("impacted_packages").unwrap_or(0) as i32,
-                row.get::<i64>("impacted_versions").unwrap_or(0) as i32,
-            ),
-            None => (0, 0),
-        };
+
+        let (impacted_packages, impacted_versions) =
+            match gql_ctx.graph.query_one(count_query, tenant_ctx).await? {
+                Some(row) => (
+                    row.get::<i64>("impacted_packages").unwrap_or(0) as i32,
+                    row.get::<i64>("impacted_versions").unwrap_or(0) as i32,
+                ),
+                None => (0, 0),
+            };
 
         Ok(ImpactRadiusResult {
             package_id,
             vulnerable_version_range,
             max_depth: effective_depth,
-            impacted_packages,
+            impacted_packages: summary_impacted_packages.max(impacted_packages),
+            direct_impacted_packages,
+            transitive_impacted_packages,
             impacted_versions,
+            depth_buckets,
             top_impacted,
         })
     }
@@ -367,9 +408,12 @@ impl QueryRoot {
         let effective_limit = limit.min(gql_ctx.guardrails.max_results);
 
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
-        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+        let tenant_id = tenant_ctx
+            .map(|c| c.tenant_id.to_string())
+            .unwrap_or_else(|| "public".to_string());
 
-        let query = GraphQueries::get_versions(&tenant_id, &package_id.to_string(), effective_limit);
+        let query =
+            GraphQueries::get_versions(&tenant_id, &package_id.to_string(), effective_limit);
         let rows = gql_ctx.graph.query(query, tenant_ctx).await?;
 
         let versions: Vec<Version> = rows
@@ -378,7 +422,8 @@ impl QueryRoot {
                 id: ID(row.get::<String>("id").unwrap_or_default()),
                 package_id: package_id.clone(),
                 version: row.get("version").unwrap_or_default(),
-                published_at: row.get::<i64>("published_at")
+                published_at: row
+                    .get::<i64>("published_at")
                     .ok()
                     .and_then(|ts| chrono::DateTime::from_timestamp_millis(ts))
                     .map(|dt| dt.to_rfc3339()),
@@ -400,26 +445,28 @@ impl QueryRoot {
         let gql_ctx = ctx.data::<GqlContext>()?;
         let effective_limit = limit.min(gql_ctx.guardrails.max_results);
 
-
         // dependencies_direct uses GraphQueries which I haven't updated to take tenant_id because it was chunk 4 (failed multiple times)
         // Wait, did I update dependencies_direct? I tried in Step 16 chunk 4 but it failed.
         // It failed because "reverse_dependents_direct" was chunk 4.
-        // dependencies_direct (lines 249-265 of queries.rs) was NOT in my ReplaceChunks in Step 16? 
-        // Let me check. Step 16 had "reverse_dependents_direct" as chunk 4. 
-        // It did NOT have "dependencies_direct". 
+        // dependencies_direct (lines 249-265 of queries.rs) was NOT in my ReplaceChunks in Step 16?
+        // Let me check. Step 16 had "reverse_dependents_direct" as chunk 4.
+        // It did NOT have "dependencies_direct".
         // I might have missed updating dependencies_direct in queries.rs!
         // I should check if I missed it.
         // If I missed it, then GraphQueries::dependencies_direct does NOT accept tenant_id yet.
         // So I can't pass it here.
         // But for consistency I SHOULD have updated it.
         // I need to check queries.rs again.
-        
-        // Assuming I will fix queries.rs in next step if missed.
-        
-        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
-        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
 
-        let query = GraphQueries::dependencies_direct(&tenant_id, &package_id.to_string(), effective_limit);
+        // Assuming I will fix queries.rs in next step if missed.
+
+        let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
+        let tenant_id = tenant_ctx
+            .map(|c| c.tenant_id.to_string())
+            .unwrap_or_else(|| "public".to_string());
+
+        let query =
+            GraphQueries::dependencies_direct(&tenant_id, &package_id.to_string(), effective_limit);
         let rows = gql_ctx.graph.query(query, tenant_ctx).await?;
 
         let packages: Vec<Package> = rows
@@ -427,9 +474,7 @@ impl QueryRoot {
             .map(|row| Package {
                 id: ID(row.get::<String>("id").unwrap_or_default()),
                 ecosystem: Ecosystem::from(
-                    row.get::<String>("ecosystem")
-                        .unwrap_or_default()
-                        .as_str(),
+                    row.get::<String>("ecosystem").unwrap_or_default().as_str(),
                 ),
                 name: row.get("name").unwrap_or_default(),
                 created_at: None,
@@ -444,11 +489,13 @@ impl QueryRoot {
     async fn graph_stats(&self, ctx: &Context<'_>) -> Result<GraphStats> {
         let gql_ctx = ctx.data::<GqlContext>()?;
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
-        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
-        
+        let tenant_id = tenant_ctx
+            .map(|c| c.tenant_id.to_string())
+            .unwrap_or_else(|| "public".to_string());
+
         let query = GraphQueries::graph_stats(&tenant_id);
-        
-        let (total_packages, total_versions, total_dependencies, total_package_dependencies) = 
+
+        let (total_packages, total_versions, total_dependencies, total_package_dependencies) =
             match gql_ctx.graph.query_one(query, tenant_ctx).await? {
                 Some(row) => (
                     row.get("packages").unwrap_or(0),
@@ -462,7 +509,7 @@ impl QueryRoot {
         // Get ecosystem breakdown
         let eco_query = GraphQueries::ecosystem_breakdown(&tenant_id);
         let eco_rows = gql_ctx.graph.query(eco_query, tenant_ctx).await?;
-        
+
         let ecosystem_breakdown: Vec<EcosystemCount> = eco_rows
             .iter()
             .map(|row| {
@@ -497,9 +544,7 @@ impl QueryRoot {
         let effective_limit = first.min(gql_ctx.guardrails.max_results);
 
         // Parse cursor for offset
-        let offset: i32 = after
-            .and_then(|c| base64_decode_cursor(&c))
-            .unwrap_or(0);
+        let offset: i32 = after.and_then(|c| base64_decode_cursor(&c)).unwrap_or(0);
 
         // Convert ecosystem to canonical stored string (aligns with ingest/payload conventions)
         let eco_str = ecosystem.map(ecosystem_payload_value);
@@ -507,10 +552,13 @@ impl QueryRoot {
         debug!(query = %query, ecosystem = ?eco_str, "Executing searchPackages");
 
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
-        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+        let tenant_id = tenant_ctx
+            .map(|c| c.tenant_id.to_string())
+            .unwrap_or_else(|| "public".to_string());
 
         // Execute search query
-        let search_query = GraphQueries::search_packages(&tenant_id, &query, eco_str, effective_limit + 1);
+        let search_query =
+            GraphQueries::search_packages(&tenant_id, &query, eco_str, effective_limit + 1);
         let rows = gql_ctx.graph.query(search_query, tenant_ctx).await?;
 
         // Check for next page
@@ -523,9 +571,7 @@ impl QueryRoot {
             let pkg = Package {
                 id: ID(row.get::<String>("id").unwrap_or_default()),
                 ecosystem: Ecosystem::from(
-                    row.get::<String>("ecosystem")
-                        .unwrap_or_default()
-                        .as_str(),
+                    row.get::<String>("ecosystem").unwrap_or_default().as_str(),
                 ),
                 name: row.get("name").unwrap_or_default(),
                 created_at: None,
@@ -576,9 +622,7 @@ impl QueryRoot {
         let effective_limit = first.min(gql_ctx.guardrails.max_results);
 
         // Parse cursor for offset
-        let offset: i32 = after
-            .and_then(|c| base64_decode_cursor(&c))
-            .unwrap_or(0);
+        let offset: i32 = after.and_then(|c| base64_decode_cursor(&c)).unwrap_or(0);
 
         let Some(semantic) = gql_ctx.semantic_search.as_ref() else {
             return Ok(SemanticSearchConnection {
@@ -598,41 +642,34 @@ impl QueryRoot {
 
         debug!(query = %query, ecosystem = ?eco_str, "Executing semanticSearchPackages");
 
-        let embedding = semantic
-            .embedder
-            .generate(&query)
-            .await
-            .map_err(|e| {
-                let mut err = async_graphql::Error::new("Embedding generation failed");
+        let embedding = semantic.embedder.generate(&query).await.map_err(|e| {
+            let mut err = async_graphql::Error::new("Embedding generation failed");
 
-                if let Some(embed_err) = e.downcast_ref::<EmbeddingError>() {
-                    err = err.extend_with(|_, ext| {
-                        ext.set("code", embed_err.code());
-                        match embed_err {
-                            EmbeddingError::ProviderRejected { status, .. } => {
-                                ext.set("status", *status);
-                            }
-                            _ => {}
+            if let Some(embed_err) = e.downcast_ref::<EmbeddingError>() {
+                err = err.extend_with(|_, ext| {
+                    ext.set("code", embed_err.code());
+                    match embed_err {
+                        EmbeddingError::ProviderRejected { status, .. } => {
+                            ext.set("status", *status);
                         }
-                    });
-                } else {
-                    err = err.extend_with(|_, ext| {
-                        ext.set("code", "EMBEDDING_UNKNOWN");
-                    });
-                }
+                        _ => {}
+                    }
+                });
+            } else {
+                err = err.extend_with(|_, ext| {
+                    ext.set("code", "EMBEDDING_UNKNOWN");
+                });
+            }
 
-                err
-            })?;
+            err
+        })?;
 
         // Qdrant search returns symbol-level hits; we de-duplicate into packages.
         // Because de-dup can collapse many hits into one package, we may need to
         // ask Qdrant for more points to get a full page of unique packages.
         let needed_unique = (offset + effective_limit + 1).max(0) as u64;
         let mut top_k: u64 = needed_unique.saturating_mul(5).max(20);
-        let max_top_k: u64 = needed_unique
-            .saturating_mul(50)
-            .max(200)
-            .min(10_000);
+        let max_top_k: u64 = needed_unique.saturating_mul(50).max(200).min(10_000);
 
         let mut best_scores: HashMap<String, f32> = HashMap::new();
         let mut ordered: Vec<String> = Vec::new();
@@ -640,7 +677,9 @@ impl QueryRoot {
         let mut has_more_points = false;
 
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
-        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+        let tenant_id = tenant_ctx
+            .map(|c| c.tenant_id.to_string())
+            .unwrap_or_else(|| "public".to_string());
 
         for _attempt in 0..3 {
             // Use storage layer's search method which handles tenant isolation
@@ -664,13 +703,21 @@ impl QueryRoot {
             seen.clear();
 
             for result in search_results {
-                let Some(package_id_value) = result.payload.get("package_id") else { continue };
-                let Some(qdrant_client::qdrant::value::Kind::StringValue(package_id)) = package_id_value.kind.as_ref() else { continue };
+                let Some(package_id_value) = result.payload.get("package_id") else {
+                    continue;
+                };
+                let Some(qdrant_client::qdrant::value::Kind::StringValue(package_id)) =
+                    package_id_value.kind.as_ref()
+                else {
+                    continue;
+                };
 
                 // Optional ecosystem filter (post-filter since storage layer doesn't support it yet)
                 if let Some(eco) = eco_str {
                     if let Some(eco_value) = result.payload.get("ecosystem") {
-                        if let Some(qdrant_client::qdrant::value::Kind::StringValue(result_eco)) = eco_value.kind.as_ref() {
+                        if let Some(qdrant_client::qdrant::value::Kind::StringValue(result_eco)) =
+                            eco_value.kind.as_ref()
+                        {
                             if result_eco != eco {
                                 continue;
                             }
@@ -721,11 +768,16 @@ impl QueryRoot {
             .cloned()
             .collect();
 
-        let packages_map = gql_ctx.package_loader.load_many(&page_ids, &tenant_id).await;
+        let packages_map = gql_ctx
+            .package_loader
+            .load_many(&page_ids, &tenant_id)
+            .await;
 
         let mut edges: Vec<SemanticSearchEdge> = Vec::with_capacity(page_ids.len());
         for (idx, id) in page_ids.iter().enumerate() {
-            let Some(pkg) = packages_map.get(id).cloned() else { continue };
+            let Some(pkg) = packages_map.get(id).cloned() else {
+                continue;
+            };
             let score = best_scores.get(id).copied().unwrap_or(0.0);
             edges.push(SemanticSearchEdge {
                 node: pkg,
@@ -752,19 +804,24 @@ impl QueryRoot {
 
     /// Ask Gemini 3.0 (Thinking Model)
     #[instrument(skip(self, ctx))]
-    async fn ask_gemini(&self, ctx: &Context<'_>, question: String, context_packages: Vec<ID>) -> Result<String> {
+    async fn ask_gemini(
+        &self,
+        ctx: &Context<'_>,
+        question: String,
+        context_packages: Vec<ID>,
+    ) -> Result<String> {
         let gql_ctx = ctx.data::<GqlContext>()?;
         if let Some(gemini) = &gql_ctx.gemini {
-             let prompt = if context_packages.is_empty() {
-                 question
-             } else {
-                 let ids: Vec<String> = context_packages.iter().map(|id| id.to_string()).collect();
-                 format!("Context Packages: {:?}\n\nQuestion: {}", ids, question)
-             };
-             let answer = gemini.generate_thinking(&prompt).await?;
-             Ok(answer)
+            let prompt = if context_packages.is_empty() {
+                question
+            } else {
+                let ids: Vec<String> = context_packages.iter().map(|id| id.to_string()).collect();
+                format!("Context Packages: {:?}\n\nQuestion: {}", ids, question)
+            };
+            let answer = gemini.generate_thinking(&prompt).await?;
+            Ok(answer)
         } else {
-             Err("Gemini service unavailable. Please check API key configuration.".into())
+            Err("Gemini service unavailable. Please check API key configuration.".into())
         }
     }
 
@@ -773,11 +830,14 @@ impl QueryRoot {
     async fn explain_dependency_graph(&self, ctx: &Context<'_>, package_id: ID) -> Result<String> {
         let gql_ctx = ctx.data::<GqlContext>()?;
         if let Some(gemini) = &gql_ctx.gemini {
-             let prompt = format!("Analyze and explain the dependency graph for package {}. What are its critical dependencies and potential risks? Provide a concise summary.", package_id.to_string());
-             let explanation = gemini.generate_thinking(&prompt).await?;
-             Ok(explanation)
+            let prompt = format!(
+                "Analyze and explain the dependency graph for package {}. What are its critical dependencies and potential risks? Provide a concise summary.",
+                package_id.to_string()
+            );
+            let explanation = gemini.generate_thinking(&prompt).await?;
+            Ok(explanation)
         } else {
-             Err("Gemini service unavailable".into())
+            Err("Gemini service unavailable".into())
         }
     }
 
@@ -786,8 +846,8 @@ impl QueryRoot {
     // ═══════════════════════════════════════════════════════════════
 
     /// Get shortest paths between two packages (for "Show paths" feature)
-    /// 
-    /// Returns top N shortest paths showing how one package transitively 
+    ///
+    /// Returns top N shortest paths showing how one package transitively
     /// depends on another. Based on GitHub Dependency Graph visualization.
     #[instrument(skip(self, ctx))]
     async fn transitive_paths(
@@ -801,7 +861,9 @@ impl QueryRoot {
         let effective_limit = limit.min(10); // Max 10 paths
 
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
-        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+        let tenant_id = tenant_ctx
+            .map(|c| c.tenant_id.to_string())
+            .unwrap_or_else(|| "public".to_string());
 
         let query = GraphQueries::transitive_paths(
             &tenant_id,
@@ -811,30 +873,33 @@ impl QueryRoot {
         );
 
         let rows = gql_ctx.graph.query(query, tenant_ctx).await?;
-        
+
         let mut paths = Vec::with_capacity(rows.len());
         for row in &rows {
             let package_ids: Vec<String> = row.get("package_ids").unwrap_or_default();
             let length: i64 = row.get("length").unwrap_or(0);
-            
+
             // Load packages
-            let packages_map = gql_ctx.package_loader.load_many(&package_ids, &tenant_id).await;
+            let packages_map = gql_ctx
+                .package_loader
+                .load_many(&package_ids, &tenant_id)
+                .await;
             let packages: Vec<Package> = package_ids
                 .iter()
                 .filter_map(|id| packages_map.get(id).cloned())
                 .collect();
-            
+
             paths.push(TransitivePath {
                 packages,
                 length: length as i32,
             });
         }
-        
+
         Ok(paths)
     }
 
     /// Get extended reverse dependents with relationship info
-    /// 
+    ///
     /// Returns dependents with DIRECT/TRANSITIVE badge and introduced_by info.
     /// Supports filtering by relationship type.
     #[instrument(skip(self, ctx))]
@@ -842,19 +907,24 @@ impl QueryRoot {
         &self,
         ctx: &Context<'_>,
         package_id: ID,
+        #[graphql(default = 5)] max_depth: i32,
         relationship: Option<DependencyRelationship>,
         #[graphql(default = 50)] first: i32,
         after: Option<String>,
     ) -> Result<DependencyConnectionExtended> {
         let gql_ctx = ctx.data::<GqlContext>()?;
+        let effective_depth = max_depth.min(gql_ctx.guardrails.max_traversal_depth);
         let effective_limit = first.min(gql_ctx.guardrails.max_results);
-        
+
         let offset: i32 = after
             .and_then(|c| base64_decode_cursor(&c))
+            .map(|idx| idx.saturating_add(1))
             .unwrap_or(0);
 
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.as_ref();
-        let tenant_id = tenant_ctx.map(|c| c.tenant_id.to_string()).unwrap_or_else(|| "public".to_string());
+        let tenant_id = tenant_ctx
+            .map(|c| c.tenant_id.to_string())
+            .unwrap_or_else(|| "public".to_string());
 
         let rel_filter = relationship.map(|r| match r {
             DependencyRelationship::Direct => "DIRECT",
@@ -864,12 +934,14 @@ impl QueryRoot {
         let query = GraphQueries::reverse_dependents_extended(
             &tenant_id,
             &package_id.to_string(),
+            effective_depth,
             rel_filter,
             effective_limit + 1,
+            offset,
         );
 
         let rows = gql_ctx.graph.query(query, tenant_ctx).await?;
-        
+
         let has_next_page = rows.len() as i32 > effective_limit;
         let rows: Vec<_> = rows.into_iter().take(effective_limit as usize).collect();
 
@@ -877,9 +949,11 @@ impl QueryRoot {
         for (idx, row) in rows.iter().enumerate() {
             let id: String = row.get("id").unwrap_or_default();
             let depth: i64 = row.get("depth").unwrap_or(1);
-            let rel_str: String = row.get("relationship").unwrap_or_else(|_| "DIRECT".to_string());
+            let rel_str: String = row
+                .get("relationship")
+                .unwrap_or_else(|_| "DIRECT".to_string());
             let introduced_by_ids: Vec<String> = row.get("introduced_by_ids").unwrap_or_default();
-            
+
             let pkg = Package {
                 id: ID(id.clone()),
                 ecosystem: Ecosystem::from(
@@ -889,11 +963,15 @@ impl QueryRoot {
                 created_at: None,
                 updated_at: None,
             };
-            
+
             // Load introduced_by packages
             let introduced_by = if !introduced_by_ids.is_empty() {
-                let intro_map = gql_ctx.package_loader.load_many(&introduced_by_ids, &tenant_id).await;
-                introduced_by_ids.iter()
+                let intro_map = gql_ctx
+                    .package_loader
+                    .load_many(&introduced_by_ids, &tenant_id)
+                    .await;
+                introduced_by_ids
+                    .iter()
                     .filter_map(|id| intro_map.get(id).cloned())
                     .collect()
             } else {
@@ -904,19 +982,20 @@ impl QueryRoot {
                 node: pkg,
                 cursor: base64_encode_cursor(offset + idx as i32),
                 depth: depth as i32,
-                relationship: if rel_str == "TRANSITIVE" { 
-                    DependencyRelationship::Transitive 
-                } else { 
-                    DependencyRelationship::Direct 
+                relationship: if rel_str == "TRANSITIVE" {
+                    DependencyRelationship::Transitive
+                } else {
+                    DependencyRelationship::Direct
                 },
                 introduced_by,
             });
         }
 
-        let count_query = GraphQueries::reverse_dependents_count(
+        let count_query = GraphQueries::reverse_dependents_extended_count(
             &tenant_id,
             &package_id.to_string(),
-            5,
+            effective_depth,
+            rel_filter,
         );
         let total_count = match gql_ctx.graph.query_one(count_query, tenant_ctx).await? {
             Some(row) => row.get::<i64>("total").unwrap_or(0) as i32,
@@ -939,7 +1018,7 @@ impl QueryRoot {
     }
 
     /// Get severity counts for vulnerability filtering
-    /// 
+    ///
     /// Returns counts of vulnerabilities by severity level.
     /// Used for filter badges in UI (Critical: 5, High: 12, etc.)
     #[instrument(skip(self, _ctx))]
@@ -969,7 +1048,7 @@ impl QueryRoot {
                     high: 0,
                     medium: 0,
                     low: 0,
-                })
+                });
             }
         };
         let name = name_raw.unwrap_or_default();
@@ -1079,7 +1158,9 @@ impl QueryRoot {
                 .and_then(|aliases| aliases.iter().find(|a| a.starts_with("GHSA-")).cloned());
             let cve_id = osv::primary_identifier(&vuln);
             let title = vuln.summary.clone().unwrap_or_else(|| cve_id.clone());
-            let published = vuln.published.unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+            let published = vuln
+                .published
+                .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
             let updated = vuln.modified.unwrap_or_else(|| published.clone());
 
             let finding = VulnerabilityFinding {
@@ -1147,9 +1228,9 @@ impl QueryRoot {
     // ═══════════════════════════════════════════════════════════════
 
     /// Generate an SBOM (Software Bill of Materials) for a package or project
-    /// 
+    ///
     /// Supports both SPDX 2.3 and CycloneDX 1.5 formats.
-    /// 
+    ///
     /// # Arguments
     /// * `package_id` - Root package to generate SBOM for
     /// * `options` - Generation options (format, encoding, etc.)
@@ -1172,7 +1253,8 @@ impl QueryRoot {
         let root_ecosystem = eco_raw.unwrap_or_else(|| "unknown".to_string());
         let root_version = version_raw.unwrap_or_else(|| "".to_string());
 
-        let query_stmt = GraphQueries::dependencies_direct(&tenant_id, &package_id.to_string(), 500);
+        let query_stmt =
+            GraphQueries::dependencies_direct(&tenant_id, &package_id.to_string(), 500);
         let rows = gql_ctx.graph.query(query_stmt, tenant_ctx).await?;
         let mut components: Vec<serde_json::Value> = Vec::new();
         let mut vulnerability_count: i32 = 0;
@@ -1181,11 +1263,12 @@ impl QueryRoot {
             let ecosystem = row.get::<String>("ecosystem").unwrap_or_default();
             let name = row.get::<String>("name").unwrap_or_default();
 
-            let version = package_metadata::PackageMetadata::fetch_latest_version(&ecosystem, &name)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_default();
+            let version =
+                package_metadata::PackageMetadata::fetch_latest_version(&ecosystem, &name)
+                    .await
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default();
 
             let license = package_metadata::PackageMetadata::fetch_license(&ecosystem, &name)
                 .await
@@ -1195,14 +1278,29 @@ impl QueryRoot {
             let purl = if version.is_empty() {
                 format!("pkg:{}/{}", ecosystem.to_ascii_lowercase(), name)
             } else {
-                format!("pkg:{}/{}@{}", ecosystem.to_ascii_lowercase(), name, version)
+                format!(
+                    "pkg:{}/{}@{}",
+                    ecosystem.to_ascii_lowercase(),
+                    name,
+                    version
+                )
             };
 
             let vuln_count = if options.include_vulnerabilities {
                 let normalized = osv::normalize_ecosystem(&ecosystem)
                     .map(|s| s.to_string())
                     .unwrap_or(ecosystem.clone());
-                match osv::query_vulnerabilities(&normalized, &name, if version.is_empty() { None } else { Some(&version) }).await {
+                match osv::query_vulnerabilities(
+                    &normalized,
+                    &name,
+                    if version.is_empty() {
+                        None
+                    } else {
+                        Some(&version)
+                    },
+                )
+                .await
+                {
                     Ok(vulns) => {
                         vulnerability_count += vulns.len() as i32;
                         Some(vulns.len() as i32)
@@ -1274,7 +1372,8 @@ impl QueryRoot {
                 }).to_string()
             }
             SbomFormat::CycloneDx => {
-                let root_purl = format!("pkg:{}/{}", root_ecosystem.to_ascii_lowercase(), root_name);
+                let root_purl =
+                    format!("pkg:{}/{}", root_ecosystem.to_ascii_lowercase(), root_name);
                 let root_component = serde_json::json!({
                     "type": "application",
                     "name": root_name,
@@ -1319,7 +1418,7 @@ impl QueryRoot {
                 }).to_string()
             }
         };
-        
+
         Ok(SbomResult {
             format: options.format,
             encoding,
@@ -1336,25 +1435,21 @@ impl QueryRoot {
     // ═══════════════════════════════════════════════════════════════
 
     /// Get OpenSSF Scorecard for a repository or package
-    /// 
+    ///
     /// Performs 18 automated security checks based on OpenSSF standards.
-    /// 
+    ///
     /// # Arguments
     /// * `target` - Repository URL or package ID
     #[instrument(skip(self, ctx))]
-    async fn scorecard(
-        &self,
-        ctx: &Context<'_>,
-        target: String,
-    ) -> Result<ScorecardResult> {
+    async fn scorecard(&self, ctx: &Context<'_>, target: String) -> Result<ScorecardResult> {
         let _gql_ctx = ctx.data::<GqlContext>()?;
         let now = chrono::Utc::now();
-        
+
         // In production, this would:
         // 1. Fetch repository from GitHub/GitLab
         // 2. Run all 18 scorecard checks
         // 3. Calculate weighted aggregate score
-        
+
         let checks = vec![
             ScorecardCheck {
                 check: ScorecardCheckType::Vulnerabilities,
@@ -1437,18 +1532,40 @@ impl QueryRoot {
                 risk_level: RiskLevel::Low,
             },
         ];
-        
-        let holistic = checks.iter().filter(|c| matches!(c.risk_category, RiskCategory::HolisticSecurity)).cloned().collect();
-        let source = checks.iter().filter(|c| matches!(c.risk_category, RiskCategory::SourceRisk)).cloned().collect();
-        let build = checks.iter().filter(|c| matches!(c.risk_category, RiskCategory::BuildRisk)).cloned().collect();
+
+        let holistic = checks
+            .iter()
+            .filter(|c| matches!(c.risk_category, RiskCategory::HolisticSecurity))
+            .cloned()
+            .collect();
+        let source = checks
+            .iter()
+            .filter(|c| matches!(c.risk_category, RiskCategory::SourceRisk))
+            .cloned()
+            .collect();
+        let build = checks
+            .iter()
+            .filter(|c| matches!(c.risk_category, RiskCategory::BuildRisk))
+            .cloned()
+            .collect();
         let failed: Vec<_> = checks.iter().filter(|c| c.score < 5).cloned().collect();
-        let critical_count = checks.iter().filter(|c| matches!(c.risk_level, RiskLevel::Critical | RiskLevel::High)).count() as i32;
-        
+        let critical_count = checks
+            .iter()
+            .filter(|c| matches!(c.risk_level, RiskLevel::Critical | RiskLevel::High))
+            .count() as i32;
+
         // Calculate weighted aggregate
         let total_weight: f32 = checks.iter().map(|c| check_weight(&c.check)).sum();
-        let weighted_sum: f32 = checks.iter().map(|c| c.score as f32 * check_weight(&c.check)).sum();
-        let aggregate = if total_weight > 0.0 { weighted_sum / total_weight } else { 0.0 };
-        
+        let weighted_sum: f32 = checks
+            .iter()
+            .map(|c| c.score as f32 * check_weight(&c.check))
+            .sum();
+        let aggregate = if total_weight > 0.0 {
+            weighted_sum / total_weight
+        } else {
+            0.0
+        };
+
         Ok(ScorecardResult {
             target,
             target_type: "repository".to_string(),
@@ -1473,14 +1590,19 @@ impl QueryRoot {
         target: String,
     ) -> Result<ScorecardSummary> {
         let full = self.scorecard(ctx, target.clone()).await?;
-        
+
         Ok(ScorecardSummary {
             target,
             aggregate_score: full.aggregate_score,
-            risk_level: if full.aggregate_score >= 8.0 { RiskLevel::Low }
-                       else if full.aggregate_score >= 6.0 { RiskLevel::Medium }
-                       else if full.aggregate_score >= 4.0 { RiskLevel::High }
-                       else { RiskLevel::Critical },
+            risk_level: if full.aggregate_score >= 8.0 {
+                RiskLevel::Low
+            } else if full.aggregate_score >= 6.0 {
+                RiskLevel::Medium
+            } else if full.aggregate_score >= 4.0 {
+                RiskLevel::High
+            } else {
+                RiskLevel::Critical
+            },
             passed_checks: full.checks.iter().filter(|c| c.score >= 5).count() as i32,
             failed_checks: full.failed_checks.len() as i32,
             critical_issues: full.critical_findings_count,
@@ -1542,7 +1664,7 @@ impl QueryRoot {
             }),
             _ => None,
         };
-        
+
         Ok(info)
     }
 
@@ -1555,11 +1677,11 @@ impl QueryRoot {
         policy: Option<LicensePolicyPreset>,
     ) -> Result<LicenseValidationResult> {
         let policy_preset = policy.unwrap_or(LicensePolicyPreset::Default);
-        
+
         // Simple validation for demo
         let mut violations = Vec::new();
         let mut warnings = Vec::new();
-        
+
         // Check for network copyleft in enterprise policy
         if matches!(policy_preset, LicensePolicyPreset::Enterprise) {
             if license_expression.contains("AGPL") {
@@ -1579,7 +1701,7 @@ impl QueryRoot {
                 });
             }
         }
-        
+
         // Check for permissive-only policy
         if matches!(policy_preset, LicensePolicyPreset::PermissiveOnly) {
             if license_expression.contains("GPL") || license_expression.contains("LGPL") {
@@ -1591,14 +1713,31 @@ impl QueryRoot {
                 });
             }
         }
-        
+
         // Add warning for unknown licenses
-        if !["MIT", "Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "GPL-2.0-only", "GPL-3.0-only", "LGPL-2.1-only", "LGPL-3.0-only", "AGPL-3.0-only", "MPL-2.0"].contains(&license_expression.as_str()) {
+        if ![
+            "MIT",
+            "Apache-2.0",
+            "BSD-2-Clause",
+            "BSD-3-Clause",
+            "ISC",
+            "GPL-2.0-only",
+            "GPL-3.0-only",
+            "LGPL-2.1-only",
+            "LGPL-3.0-only",
+            "AGPL-3.0-only",
+            "MPL-2.0",
+        ]
+        .contains(&license_expression.as_str())
+        {
             if !license_expression.contains(" OR ") && !license_expression.contains(" AND ") {
-                warnings.push(format!("Unknown license '{}' - manual review recommended", license_expression));
+                warnings.push(format!(
+                    "Unknown license '{}' - manual review recommended",
+                    license_expression
+                ));
             }
         }
-        
+
         Ok(LicenseValidationResult {
             compliant: violations.is_empty(),
             policy_name: match policy_preset {
@@ -1626,7 +1765,11 @@ impl QueryRoot {
             .map(|c| c.tenant_id.to_string())
             .unwrap_or_else(|| "public".to_string());
 
-        let query_stmt = GraphQueries::dependencies_direct(&tenant_id, &package_id.to_string(), gql_ctx.guardrails.max_results);
+        let query_stmt = GraphQueries::dependencies_direct(
+            &tenant_id,
+            &package_id.to_string(),
+            gql_ctx.guardrails.max_results,
+        );
         let rows = gql_ctx.graph.query(query_stmt, tenant_ctx).await?;
 
         let mut licenses_detected: Vec<String> = Vec::new();
@@ -1639,7 +1782,9 @@ impl QueryRoot {
         for row in rows {
             let ecosystem = row.get::<String>("ecosystem").unwrap_or_default();
             let name = row.get::<String>("name").unwrap_or_default();
-            let license = package_metadata::PackageMetadata::fetch_license(&ecosystem, &name).await.unwrap_or(None);
+            let license = package_metadata::PackageMetadata::fetch_license(&ecosystem, &name)
+                .await
+                .unwrap_or(None);
             let license = match license {
                 Some(l) if !l.trim().is_empty() => l,
                 _ => {
@@ -1650,7 +1795,8 @@ impl QueryRoot {
 
             licenses_detected.push(license.clone());
 
-            let is_copyleft = license.contains("GPL") || license.contains("LGPL") || license.contains("AGPL");
+            let is_copyleft =
+                license.contains("GPL") || license.contains("LGPL") || license.contains("AGPL");
             if is_copyleft {
                 copyleft_count += 1;
             } else {
@@ -1666,7 +1812,8 @@ impl QueryRoot {
                 });
             }
 
-            if matches!(policy_preset, LicensePolicyPreset::Enterprise) && license.contains("AGPL") {
+            if matches!(policy_preset, LicensePolicyPreset::Enterprise) && license.contains("AGPL")
+            {
                 violations.push(LicenseViolation {
                     violation_type: "NetworkCopyleftNotAllowed".to_string(),
                     license_id: license.clone(),
@@ -1712,7 +1859,10 @@ impl QueryRoot {
             if let Some(affected_list) = vuln.affected.as_ref() {
                 for item in affected_list {
                     if item.package.ecosystem.eq_ignore_ascii_case(&prod_ecosystem)
-                        && item.package.name.eq_ignore_ascii_case(prod_name.as_deref().unwrap_or(""))
+                        && item
+                            .package
+                            .name
+                            .eq_ignore_ascii_case(prod_name.as_deref().unwrap_or(""))
                     {
                         if let Some(version) = prod_version.as_ref() {
                             if let Some(versions) = item.versions.as_ref() {
@@ -1752,7 +1902,7 @@ impl QueryRoot {
                 Some("No vulnerability record found in OSV".to_string()),
             )
         };
-        
+
         Ok(VexExploitabilityResult {
             vulnerability_id,
             product_id,
@@ -1765,11 +1915,7 @@ impl QueryRoot {
 
     /// Get VEX document for a package
     #[instrument(skip(self, ctx))]
-    async fn vex_document(
-        &self,
-        ctx: &Context<'_>,
-        package_id: ID,
-    ) -> Result<Option<VexDocument>> {
+    async fn vex_document(&self, ctx: &Context<'_>, package_id: ID) -> Result<Option<VexDocument>> {
         let _gql_ctx = ctx.data::<GqlContext>()?;
         let (eco_raw, name_raw, version_raw) = osv::parse_package_id(&package_id.to_string());
         let ecosystem = match osv::ensure_ecosystem(eco_raw) {
@@ -1793,7 +1939,12 @@ impl QueryRoot {
                     id: package_id.to_string(),
                     name: name.clone(),
                     version: version_raw.clone().unwrap_or_default(),
-                    purl: Some(format!("pkg:{}/{}@{}", ecosystem.to_ascii_lowercase(), name, version_raw.clone().unwrap_or_default())),
+                    purl: Some(format!(
+                        "pkg:{}/{}@{}",
+                        ecosystem.to_ascii_lowercase(),
+                        name,
+                        version_raw.clone().unwrap_or_default()
+                    )),
                     cpe: None,
                 },
                 status,
@@ -1881,16 +2032,13 @@ impl QueryRoot {
 
     /// Assess SLSA level for a package
     #[instrument(skip(self, ctx))]
-    async fn slsa_assessment(
-        &self,
-        ctx: &Context<'_>,
-        package_id: ID,
-    ) -> Result<SlsaAssessment> {
+    async fn slsa_assessment(&self, ctx: &Context<'_>, package_id: ID) -> Result<SlsaAssessment> {
         let _gql_ctx = ctx.data::<GqlContext>()?;
         let package_id_str = package_id.to_string();
         let (eco_raw, name_raw, _version_raw) = osv::parse_package_id(&package_id_str);
 
-        let source_repo = if let (Some(ecosystem), Some(name)) = (eco_raw.clone(), name_raw.clone()) {
+        let source_repo = if let (Some(ecosystem), Some(name)) = (eco_raw.clone(), name_raw.clone())
+        {
             package_metadata::PackageMetadata::fetch_repository_url(&ecosystem, &name)
                 .await
                 .ok()
@@ -1910,12 +2058,9 @@ impl QueryRoot {
         };
 
         let score_for = |check: ScorecardCheckType| -> Option<i32> {
-            scorecard_result.as_ref().and_then(|s| {
-                s.checks
-                    .iter()
-                    .find(|c| c.check == check)
-                    .map(|c| c.score)
-            })
+            scorecard_result
+                .as_ref()
+                .and_then(|s| s.checks.iter().find(|c| c.check == check).map(|c| c.score))
         };
 
         let has_provenance = [
@@ -1961,7 +2106,10 @@ impl QueryRoot {
 
         let mut recommendations = Vec::new();
         if !has_provenance {
-            recommendations.push("Generate SLSA provenance in CI/CD (e.g., GitHub Actions + provenance attestation)".to_string());
+            recommendations.push(
+                "Generate SLSA provenance in CI/CD (e.g., GitHub Actions + provenance attestation)"
+                    .to_string(),
+            );
             recommendations.push("Publish provenance alongside release artifacts".to_string());
         }
         if has_provenance && !provenance_signed {
@@ -2020,9 +2168,16 @@ impl QueryRoot {
             return Ok(None);
         };
 
-        let purl = if let (Some(ecosystem), Some(name), version) = osv::parse_package_id(&package_id_str) {
+        let purl = if let (Some(ecosystem), Some(name), version) =
+            osv::parse_package_id(&package_id_str)
+        {
             if let Some(version) = version {
-                format!("pkg:{}/{}@{}", ecosystem.to_ascii_lowercase(), name, version)
+                format!(
+                    "pkg:{}/{}@{}",
+                    ecosystem.to_ascii_lowercase(),
+                    name,
+                    version
+                )
             } else {
                 format!("pkg:{}/{}", ecosystem.to_ascii_lowercase(), name)
             }
@@ -2207,57 +2362,61 @@ impl QueryRoot {
 
     /// Get available policy sets
     #[instrument(skip(self, ctx))]
-    async fn policy_sets(
-        &self,
-        ctx: &Context<'_>,
-    ) -> Result<Vec<PolicySet>> {
+    async fn policy_sets(&self, ctx: &Context<'_>) -> Result<Vec<PolicySet>> {
         let _gql_ctx = ctx.data::<GqlContext>()?;
-        
+
         // Return default enterprise policy
-        Ok(vec![
-            PolicySet {
-                id: "enterprise-default".to_string(),
-                name: "Enterprise Default Policy".to_string(),
-                description: Some("Default security and compliance policy for enterprise environments".to_string()),
-                version: "1.0.0".to_string(),
-                rules: vec![
-                    PolicyRule {
-                        id: "license-osi".to_string(),
-                        name: "OSI Approved License Required".to_string(),
-                        description: "All dependencies must use OSI-approved licenses".to_string(),
-                        category: PolicyCategory::License,
-                        severity: PolicySeverity::High,
-                        blocking: true,
-                        remediation: Some("Replace with an OSI-approved licensed alternative".to_string()),
-                        reference: Some("https://opensource.org/licenses".to_string()),
-                    },
-                    PolicyRule {
-                        id: "vuln-critical".to_string(),
-                        name: "No Critical Vulnerabilities".to_string(),
-                        description: "No dependencies with critical severity vulnerabilities".to_string(),
-                        category: PolicyCategory::Security,
-                        severity: PolicySeverity::Critical,
-                        blocking: true,
-                        remediation: Some("Upgrade to a patched version or apply VEX assessment".to_string()),
-                        reference: None,
-                    },
-                    PolicyRule {
-                        id: "slsa-l1".to_string(),
-                        name: "SLSA Build Level 1".to_string(),
-                        description: "All packages must meet SLSA Build Level 1".to_string(),
-                        category: PolicyCategory::SupplyChain,
-                        severity: PolicySeverity::Medium,
-                        blocking: false,
-                        remediation: Some("Use packages from build systems that provide provenance".to_string()),
-                        reference: Some("https://slsa.dev/spec/v1.0/levels".to_string()),
-                    },
-                ],
-                rule_count: 6,
-                blocking_rule_count: 2,
-                created_at: chrono::Utc::now().to_rfc3339(),
-                updated_at: chrono::Utc::now().to_rfc3339(),
-            },
-        ])
+        Ok(vec![PolicySet {
+            id: "enterprise-default".to_string(),
+            name: "Enterprise Default Policy".to_string(),
+            description: Some(
+                "Default security and compliance policy for enterprise environments".to_string(),
+            ),
+            version: "1.0.0".to_string(),
+            rules: vec![
+                PolicyRule {
+                    id: "license-osi".to_string(),
+                    name: "OSI Approved License Required".to_string(),
+                    description: "All dependencies must use OSI-approved licenses".to_string(),
+                    category: PolicyCategory::License,
+                    severity: PolicySeverity::High,
+                    blocking: true,
+                    remediation: Some(
+                        "Replace with an OSI-approved licensed alternative".to_string(),
+                    ),
+                    reference: Some("https://opensource.org/licenses".to_string()),
+                },
+                PolicyRule {
+                    id: "vuln-critical".to_string(),
+                    name: "No Critical Vulnerabilities".to_string(),
+                    description: "No dependencies with critical severity vulnerabilities"
+                        .to_string(),
+                    category: PolicyCategory::Security,
+                    severity: PolicySeverity::Critical,
+                    blocking: true,
+                    remediation: Some(
+                        "Upgrade to a patched version or apply VEX assessment".to_string(),
+                    ),
+                    reference: None,
+                },
+                PolicyRule {
+                    id: "slsa-l1".to_string(),
+                    name: "SLSA Build Level 1".to_string(),
+                    description: "All packages must meet SLSA Build Level 1".to_string(),
+                    category: PolicyCategory::SupplyChain,
+                    severity: PolicySeverity::Medium,
+                    blocking: false,
+                    remediation: Some(
+                        "Use packages from build systems that provide provenance".to_string(),
+                    ),
+                    reference: Some("https://slsa.dev/spec/v1.0/levels".to_string()),
+                },
+            ],
+            rule_count: 6,
+            blocking_rule_count: 2,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+        }])
     }
 
     /// Evaluate a package against a policy set
@@ -2295,7 +2454,9 @@ impl QueryRoot {
                 severity: PolicySeverity::Critical,
                 blocking: true,
                 message: format!("{} critical vulnerabilities found", critical),
-                remediation: Some("Upgrade to a patched version or apply VEX assessment".to_string()),
+                remediation: Some(
+                    "Upgrade to a patched version or apply VEX assessment".to_string(),
+                ),
             }
         } else if high > 5 {
             RuleEvaluationResult {
@@ -2337,17 +2498,29 @@ impl QueryRoot {
                 severity: PolicySeverity::Medium,
                 blocking: false,
                 message: "SLSA level L0 below minimum L1".to_string(),
-                remediation: Some("Use packages from build systems that provide provenance".to_string()),
+                remediation: Some(
+                    "Use packages from build systems that provide provenance".to_string(),
+                ),
             },
         ];
-        
-        let passed = rule_results.iter().filter(|r| r.result == PolicyResult::Pass).count() as i32;
-        let failed = rule_results.iter().filter(|r| r.result == PolicyResult::Fail).count() as i32;
-        let warnings = rule_results.iter().filter(|r| r.result == PolicyResult::Warn).count() as i32;
-        let blocking_failures = rule_results.iter()
+
+        let passed = rule_results
+            .iter()
+            .filter(|r| r.result == PolicyResult::Pass)
+            .count() as i32;
+        let failed = rule_results
+            .iter()
+            .filter(|r| r.result == PolicyResult::Fail)
+            .count() as i32;
+        let warnings = rule_results
+            .iter()
+            .filter(|r| r.result == PolicyResult::Warn)
+            .count() as i32;
+        let blocking_failures = rule_results
+            .iter()
             .filter(|r| r.result == PolicyResult::Fail && r.blocking)
             .count() as i32;
-        
+
         let overall = if blocking_failures > 0 {
             PolicyResult::Fail
         } else if warnings > 0 || failed > 0 {
@@ -2355,9 +2528,11 @@ impl QueryRoot {
         } else {
             PolicyResult::Pass
         };
-        
+
         Ok(PolicyEvaluationResult {
-            policy_set_id: input.policy_set_id.unwrap_or_else(|| "enterprise-default".to_string()),
+            policy_set_id: input
+                .policy_set_id
+                .unwrap_or_else(|| "enterprise-default".to_string()),
             package_id: input.package_id,
             overall_result: overall,
             rule_results,
@@ -2411,12 +2586,16 @@ impl QueryRoot {
 
         if let Some(filter) = filter.as_ref() {
             if let Some(tenant_id) = filter.tenant_id.as_ref() {
-                tenant_uuid = Some(sqlx::types::Uuid::parse_str(tenant_id)
-                    .map_err(|_| async_graphql::Error::new("Invalid tenant_id"))?);
+                tenant_uuid = Some(
+                    sqlx::types::Uuid::parse_str(tenant_id)
+                        .map_err(|_| async_graphql::Error::new("Invalid tenant_id"))?,
+                );
             }
             if let Some(actor_id) = filter.actor_id.as_ref() {
-                actor_uuid = Some(sqlx::types::Uuid::parse_str(actor_id)
-                    .map_err(|_| async_graphql::Error::new("Invalid actor_id"))?);
+                actor_uuid = Some(
+                    sqlx::types::Uuid::parse_str(actor_id)
+                        .map_err(|_| async_graphql::Error::new("Invalid actor_id"))?,
+                );
             }
             if let Some(target_type) = filter.target_type.as_ref().filter(|s| !s.is_empty()) {
                 qb.push(" AND resource_type = ").push_bind(target_type);
@@ -2425,34 +2604,52 @@ impl QueryRoot {
                 qb.push(" AND resource_id = ").push_bind(target_id);
             }
             if let Some(start_time) = filter.start_time.as_ref() {
-                start_dt = Some(chrono::DateTime::parse_from_rfc3339(start_time)
-                    .map_err(|_| async_graphql::Error::new("Invalid start_time (expected RFC3339)"))?
-                    .with_timezone(&chrono::Utc));
+                start_dt = Some(
+                    chrono::DateTime::parse_from_rfc3339(start_time)
+                        .map_err(|_| {
+                            async_graphql::Error::new("Invalid start_time (expected RFC3339)")
+                        })?
+                        .with_timezone(&chrono::Utc),
+                );
             }
             if let Some(end_time) = filter.end_time.as_ref() {
-                end_dt = Some(chrono::DateTime::parse_from_rfc3339(end_time)
-                    .map_err(|_| async_graphql::Error::new("Invalid end_time (expected RFC3339)"))?
-                    .with_timezone(&chrono::Utc));
+                end_dt = Some(
+                    chrono::DateTime::parse_from_rfc3339(end_time)
+                        .map_err(|_| {
+                            async_graphql::Error::new("Invalid end_time (expected RFC3339)")
+                        })?
+                        .with_timezone(&chrono::Utc),
+                );
             }
         }
 
         if let Some(tenant_id) = tenant_uuid.as_ref() {
-            qb.push(" AND tenant_id = ").push_bind(tenant_id).push("::UUID");
+            qb.push(" AND tenant_id = ")
+                .push_bind(tenant_id)
+                .push("::UUID");
         }
         if let Some(actor_id) = actor_uuid.as_ref() {
-            qb.push(" AND user_id = ").push_bind(actor_id).push("::UUID");
+            qb.push(" AND user_id = ")
+                .push_bind(actor_id)
+                .push("::UUID");
         }
         if let Some(start_time) = start_dt.as_ref() {
-            qb.push(" AND created_at >= ").push_bind(start_time).push("::TIMESTAMPTZ");
+            qb.push(" AND created_at >= ")
+                .push_bind(start_time)
+                .push("::TIMESTAMPTZ");
         }
         if let Some(end_time) = end_dt.as_ref() {
-            qb.push(" AND created_at <= ").push_bind(end_time).push("::TIMESTAMPTZ");
+            qb.push(" AND created_at <= ")
+                .push_bind(end_time)
+                .push("::TIMESTAMPTZ");
         }
 
         let mut count_qb = QueryBuilder::new("SELECT COUNT(*) as total FROM audit_log WHERE 1=1");
         if let Some(filter) = filter.as_ref() {
             if let Some(target_type) = filter.target_type.as_ref().filter(|s| !s.is_empty()) {
-                count_qb.push(" AND resource_type = ").push_bind(target_type);
+                count_qb
+                    .push(" AND resource_type = ")
+                    .push_bind(target_type);
             }
             if let Some(target_id) = filter.target_id.as_ref().filter(|s| !s.is_empty()) {
                 count_qb.push(" AND resource_id = ").push_bind(target_id);
@@ -2460,16 +2657,28 @@ impl QueryRoot {
         }
 
         if let Some(tenant_id) = tenant_uuid.as_ref() {
-            count_qb.push(" AND tenant_id = ").push_bind(tenant_id).push("::UUID");
+            count_qb
+                .push(" AND tenant_id = ")
+                .push_bind(tenant_id)
+                .push("::UUID");
         }
         if let Some(actor_id) = actor_uuid.as_ref() {
-            count_qb.push(" AND user_id = ").push_bind(actor_id).push("::UUID");
+            count_qb
+                .push(" AND user_id = ")
+                .push_bind(actor_id)
+                .push("::UUID");
         }
         if let Some(start_time) = start_dt.as_ref() {
-            count_qb.push(" AND created_at >= ").push_bind(start_time).push("::TIMESTAMPTZ");
+            count_qb
+                .push(" AND created_at >= ")
+                .push_bind(start_time)
+                .push("::TIMESTAMPTZ");
         }
         if let Some(end_time) = end_dt.as_ref() {
-            count_qb.push(" AND created_at <= ").push_bind(end_time).push("::TIMESTAMPTZ");
+            count_qb
+                .push(" AND created_at <= ")
+                .push_bind(end_time)
+                .push("::TIMESTAMPTZ");
         }
 
         qb.push(" ORDER BY created_at DESC");
@@ -2517,7 +2726,9 @@ impl QueryRoot {
                     ip_address,
                 },
                 target: resource_id.as_ref().map(|id| AuditTarget {
-                    target_type: resource_type.clone().unwrap_or_else(|| "resource".to_string()),
+                    target_type: resource_type
+                        .clone()
+                        .unwrap_or_else(|| "resource".to_string()),
                     id: id.clone(),
                     name: None,
                 }),
@@ -2567,9 +2778,7 @@ impl QueryRoot {
             });
         };
 
-        let mut qb = QueryBuilder::new(
-            "SELECT COUNT(*) as total, "
-        );
+        let mut qb = QueryBuilder::new("SELECT COUNT(*) as total, ");
         qb.push("SUM(CASE WHEN action ILIKE '%SECURITY%' THEN 1 ELSE 0 END) as security, ");
         qb.push("SUM(CASE WHEN action ILIKE '%POLICY%' THEN 1 ELSE 0 END) as policy, ");
         qb.push("SUM(CASE WHEN action ILIKE '%COMPLIANCE%' THEN 1 ELSE 0 END) as compliance, ");
@@ -2584,10 +2793,19 @@ impl QueryRoot {
             return Err(async_graphql::Error::new("endDate must be after startDate"));
         }
 
-        qb.push("FROM audit_log WHERE created_at >= ").push_bind(start_dt).push("::TIMESTAMPTZ");
-        qb.push(" AND created_at <= ").push_bind(end_dt).push("::TIMESTAMPTZ");
-        if let Some(tenant_id) = tenant_id.as_ref().and_then(|id| sqlx::types::Uuid::parse_str(id).ok()) {
-            qb.push(" AND tenant_id = ").push_bind(tenant_id).push("::UUID");
+        qb.push("FROM audit_log WHERE created_at >= ")
+            .push_bind(start_dt)
+            .push("::TIMESTAMPTZ");
+        qb.push(" AND created_at <= ")
+            .push_bind(end_dt)
+            .push("::TIMESTAMPTZ");
+        if let Some(tenant_id) = tenant_id
+            .as_ref()
+            .and_then(|id| sqlx::types::Uuid::parse_str(id).ok())
+        {
+            qb.push(" AND tenant_id = ")
+                .push_bind(tenant_id)
+                .push("::UUID");
         }
 
         let row = qb.build().fetch_one(pool).await?;
@@ -2633,8 +2851,10 @@ impl QueryRoot {
         let name = name_raw.unwrap_or_else(|| package_id.to_string());
         let current_version = version_raw.unwrap_or_default();
 
-        let latest_version = package_metadata::PackageMetadata::fetch_latest_version(&ecosystem, &name).await?
-            .unwrap_or_else(|| current_version.clone());
+        let latest_version =
+            package_metadata::PackageMetadata::fetch_latest_version(&ecosystem, &name)
+                .await?
+                .unwrap_or_else(|| current_version.clone());
 
         if latest_version == current_version || current_version.is_empty() {
             return Ok(UpdateRecommendationSummary {
@@ -2646,10 +2866,20 @@ impl QueryRoot {
             });
         }
 
-        let vulns = osv::query_vulnerabilities(&osv::ensure_ecosystem(Some(ecosystem.clone()))?, &name, Some(current_version.as_str())).await?;
+        let vulns = osv::query_vulnerabilities(
+            &osv::ensure_ecosystem(Some(ecosystem.clone()))?,
+            &name,
+            Some(current_version.as_str()),
+        )
+        .await?;
         let vuln_count = vulns.len() as i32;
-        let breaking_changes = semver::Version::parse(&latest_version).ok()
-            .and_then(|latest| semver::Version::parse(&current_version).ok().map(|current| (latest, current)))
+        let breaking_changes = semver::Version::parse(&latest_version)
+            .ok()
+            .and_then(|latest| {
+                semver::Version::parse(&current_version)
+                    .ok()
+                    .map(|current| (latest, current))
+            })
             .map(|(latest, current)| latest.major > current.major)
             .unwrap_or(false);
 
@@ -2673,9 +2903,11 @@ impl QueryRoot {
             UpdateUrgency::Low
         };
 
-        let changelog_url = package_metadata::PackageMetadata::fetch_repository_url(&ecosystem, &name).await?
-            .and_then(|repo| package_metadata::normalize_repository_for_scorecard(&repo).ok())
-            .map(|repo| format!("https://{}/blob/main/CHANGELOG.md", repo));
+        let changelog_url =
+            package_metadata::PackageMetadata::fetch_repository_url(&ecosystem, &name)
+                .await?
+                .and_then(|repo| package_metadata::normalize_repository_for_scorecard(&repo).ok())
+                .map(|repo| format!("https://{}/blob/main/CHANGELOG.md", repo));
 
         let recommendations = vec![UpdateRecommendation {
             package_id: package_id.to_string(),
@@ -2689,15 +2921,24 @@ impl QueryRoot {
             changelog_url,
             vulnerabilities_fixed: vuln_count,
             recommendation_text: if vuln_count > 0 {
-                format!("Security update available - {} vulnerabilities in current version", vuln_count)
+                format!(
+                    "Security update available - {} vulnerabilities in current version",
+                    vuln_count
+                )
             } else {
                 "Update available for bug fixes and improvements".to_string()
             },
         }];
-        
-        let critical = recommendations.iter().filter(|r| r.urgency == UpdateUrgency::Critical).count() as i32;
-        let security = recommendations.iter().filter(|r| r.reasons.contains(&UpdateReason::SecurityVulnerability)).count() as i32;
-        
+
+        let critical = recommendations
+            .iter()
+            .filter(|r| r.urgency == UpdateUrgency::Critical)
+            .count() as i32;
+        let security = recommendations
+            .iter()
+            .filter(|r| r.reasons.contains(&UpdateReason::SecurityVulnerability))
+            .count() as i32;
+
         Ok(UpdateRecommendationSummary {
             total_packages: 1,
             updates_available: recommendations.len() as i32,
@@ -2713,13 +2954,13 @@ impl QueryRoot {
     // ═══════════════════════════════════════════════════════════════
 
     /// Execute an autonomous security analysis using Gemini 3 with function calling
-    /// 
+    ///
     /// The agent will:
     /// 1. Analyze the task and plan its approach
     /// 2. Autonomously call tools to gather security data
     /// 3. Reason about vulnerabilities and their impact
     /// 4. Provide prioritized recommendations
-    /// 
+    ///
     /// This uses Gemini 3's advanced features:
     /// - Function Calling for tool use
     /// - Thinking Level "high" for complex reasoning
@@ -2732,17 +2973,17 @@ impl QueryRoot {
     ) -> Result<SecurityAgentResult> {
         let gql_ctx = ctx.data::<GqlContext>()?;
         let start_time = std::time::Instant::now();
-        
+
         // Check if Gemini is configured
-        let gemini = gql_ctx.gemini.as_ref()
+        let gemini = gql_ctx
+            .gemini
+            .as_ref()
             .ok_or_else(|| async_graphql::Error::new("Gemini service not configured"))?;
-        
+
         // Create the security agent
-        let agent = crate::services::GeminiSecurityAgent::new(
-            gemini.api_key().to_string()
-        )
-        .with_max_steps(input.max_steps.unwrap_or(10) as usize);
-        
+        let agent = crate::services::GeminiSecurityAgent::new(gemini.api_key().to_string())
+            .with_max_steps(input.max_steps.unwrap_or(10) as usize);
+
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.clone();
         let tenant_id = tenant_ctx
             .as_ref()
@@ -2756,15 +2997,8 @@ impl QueryRoot {
             let tenant_ctx = tenant_ctx.clone();
             let tenant_id = tenant_id.clone();
             async move {
-                execute_security_agent_tool(
-                    graph,
-                    tenant_ctx,
-                    tenant_id,
-                    max_results,
-                    name,
-                    args,
-                )
-                .await
+                execute_security_agent_tool(graph, tenant_ctx, tenant_id, max_results, name, args)
+                    .await
             }
         };
 
@@ -2782,53 +3016,56 @@ impl QueryRoot {
         }
 
         // Execute the agent
-        let result = agent.execute(
-            &task_prompt,
-            tool_executor
-        ).await;
-        
+        let result = agent.execute(&task_prompt, tool_executor).await;
+
         let execution_time = start_time.elapsed().as_millis() as i64;
-        
+
         match result {
             Ok(exec_result) => {
                 // Convert internal types to GraphQL types
-                let steps: Vec<SecurityAgentStep> = exec_result.steps.into_iter().map(|s| {
-                    let (action_type, tool_name, tool_args, tool_result, text_response) = match s.action {
-                        crate::services::AgentAction::FunctionCall { name, args, result } => (
-                            AgentActionType::FunctionCall,
-                            Some(name),
-                            Some(serde_json::to_string(&args).unwrap_or_default()),
-                            result.map(|r| serde_json::to_string(&r).unwrap_or_default()),
-                            None,
-                        ),
-                        crate::services::AgentAction::TextResponse { content } => (
-                            AgentActionType::TextResponse,
-                            None,
-                            None,
-                            None,
-                            Some(content),
-                        ),
-                        crate::services::AgentAction::Error { message } => (
-                            AgentActionType::Error,
-                            None,
-                            None,
-                            None,
-                            Some(message),
-                        ),
-                    };
-                    
-                    SecurityAgentStep {
-                        step_number: s.step_number as i32,
-                        action_type,
-                        tool_name,
-                        tool_args,
-                        tool_result,
-                        text_response,
-                        thought_summary: s.thought_summary,
-                    }
-                }).collect();
-                
-                let vulnerabilities_found: Vec<AgentVulnerability> = exec_result.vulnerabilities_found
+                let steps: Vec<SecurityAgentStep> = exec_result
+                    .steps
+                    .into_iter()
+                    .map(|s| {
+                        let (action_type, tool_name, tool_args, tool_result, text_response) =
+                            match s.action {
+                                crate::services::AgentAction::FunctionCall {
+                                    name,
+                                    args,
+                                    result,
+                                } => (
+                                    AgentActionType::FunctionCall,
+                                    Some(name),
+                                    Some(serde_json::to_string(&args).unwrap_or_default()),
+                                    result.map(|r| serde_json::to_string(&r).unwrap_or_default()),
+                                    None,
+                                ),
+                                crate::services::AgentAction::TextResponse { content } => (
+                                    AgentActionType::TextResponse,
+                                    None,
+                                    None,
+                                    None,
+                                    Some(content),
+                                ),
+                                crate::services::AgentAction::Error { message } => {
+                                    (AgentActionType::Error, None, None, None, Some(message))
+                                }
+                            };
+
+                        SecurityAgentStep {
+                            step_number: s.step_number as i32,
+                            action_type,
+                            tool_name,
+                            tool_args,
+                            tool_result,
+                            text_response,
+                            thought_summary: s.thought_summary,
+                        }
+                    })
+                    .collect();
+
+                let vulnerabilities_found: Vec<AgentVulnerability> = exec_result
+                    .vulnerabilities_found
                     .into_iter()
                     .map(|v| AgentVulnerability {
                         cve_id: v.cve_id,
@@ -2838,7 +3075,7 @@ impl QueryRoot {
                         fix_version: v.fix_version,
                     })
                     .collect();
-                
+
                 Ok(SecurityAgentResult {
                     task: exec_result.task,
                     steps,
@@ -2847,7 +3084,8 @@ impl QueryRoot {
                     packages_analyzed: exec_result.packages_analyzed,
                     vulnerabilities_found,
                     recommendations: exec_result.recommendations,
-                    structured_report_json: exec_result.structured_report
+                    structured_report_json: exec_result
+                        .structured_report
                         .map(|r| serde_json::to_string_pretty(&r).unwrap_or_default()),
                     success: true,
                     execution_time_ms: execution_time,
@@ -2875,14 +3113,15 @@ impl QueryRoot {
     #[instrument(skip(self, _ctx))]
     async fn security_agent_tools(&self, _ctx: &Context<'_>) -> Result<Vec<AgentTool>> {
         let tools = crate::services::get_security_agent_tools();
-        
-        Ok(tools.into_iter().map(|t| {
-            AgentTool {
+
+        Ok(tools
+            .into_iter()
+            .map(|t| AgentTool {
                 name: t.name,
                 description: t.description,
                 parameters_schema: serde_json::to_string_pretty(&t.parameters).unwrap_or_default(),
-            }
-        }).collect())
+            })
+            .collect())
     }
 }
 
@@ -2919,7 +3158,6 @@ fn check_weight(check: &ScorecardCheckType) -> f32 {
 // SECURITY AGENT TOOL EXECUTOR
 // Maps agent tool calls to actual GraphQL operations
 // ═══════════════════════════════════════════════════════════════
-
 
 // ═══════════════════════════════════════════════════════════════
 // CURSOR HELPERS

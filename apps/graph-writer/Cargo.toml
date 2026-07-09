@@ -49,6 +49,6 @@ async-trait.workspace = true
 models = { path = "../../packages/models" }
 
 [build-dependencies]
-tonic-build = "0.14"
+prost-build.workspace = true
 protoc-bin-vendored = "3.0"
 

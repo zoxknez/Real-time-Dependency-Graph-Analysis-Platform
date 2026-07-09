@@ -1,16 +1,18 @@
+use governor::{Jitter, Quota, RateLimiter as GovernorLimiter, state::direct::NotKeyed};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use governor::{Quota, RateLimiter as GovernorLimiter, state::direct::NotKeyed, Jitter};
-use std::num::NonZeroU32;
 use tokio::sync::RwLock;
-use tracing::{warn, info};
+use tracing::{info, warn};
 
 /// Rate limiter capable of handling standard rate limits AND global backoff (e.g. from 429s)
 #[derive(Clone)]
 #[allow(dead_code)]
 pub struct RateLimiter {
     // Inner token bucket
-    inner: Arc<GovernorLimiter<NotKeyed, governor::state::InMemoryState, governor::clock::QuantaClock>>,
+    inner: Arc<
+        GovernorLimiter<NotKeyed, governor::state::InMemoryState, governor::clock::QuantaClock>,
+    >,
     // Jitter configuration
     jitter: Jitter,
     // Global backoff state
@@ -21,13 +23,10 @@ pub struct RateLimiter {
 impl RateLimiter {
     pub fn new(registry_name: String, requests_per_second: u32, burst: u32) -> Self {
         let quota = Quota::per_second(
-            NonZeroU32::new(requests_per_second)
-                .expect("requests_per_second must be > 0")
-        ).allow_burst(
-            NonZeroU32::new(burst)
-                .expect("burst must be > 0")
-        );
-            
+            NonZeroU32::new(requests_per_second).expect("requests_per_second must be > 0"),
+        )
+        .allow_burst(NonZeroU32::new(burst).expect("burst must be > 0"));
+
         Self {
             inner: Arc::new(GovernorLimiter::direct(quota)),
             jitter: Jitter::up_to(Duration::from_millis(100)),
@@ -70,7 +69,7 @@ impl RateLimiter {
         let mut lock = self.backoff_until.write().await;
         let now = Instant::now();
         let new_until = now + duration;
-        
+
         // Only extend if new time is further in future
         if let Some(current) = *lock {
             if new_until > current {

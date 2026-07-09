@@ -3,22 +3,22 @@
 //! This crate contains Rust structs generated from our .proto files.
 //! The actual generation happens in build.rs
 
-pub mod package;
 pub mod analysis;
-pub mod tenant;
-pub mod vulnerability;
-pub mod sbom;
-pub mod scorecard;
-pub mod license;
-pub mod vex;
-pub mod provenance;
-pub mod policy;
 pub mod audit;
 pub mod generated;
+pub mod license;
+pub mod package;
+pub mod policy;
+pub mod provenance;
+pub mod sbom;
+pub mod scorecard;
+pub mod tenant;
+pub mod vex;
+pub mod vulnerability;
 
 // Re-export common types
-pub use package::*;
 pub use analysis::*;
+pub use package::*;
 pub use tenant::*;
 pub use vulnerability::*;
 
@@ -48,7 +48,7 @@ impl Ecosystem {
             _ => None,
         }
     }
-    
+
     pub fn as_str(&self) -> &'static str {
         match self {
             Ecosystem::Npm => "npm",

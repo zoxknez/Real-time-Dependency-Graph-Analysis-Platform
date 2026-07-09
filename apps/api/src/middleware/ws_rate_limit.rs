@@ -210,8 +210,8 @@ impl WsRateLimiter {
         state.maybe_reset_window(self.config.window_duration);
 
         // Calculate effective limit (with burst)
-        let effective_limit = (self.config.max_messages_per_second as f64 
-            * self.config.burst_multiplier) as usize;
+        let effective_limit =
+            (self.config.max_messages_per_second as f64 * self.config.burst_multiplier) as usize;
 
         if state.message_count >= effective_limit {
             metrics::counter!("ws_rate_limit_message_rejected").increment(1);
@@ -238,7 +238,7 @@ impl WsRateLimiter {
     pub async fn cleanup_stale(&self, max_idle: Duration) {
         let cutoff = Instant::now() - max_idle;
         let mut connections = self.connections.write().await;
-        
+
         let stale_ids: Vec<String> = connections
             .iter()
             .filter(|(_, state)| state.last_activity < cutoff)
@@ -250,7 +250,10 @@ impl WsRateLimiter {
         }
 
         if !stale_ids.is_empty() {
-            debug!(count = stale_ids.len(), "Cleaned up stale WebSocket connections");
+            debug!(
+                count = stale_ids.len(),
+                "Cleaned up stale WebSocket connections"
+            );
         }
     }
 }

@@ -8,12 +8,12 @@
 //! - Payload indexing for efficient filtering
 
 use anyhow::{Context, Result};
-use qdrant_client::qdrant::{
-    CreateCollectionBuilder, Distance, PointStruct, ScalarQuantizationBuilder,
-    SearchPointsBuilder, UpsertPointsBuilder, VectorParamsBuilder, Value,
-    CreateFieldIndexCollectionBuilder, FieldType,
-};
 use qdrant_client::Qdrant;
+use qdrant_client::qdrant::{
+    CreateCollectionBuilder, CreateFieldIndexCollectionBuilder, Distance, FieldType, PointStruct,
+    ScalarQuantizationBuilder, SearchPointsBuilder, UpsertPointsBuilder, Value,
+    VectorParamsBuilder,
+};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -187,13 +187,11 @@ impl VectorWriter {
         for (field, field_type) in indexed_fields {
             if let Err(e) = self
                 .client
-                .create_field_index(
-                    CreateFieldIndexCollectionBuilder::new(
-                        &self.config.collection,
-                        field,
-                        field_type,
-                    )
-                )
+                .create_field_index(CreateFieldIndexCollectionBuilder::new(
+                    &self.config.collection,
+                    field,
+                    field_type,
+                ))
                 .await
             {
                 warn!(field, error = %e, "Failed to create field index (may already exist)");
@@ -221,11 +219,8 @@ impl VectorWriter {
         let qdrant_points: Vec<PointStruct> = points
             .into_iter()
             .map(|p| {
-                let payload: HashMap<String, Value> = p
-                    .payload
-                    .into_iter()
-                    .map(|(k, v)| (k, v.into()))
-                    .collect();
+                let payload: HashMap<String, Value> =
+                    p.payload.into_iter().map(|(k, v)| (k, v.into())).collect();
 
                 PointStruct::new(p.id, p.vector, payload)
             })
@@ -234,7 +229,10 @@ impl VectorWriter {
         let count = qdrant_points.len();
 
         // Acquire semaphore permit
-        let _permit = self.semaphore.acquire().await
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
             .map_err(|_| anyhow::anyhow!("Semaphore closed"))?;
 
         // Retry with exponential backoff
@@ -291,8 +289,7 @@ impl VectorWriter {
 
         self.client
             .delete_points(
-                DeletePointsBuilder::new(&self.config.collection)
-                    .points(points_selector)
+                DeletePointsBuilder::new(&self.config.collection).points(points_selector),
             )
             .await
             .context("Failed to delete vectors")?;
@@ -312,12 +309,8 @@ impl VectorWriter {
     ) -> Result<Vec<SearchResult>> {
         use qdrant_client::qdrant::{Condition, Filter};
 
-        let mut search_builder = SearchPointsBuilder::new(
-            &self.config.collection,
-            vector,
-            top_k,
-        )
-        .with_payload(true);
+        let mut search_builder =
+            SearchPointsBuilder::new(&self.config.collection, vector, top_k).with_payload(true);
 
         // Add filter conditions
         if let Some(filter_map) = filter {
@@ -365,8 +358,16 @@ impl VectorWriter {
             .context("Failed to get collection info")?;
 
         Ok(CollectionStats {
-            points_count: info.result.as_ref().map(|r| r.points_count.unwrap_or(0)).unwrap_or(0),
-            vectors_count: info.result.as_ref().and_then(|r| r.indexed_vectors_count).unwrap_or(0),
+            points_count: info
+                .result
+                .as_ref()
+                .map(|r| r.points_count.unwrap_or(0))
+                .unwrap_or(0),
+            vectors_count: info
+                .result
+                .as_ref()
+                .and_then(|r| r.indexed_vectors_count)
+                .unwrap_or(0),
         })
     }
 
@@ -434,7 +435,10 @@ mod tests {
             vector: vec![0.1, 0.2, 0.3],
             payload: {
                 let mut m = HashMap::new();
-                m.insert("package_id".to_string(), PayloadValue::String("npm:express".to_string()));
+                m.insert(
+                    "package_id".to_string(),
+                    PayloadValue::String("npm:express".to_string()),
+                );
                 m
             },
         };

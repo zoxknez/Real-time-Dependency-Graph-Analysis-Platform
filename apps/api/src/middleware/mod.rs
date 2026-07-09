@@ -21,33 +21,35 @@ pub mod ws_rate_limit;
 
 // Re-exports for convenience - these are available for external use
 #[allow(unused_imports)]
-pub use auth::{jwt_auth_middleware, optional_jwt_middleware, Claims, JwtConfig, JwtState};
+pub use auth::{Claims, JwtConfig, JwtState, jwt_auth_middleware, optional_jwt_middleware};
 #[allow(unused_imports)]
 pub use complexity::{ComplexityCalculator, ComplexityConfig, ComplexityError};
 pub use rate_limit::create_rate_limiter;
 #[allow(unused_imports)]
-pub use rate_limit::{rate_limit_middleware, ApiRateLimiter};
+pub use rate_limit::{ApiRateLimiter, rate_limit_middleware};
 
 // Distributed rate limiting exports
 #[allow(unused_imports)]
 pub use distributed_rate_limit::{
-    distributed_rate_limit_middleware, DistributedRateLimiter, DistributedRateLimiterConfig,
-    RateLimitResult, RateTier,
+    DistributedRateLimiter, DistributedRateLimiterConfig, RateLimitResult, RateTier,
+    distributed_rate_limit_middleware,
 };
 
 // Security middleware exports
 #[allow(unused_imports)]
-pub use audit::{audit_middleware, log_graphql_operation, log_security_event, AuditEventType, AuditLogEntry};
+pub use audit::{
+    AuditEventType, AuditLogEntry, audit_middleware, log_graphql_operation, log_security_event,
+};
 #[allow(unused_imports)]
 pub use security_headers::{SecurityHeadersConfig, SecurityHeadersLayer};
 #[allow(unused_imports)]
 pub use validation::{
-    validate_package_id, validate_version, GraphQLRequest, InputValidator, ValidationConfig,
-    ValidationError,
+    GraphQLRequest, InputValidator, ValidationConfig, ValidationError, validate_package_id,
+    validate_version,
 };
 
 // WebSocket rate limiting exports
 #[allow(unused_imports)]
 pub use ws_rate_limit::{
-    init_ws_rate_limiter, get_ws_rate_limiter, WsRateLimiter, WsRateLimitConfig, ConnectionStats,
+    ConnectionStats, WsRateLimitConfig, WsRateLimiter, get_ws_rate_limiter, init_ws_rate_limiter,
 };

@@ -10,8 +10,8 @@
 
 use anyhow::{Context, Result};
 use ndarray::{Array, Array1, Array2, ArrayView3, Axis, s};
-use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
+use ort::session::builder::GraphOptimizationLevel;
 use ort::value::Value;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -48,11 +48,21 @@ pub struct OnnxModelConfig {
     pub pooling: PoolingStrategy,
 }
 
-fn default_max_length() -> usize { 512 }
-fn default_num_threads() -> usize { 4 }
-fn default_warmup() -> bool { true }
-fn default_optimization_level() -> u8 { 3 }
-fn default_normalize() -> bool { true }
+fn default_max_length() -> usize {
+    512
+}
+fn default_num_threads() -> usize {
+    4
+}
+fn default_warmup() -> bool {
+    true
+}
+fn default_optimization_level() -> u8 {
+    3
+}
+fn default_normalize() -> bool {
+    true
+}
 
 impl Default for OnnxModelConfig {
     fn default() -> Self {
@@ -166,8 +176,13 @@ impl OnnxEmbeddingModel {
         if model.config.warmup {
             info!("Warming up model with sample inference...");
             let start = Instant::now();
-            let _ = model.embed("This is a warmup text for the embedding model.").await?;
-            info!(warmup_time_ms = start.elapsed().as_millis(), "Model warmup complete");
+            let _ = model
+                .embed("This is a warmup text for the embedding model.")
+                .await?;
+            info!(
+                warmup_time_ms = start.elapsed().as_millis(),
+                "Model warmup complete"
+            );
         }
 
         Ok(model)
@@ -203,7 +218,8 @@ impl OnnxEmbeddingModel {
         let start = Instant::now();
 
         // Tokenize with padding and truncation
-        let encodings = self.tokenizer
+        let encodings = self
+            .tokenizer
             .encode_batch(texts.to_vec(), true)
             .map_err(|e| anyhow::anyhow!("Tokenization failed: {}", e))?;
 
@@ -226,9 +242,9 @@ impl OnnxEmbeddingModel {
             let ids = encoding.get_ids();
             let mask = encoding.get_attention_mask();
             let types = encoding.get_type_ids();
-            
+
             let seq_len = ids.len().min(max_len);
-            
+
             for j in 0..seq_len {
                 input_ids[[i, j]] = ids[j] as i64;
                 attention_mask[[i, j]] = mask[j] as i64;
@@ -250,17 +266,19 @@ impl OnnxEmbeddingModel {
         } else if outputs.contains_key("output") {
             "output"
         } else {
-            outputs.keys().next()
+            outputs
+                .keys()
+                .next()
                 .ok_or_else(|| anyhow::anyhow!("No output tensor found"))?
         };
 
-        let (shape, data) = outputs[output_key]
-            .try_extract_tensor::<f32>()?;
+        let (shape, data) = outputs[output_key].try_extract_tensor::<f32>()?;
 
         let last_hidden_state = ArrayView3::from_shape(
             (shape[0] as usize, shape[1] as usize, shape[2] as usize),
-            data
-        ).map_err(|e| anyhow::anyhow!("Failed to create ArrayView: {}", e))?;
+            data,
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to create ArrayView: {}", e))?;
 
         // Apply pooling strategy
         let embeddings = self.apply_pooling(&last_hidden_state, &attention_mask)?;
@@ -271,9 +289,9 @@ impl OnnxEmbeddingModel {
             stats.total_inferences += 1;
             stats.total_tokens_processed += (batch_size * max_len) as u64;
             stats.total_inference_time_ms += start.elapsed().as_millis() as u64;
-            stats.avg_tokens_per_inference = 
+            stats.avg_tokens_per_inference =
                 stats.total_tokens_processed as f64 / stats.total_inferences as f64;
-            stats.avg_inference_time_ms = 
+            stats.avg_inference_time_ms =
                 stats.total_inference_time_ms as f64 / stats.total_inferences as f64;
         }
 
@@ -312,11 +330,7 @@ impl OnnxEmbeddingModel {
                         }
                     }
 
-                    if count > 0.0 {
-                        sum / count
-                    } else {
-                        sum
-                    }
+                    if count > 0.0 { sum / count } else { sum }
                 }
                 PoolingStrategy::Cls => {
                     // Use [CLS] token (first token)
@@ -325,7 +339,7 @@ impl OnnxEmbeddingModel {
                 PoolingStrategy::Max => {
                     // Max pooling
                     let mut max_vec = Array1::<f32>::from_elem(hidden_dim, f32::NEG_INFINITY);
-                    
+
                     for j in 0..seq_len {
                         if attention_mask[[i, j]] == 1 {
                             let token_vec = hidden_states.slice(s![i, j, ..]);
@@ -343,7 +357,7 @@ impl OnnxEmbeddingModel {
                     // Mean of last N tokens (useful for some models)
                     let mut sum = Array1::<f32>::zeros(hidden_dim);
                     let mut count = 0;
-                    
+
                     for j in (0..seq_len).rev() {
                         if attention_mask[[i, j]] == 1 {
                             let token_vec = hidden_states.slice(s![i, j, ..]);
@@ -355,11 +369,7 @@ impl OnnxEmbeddingModel {
                         }
                     }
 
-                    if count > 0 {
-                        sum / count as f32
-                    } else {
-                        sum
-                    }
+                    if count > 0 { sum / count as f32 } else { sum }
                 }
             };
 
@@ -422,11 +432,11 @@ impl ModelRegistry {
     /// Register a model
     pub async fn register(&mut self, name: &str, config: OnnxModelConfig) -> Result<()> {
         let model = OnnxEmbeddingModel::new(config).await?;
-        
+
         if self.models.is_empty() {
             self.default_model = name.to_string();
         }
-        
+
         self.models.insert(name.to_string(), Arc::new(model));
         info!(name, "Model registered");
         Ok(())

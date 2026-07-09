@@ -1,9 +1,12 @@
-use std::sync::{Arc, atomic::{AtomicUsize, AtomicU64, AtomicBool, Ordering}};
-use std::time::{Duration, Instant};
+use anyhow::Result;
 use dashmap::DashMap;
 use reqwest::{Client, Url};
-use anyhow::Result;
-use tracing::{warn};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+};
+use std::time::{Duration, Instant};
+use tracing::warn;
 
 #[derive(Debug, Clone)]
 struct ProxyNode {
@@ -33,18 +36,19 @@ impl ProxyNode {
         self.failures.store(0, Ordering::Relaxed);
         self.is_healthy.store(true, Ordering::Relaxed);
         self.success_count.fetch_add(1, Ordering::Relaxed);
-        self.latency_sum_micros.fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
+        self.latency_sum_micros
+            .fetch_add(latency.as_micros() as u64, Ordering::Relaxed);
     }
 
     fn mark_failure(&self) {
         let fails = self.failures.fetch_add(1, Ordering::Relaxed) + 1;
         self.last_failure.insert((), Instant::now());
-        
+
         // Threshold: 3 consecutive fails
         if fails >= 3 {
-             if self.is_healthy.swap(false, Ordering::Relaxed) {
-                 warn!(proxy=%self.url, "Proxy marked unhealthy due to consecutive failures");
-             }
+            if self.is_healthy.swap(false, Ordering::Relaxed) {
+                warn!(proxy=%self.url, "Proxy marked unhealthy due to consecutive failures");
+            }
         }
     }
 
@@ -52,12 +56,12 @@ impl ProxyNode {
         if self.is_healthy.load(Ordering::Relaxed) {
             return true;
         }
-        
+
         // CB Probe after 5 min
         if let Some(last) = self.last_failure.get(&()) {
-             if last.elapsed() > Duration::from_secs(300) {
-                 return true;
-             }
+            if last.elapsed() > Duration::from_secs(300) {
+                return true;
+            }
         }
         false
     }
@@ -115,25 +119,25 @@ impl ProxyRotator {
 
     pub fn get_client(&self) -> Result<ProxyLease> {
         if self.proxies.is_empty() {
-             return Ok(ProxyLease {
-                 client: self.base_client.clone(),
-                 node: None,
-             });
+            return Ok(ProxyLease {
+                client: self.base_client.clone(),
+                node: None,
+            });
         }
 
         let start_idx = self.cursor.fetch_add(1, Ordering::Relaxed) % self.proxies.len();
-        
+
         for i in 0..self.proxies.len() {
             let idx = (start_idx + i) % self.proxies.len();
             let node = self.proxies[idx].clone();
-            
+
             if node.is_usable() {
                 let client = Client::builder()
-                    .user_agent(&self.user_agent) 
+                    .user_agent(&self.user_agent)
                     .timeout(self.timeout)
                     .proxy(reqwest::Proxy::all(node.url.clone())?)
                     .build()?;
-                    
+
                 return Ok(ProxyLease {
                     client,
                     node: Some(node),

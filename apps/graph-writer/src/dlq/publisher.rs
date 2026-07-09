@@ -11,7 +11,7 @@ use crate::proto_gen::domain::package::v1::IngestionError;
 use crate::proto_gen::shared::event::v1::EventMeta;
 
 /// Dead Letter Queue publisher
-/// 
+///
 /// Publishes failed events to a separate topic for manual investigation
 #[derive(Clone)]
 pub struct DlqPublisher {
@@ -89,23 +89,28 @@ impl DlqPublisher {
         let record = FutureRecord::to(&self.topic)
             .key(&partition_key)
             .payload(&payload)
-            .headers(rdkafka::message::OwnedHeaders::new()
-                .insert(rdkafka::message::Header {
-                    key: "event_type",
-                    value: Some("ingestion.error"),
-                })
-                .insert(rdkafka::message::Header {
-                    key: "content_type",
-                    value: Some("application/x-protobuf"),
-                })
+            .headers(
+                rdkafka::message::OwnedHeaders::new()
+                    .insert(rdkafka::message::Header {
+                        key: "event_type",
+                        value: Some("ingestion.error"),
+                    })
+                    .insert(rdkafka::message::Header {
+                        key: "content_type",
+                        value: Some("application/x-protobuf"),
+                    }),
             );
 
-        match self.producer.send(record, Timeout::After(Duration::from_secs(30))).await {
-            Ok((partition, offset)) => {
+        match self
+            .producer
+            .send(record, Timeout::After(Duration::from_secs(30)))
+            .await
+        {
+            Ok(delivery) => {
                 warn!(
                     event_id = %event_id,
-                    partition,
-                    offset,
+                    partition = delivery.partition,
+                    offset = delivery.offset,
                     "Event sent to DLQ"
                 );
                 metrics::counter!("graph_writer_dlq_published_total").increment(1);
@@ -125,8 +130,6 @@ impl DlqPublisher {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // Integration tests require running Kafka
     // Unit tests can mock the producer
 }

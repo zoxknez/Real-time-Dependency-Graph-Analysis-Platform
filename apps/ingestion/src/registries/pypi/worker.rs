@@ -1,22 +1,30 @@
 //! PyPI Worker - Process raw changes and emit domain events
 //!
-//! Consumes from raw.pypi.journal.v1, fetches metadata, 
+//! Consumes from raw.pypi.journal.v1, fetches metadata,
 //! calculates diff, and emits to domain topics via outbox.
 
-use crate::consumer::EventConsumer;
-use crate::store::outbox::{OutboxRepo, OutboxEvent};
+use super::diff::calculate_diff;
 use super::fetcher::PypiFetcher;
 use super::state::{PypiStateStore, VersionInfo};
-use super::diff::calculate_diff;
 use super::watcher::PypiChangeEntry;
+use crate::consumer::EventConsumer;
+use crate::event_utils;
+use crate::proto_gen;
+use crate::store::outbox::{OutboxEvent, OutboxRepo};
 use anyhow::Result;
-use rdkafka::consumer::{Consumer, CommitMode};
-use rdkafka::Message;
-use sqlx::PgPool;
-use tracing::{info, error, instrument, debug};
 use futures::StreamExt;
+use prost::Message as ProstMessage;
+use prost_types::Timestamp;
+use rdkafka::Message;
+use rdkafka::consumer::{CommitMode, Consumer};
+use sqlx::PgPool;
+use tracing::{debug, error, info, instrument};
 
 const ECOSYSTEM: &str = "pypi";
+const DOMAIN_PACKAGE_UPSERT_TOPIC: &str = "domain.package.upsert.v1";
+const DOMAIN_VERSION_UPSERT_TOPIC: &str = "domain.version.upsert.v1";
+const DOMAIN_VERSION_YANKED_TOPIC: &str = "domain.version.yanked.v1";
+const DOMAIN_PACKAGE_DELETED_TOPIC: &str = "domain.package.deleted.v1";
 
 pub struct PypiWorker {
     consumer: EventConsumer,
@@ -45,10 +53,10 @@ impl PypiWorker {
     #[instrument(skip(self), name = "pypi_worker_loop")]
     pub async fn run(&self) -> Result<()> {
         info!("Starting PyPI Worker...");
-        
+
         // Initialize state table
         self.state_store.init().await?;
-        
+
         let consumer = self.consumer.inner();
         let stream = consumer.stream();
 
@@ -96,7 +104,7 @@ impl PypiWorker {
 
     async fn process_change(&self, change: &PypiChangeEntry) -> Result<()> {
         let package_name = &change.project_name;
-        
+
         debug!(package = %package_name, action = %change.action, "Processing PyPI change");
 
         // Handle removals
@@ -114,7 +122,8 @@ impl PypiWorker {
         };
 
         // Build version list with yank status
-        let new_versions: Vec<VersionInfo> = metadata.releases
+        let new_versions: Vec<VersionInfo> = metadata
+            .releases
             .iter()
             .map(|(version, releases)| {
                 let yanked = releases.iter().any(|r| r.yanked.unwrap_or(false));
@@ -141,7 +150,9 @@ impl PypiWorker {
         let mut tx = self.pool.begin().await?;
 
         // Extract dependencies from latest version
-        let dependencies = metadata.info.requires_dist
+        let dependencies = metadata
+            .info
+            .requires_dist
             .as_ref()
             .map(|deps| PypiFetcher::parse_requires_dist(deps))
             .unwrap_or_default();
@@ -161,6 +172,7 @@ impl PypiWorker {
                 &package_id,
                 package_name,
                 version,
+                &metadata,
                 &dependencies,
             );
             self.outbox_repo.insert(&mut *tx, &event).await?;
@@ -181,8 +193,9 @@ impl PypiWorker {
         // Update state
         let versions_json = serde_json::to_value(&new_versions)?;
         let versions_hash = PypiStateStore::calculate_versions_hash(&new_versions);
-        
-        sqlx::query(r#"
+
+        sqlx::query(
+            r#"
             INSERT INTO pypi_package_state 
                 (package_name, versions_json, versions_hash, last_serial, updated_at)
             VALUES ($1, $2, $3, $4, NOW())
@@ -192,7 +205,8 @@ impl PypiWorker {
                 versions_hash = EXCLUDED.versions_hash,
                 last_serial = EXCLUDED.last_serial,
                 updated_at = NOW()
-        "#)
+        "#,
+        )
         .bind(package_name)
         .bind(&versions_json)
         .bind(&versions_hash)
@@ -214,20 +228,24 @@ impl PypiWorker {
 
     async fn handle_deleted_package(&self, package_name: &str) -> Result<()> {
         let package_id = format!("{}:{}", ECOSYSTEM, package_name);
-        
-        let payload = serde_json::json!({
-            "package_id": package_id,
-            "ecosystem": ECOSYSTEM,
-            "name": package_name,
-        });
-        
+
+        let event_id = event_utils::generate_package_deleted_event_id(ECOSYSTEM, package_name);
+        let event = proto_gen::PackageDeleted {
+            meta: Some(event_meta(&event_id, "pypi-ingestion")),
+            ecosystem: ECOSYSTEM.to_string(),
+            package_name: package_name.to_string(),
+            reason: "registry_removal".to_string(),
+            deleted_at: Some(now_timestamp()),
+            last_version: String::new(),
+        };
+
         let event = OutboxEvent {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            event_type: "domain.package.deleted.v1".to_string(),
-            topic: "domain.package.deleted.v1".to_string(),
+            event_id,
+            event_type: DOMAIN_PACKAGE_DELETED_TOPIC.to_string(),
+            topic: DOMAIN_PACKAGE_DELETED_TOPIC.to_string(),
             partition_key: package_id.clone(),
-            payload: serde_json::to_vec(&payload)?,
-            headers: serde_json::json!({}),
+            payload: event.encode_to_vec(),
+            headers: protobuf_headers(ECOSYSTEM),
         };
 
         self.outbox_repo.insert(&self.pool, &event).await?;
@@ -242,101 +260,213 @@ impl PypiWorker {
         package_id: &str,
         info: &super::fetcher::PypiInfo,
     ) -> OutboxEvent {
-        let payload = serde_json::json!({
-            "package_id": package_id,
-            "ecosystem": ECOSYSTEM,
+        let content_hash = event_utils::hash_json(&serde_json::json!({
             "name": info.name,
-            "description": info.summary,
-            "repository_url": info.home_page,
+            "version": info.version,
+            "summary": info.summary,
+            "home_page": info.home_page,
             "license": info.license,
-        });
-        
+        }));
+        let event_id =
+            event_utils::generate_package_upsert_event_id(ECOSYSTEM, &info.name, &content_hash);
+
+        let event = proto_gen::PackageUpserted {
+            meta: Some(event_meta(&event_id, "pypi-ingestion")),
+            ecosystem: ECOSYSTEM.to_string(),
+            package_name: info.name.clone(),
+            latest_version: info.version.clone(),
+            repository_url: info
+                .project_url
+                .clone()
+                .or_else(|| info.home_page.clone())
+                .unwrap_or_default(),
+            packument_sha256: content_hash,
+            description: info.summary.clone().unwrap_or_default(),
+            homepage: info.home_page.clone().unwrap_or_default(),
+            license: info.license.clone().unwrap_or_default(),
+            maintainers: info
+                .author
+                .clone()
+                .into_iter()
+                .chain(info.author_email.clone())
+                .collect(),
+        };
+
         OutboxEvent {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            event_type: "domain.package.upsert.v1".to_string(),
-            topic: "domain.package.upsert.v1".to_string(),
+            event_id,
+            event_type: DOMAIN_PACKAGE_UPSERT_TOPIC.to_string(),
+            topic: DOMAIN_PACKAGE_UPSERT_TOPIC.to_string(),
             partition_key: package_id.to_string(),
-            payload: serde_json::to_vec(&payload).unwrap_or_default(),
-            headers: serde_json::json!({}),
+            payload: event.encode_to_vec(),
+            headers: protobuf_headers(ECOSYSTEM),
         }
     }
 
     fn create_version_upsert_event(
         &self,
         package_id: &str,
-        _package_name: &str,
+        package_name: &str,
         version: &str,
+        metadata: &super::fetcher::PypiPackageMetadata,
         dependencies: &[super::fetcher::ParsedDependency],
     ) -> OutboxEvent {
         let version_id = format!("{}@{}", package_id, version);
-        
-        let deps: Vec<serde_json::Value> = dependencies
+
+        let release = metadata
+            .releases
+            .get(version)
+            .and_then(|releases| releases.first());
+        let integrity = release
+            .and_then(|release| release.digests.sha256.clone())
+            .unwrap_or_default();
+        let content_hash = if integrity.is_empty() {
+            event_utils::hash_json(&serde_json::json!({
+                "package": package_name,
+                "version": version,
+                "dependencies": dependencies.iter().map(|dep| (&dep.name, &dep.version_req)).collect::<Vec<_>>(),
+            }))
+        } else {
+            integrity.clone()
+        };
+        let event_id = event_utils::generate_version_upsert_event_id(
+            ECOSYSTEM,
+            package_name,
+            version,
+            &content_hash,
+        );
+
+        let deps: Vec<proto_gen::Dependency> = dependencies
             .iter()
             .filter(|d| !d.is_optional)
-            .map(|d| {
-                serde_json::json!({
-                    "package_id": format!("{}:{}", ECOSYSTEM, d.name),
-                    "version_req": d.version_req,
-                })
+            .map(|d| proto_gen::Dependency {
+                name: d.name.clone(),
+                version_range: d.version_req.clone().unwrap_or_else(|| "*".to_string()),
+                is_peer: false,
             })
             .collect();
 
-        let payload = serde_json::json!({
-            "version_id": version_id,
-            "package_id": package_id,
-            "ecosystem": ECOSYSTEM,
-            "version": version,
-            "dependencies": deps,
-            "yanked": false,
-        });
+        let published_at = release
+            .and_then(|release| release.upload_time_iso_8601.as_deref())
+            .and_then(parse_rfc3339_timestamp);
+
+        let event = proto_gen::VersionUpserted {
+            meta: Some(event_meta(&event_id, "pypi-ingestion")),
+            ecosystem: ECOSYSTEM.to_string(),
+            package_name: package_name.to_string(),
+            version: version.to_string(),
+            yanked: false,
+            tarball_url: release
+                .map(|release| release.url.clone())
+                .unwrap_or_default(),
+            integrity,
+            size_bytes: release
+                .map(|release| release.size as i64)
+                .unwrap_or_default(),
+            published_at,
+            dependencies: deps,
+            dev_dependencies: Vec::new(),
+            optional_dependencies: Vec::new(),
+        };
 
         OutboxEvent {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            event_type: "domain.version.upsert.v1".to_string(),
-            topic: "domain.version.upsert.v1".to_string(),
+            event_id,
+            event_type: DOMAIN_VERSION_UPSERT_TOPIC.to_string(),
+            topic: DOMAIN_VERSION_UPSERT_TOPIC.to_string(),
             partition_key: version_id.clone(),
-            payload: serde_json::to_vec(&payload).unwrap_or_default(),
-            headers: serde_json::json!({}),
+            payload: event.encode_to_vec(),
+            headers: protobuf_headers(ECOSYSTEM),
         }
     }
 
     fn create_yanked_event(&self, package_id: &str, version: &str) -> OutboxEvent {
         let version_id = format!("{}@{}", package_id, version);
-        
-        let payload = serde_json::json!({
-            "version_id": version_id,
-            "package_id": package_id,
-            "version": version,
-            "yanked": true,
-        });
+        let package_name = package_id
+            .strip_prefix(&format!("{}:", ECOSYSTEM))
+            .unwrap_or(package_id);
+        let event_id =
+            event_utils::generate_version_yanked_event_id(ECOSYSTEM, package_name, version);
+        let event = proto_gen::VersionYanked {
+            meta: Some(event_meta(&event_id, "pypi-ingestion")),
+            ecosystem: ECOSYSTEM.to_string(),
+            package_name: package_name.to_string(),
+            version: version.to_string(),
+            reason: "pypi_yanked".to_string(),
+            yanked_at: Some(now_timestamp()),
+        };
 
         OutboxEvent {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            event_type: "domain.version.yanked.v1".to_string(),
-            topic: "domain.version.yanked.v1".to_string(),
+            event_id,
+            event_type: DOMAIN_VERSION_YANKED_TOPIC.to_string(),
+            topic: DOMAIN_VERSION_YANKED_TOPIC.to_string(),
             partition_key: version_id.clone(),
-            payload: serde_json::to_vec(&payload).unwrap_or_default(),
-            headers: serde_json::json!({}),
+            payload: event.encode_to_vec(),
+            headers: protobuf_headers(ECOSYSTEM),
         }
     }
 
     fn create_unyanked_event(&self, package_id: &str, version: &str) -> OutboxEvent {
         let version_id = format!("{}@{}", package_id, version);
-        
-        let payload = serde_json::json!({
-            "version_id": version_id,
-            "package_id": package_id,
-            "version": version,
-            "yanked": false,
-        });
+        let package_name = package_id
+            .strip_prefix(&format!("{}:", ECOSYSTEM))
+            .unwrap_or(package_id);
+        let event_id = event_utils::generate_version_upsert_event_id(
+            ECOSYSTEM,
+            package_name,
+            version,
+            "unyanked",
+        );
+        let event = proto_gen::VersionUpserted {
+            meta: Some(event_meta(&event_id, "pypi-ingestion")),
+            ecosystem: ECOSYSTEM.to_string(),
+            package_name: package_name.to_string(),
+            version: version.to_string(),
+            yanked: false,
+            tarball_url: String::new(),
+            integrity: String::new(),
+            size_bytes: 0,
+            published_at: None,
+            dependencies: Vec::new(),
+            dev_dependencies: Vec::new(),
+            optional_dependencies: Vec::new(),
+        };
 
         OutboxEvent {
-            event_id: uuid::Uuid::new_v4().to_string(),
-            event_type: "domain.version.upsert.v1".to_string(),
-            topic: "domain.version.upsert.v1".to_string(),
+            event_id,
+            event_type: DOMAIN_VERSION_UPSERT_TOPIC.to_string(),
+            topic: DOMAIN_VERSION_UPSERT_TOPIC.to_string(),
             partition_key: version_id.clone(),
-            payload: serde_json::to_vec(&payload).unwrap_or_default(),
-            headers: serde_json::json!({}),
+            payload: event.encode_to_vec(),
+            headers: protobuf_headers(ECOSYSTEM),
         }
     }
+}
+
+fn protobuf_headers(ecosystem: &str) -> serde_json::Value {
+    serde_json::json!({
+        "ecosystem": ecosystem,
+        "content_type": "application/x-protobuf",
+    })
+}
+
+fn event_meta(event_id: &str, source: &str) -> proto_gen::EventMeta {
+    proto_gen::EventMeta {
+        event_id: event_id.to_string(),
+        source: source.to_string(),
+        traceparent: String::new(),
+        occurred_at: Some(now_timestamp()),
+        schema_version: "v1".to_string(),
+    }
+}
+
+fn now_timestamp() -> Timestamp {
+    Timestamp::from(std::time::SystemTime::now())
+}
+
+fn parse_rfc3339_timestamp(value: &str) -> Option<Timestamp> {
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .map(|dt| Timestamp {
+            seconds: dt.timestamp(),
+            nanos: dt.timestamp_subsec_nanos() as i32,
+        })
 }

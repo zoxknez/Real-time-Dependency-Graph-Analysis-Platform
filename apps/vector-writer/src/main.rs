@@ -14,12 +14,12 @@ mod writer;
 
 use anyhow::{Context, Result};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 use tokio::sync::watch;
 use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::Config;
 use crate::consumer::EventConsumer;
@@ -30,7 +30,9 @@ use crate::writer::{VectorWriter, VectorWriterConfig};
 async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,vector_writer=debug".into()))
+        .with(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,vector_writer=debug".into()),
+        )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
@@ -80,9 +82,11 @@ async fn main() -> Result<()> {
     );
 
     // Initialize DLQ publisher
-    let dlq = DlqPublisher::new(&config.kafka)
-        .context("Failed to create DLQ publisher")?;
-    info!("📥 DLQ publisher initialized for topic: {}", config.kafka.dlq_topic);
+    let dlq = DlqPublisher::new(&config.kafka).context("Failed to create DLQ publisher")?;
+    info!(
+        "📥 DLQ publisher initialized for topic: {}",
+        config.kafka.dlq_topic
+    );
 
     // Initialize Kafka consumer
     let consumer = EventConsumer::new(&config.kafka, writer.clone(), dlq)

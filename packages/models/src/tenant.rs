@@ -13,11 +13,11 @@ pub enum Permission {
     PackageRead,
     PackageWrite,
     PackageDelete,
-    
+
     // Graph operations
     GraphQuery,
     GraphMutate,
-    
+
     // Admin
     TenantAdmin,
     SystemAdmin,
@@ -92,7 +92,7 @@ impl TenantContext {
     pub fn has_permission(&self, permission: Permission) -> bool {
         self.permissions.contains(&permission)
             || self.permissions.contains(&Permission::SystemAdmin)
-            || (self.permissions.contains(&Permission::TenantAdmin) 
+            || (self.permissions.contains(&Permission::TenantAdmin)
                 && !matches!(permission, Permission::SystemAdmin))
     }
 

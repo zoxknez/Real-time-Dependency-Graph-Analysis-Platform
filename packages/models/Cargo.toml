@@ -15,6 +15,5 @@ prost-types.workspace = true
 anyhow.workspace = true
 
 [build-dependencies]
-tonic-build.workspace = true
-prost-build = "0.14"
+prost-build.workspace = true
 protoc-bin-vendored = "3.0"

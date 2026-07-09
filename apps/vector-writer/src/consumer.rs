@@ -5,9 +5,9 @@
 use crate::config::KafkaConfig;
 use crate::writer::{PayloadValue, VectorPoint, VectorWriter};
 use anyhow::{Context, Result};
+use rdkafka::Message;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
-use rdkafka::Message;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -30,7 +30,12 @@ pub enum AnalysisEvent {
 pub struct EmbeddingsEvent {
     pub package_id: String,
     pub version: String,
+    #[serde(default)]
     pub symbols: Vec<SymbolEmbedding>,
+    #[serde(default)]
+    pub symbol_count: Option<usize>,
+    #[serde(default)]
+    pub embedding_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -53,7 +58,11 @@ pub struct EventConsumer {
 impl EventConsumer {
     /// Create new consumer
     #[instrument(skip(config, writer, dlq), fields(brokers = %config.brokers))]
-    pub async fn new(config: &KafkaConfig, writer: Arc<VectorWriter>, dlq: DlqPublisher) -> Result<Self> {
+    pub async fn new(
+        config: &KafkaConfig,
+        writer: Arc<VectorWriter>,
+        dlq: DlqPublisher,
+    ) -> Result<Self> {
         info!("Creating Kafka consumer");
 
         let consumer: StreamConsumer = ClientConfig::new()
@@ -145,8 +154,22 @@ impl EventConsumer {
 
     /// Process embeddings event
     fn process_embeddings_event(&self, event: &EmbeddingsEvent, batch: &mut Vec<VectorPoint>) {
+        if event.symbols.is_empty() {
+            debug!(
+                package_id = %event.package_id,
+                version = %event.version,
+                symbol_count = event.symbol_count.unwrap_or(0),
+                embedding_count = event.embedding_count.unwrap_or(0),
+                "Embedding metadata event contains no vectors to persist"
+            );
+            return;
+        }
+
         for symbol in &event.symbols {
-            let point_id = format!("{}:{}:{}", event.package_id, event.version, symbol.symbol_id);
+            let point_id = format!(
+                "{}:{}:{}",
+                event.package_id, event.version, symbol.symbol_id
+            );
 
             let mut payload = HashMap::new();
             payload.insert(
@@ -164,10 +187,7 @@ impl EventConsumer {
                     "go" => "GO".to_string(),
                     _ => prefix.to_ascii_uppercase(),
                 };
-                payload.insert(
-                    "ecosystem".to_string(),
-                    PayloadValue::String(normalized),
-                );
+                payload.insert("ecosystem".to_string(), PayloadValue::String(normalized));
             }
             payload.insert(
                 "version".to_string(),
@@ -183,7 +203,10 @@ impl EventConsumer {
             );
 
             if let Some(ref doc) = symbol.documentation {
-                payload.insert("documentation".to_string(), PayloadValue::String(doc.clone()));
+                payload.insert(
+                    "documentation".to_string(),
+                    PayloadValue::String(doc.clone()),
+                );
             }
 
             batch.push(VectorPoint {
@@ -203,18 +226,20 @@ impl EventConsumer {
 
         if let Err(e) = self.writer.upsert_batch(points.clone()).await {
             error!(error = %e, "Failed to upsert batch, sending to DLQ");
-            
+
             // Send failed points to DLQ
             for point in points {
-                let package_id = point.payload
+                let package_id = point
+                    .payload
                     .get("package_id")
                     .and_then(|v| match v {
                         PayloadValue::String(s) => Some(s.as_str()),
                         _ => None,
                     })
                     .unwrap_or("unknown");
-                
-                let version = point.payload
+
+                let version = point
+                    .payload
                     .get("version")
                     .and_then(|v| match v {
                         PayloadValue::String(s) => Some(s.as_str()),
@@ -223,18 +248,49 @@ impl EventConsumer {
                     .unwrap_or("unknown");
 
                 let original_payload = serde_json::to_vec(&point).unwrap_or_default();
-                
-                if let Err(dlq_err) = self.dlq.publish(
-                    package_id,
-                    version,
-                    "qdrant_upsert_error",
-                    &e.to_string(),
-                    &original_payload,
-                    1,
-                ).await {
+
+                if let Err(dlq_err) = self
+                    .dlq
+                    .publish(
+                        package_id,
+                        version,
+                        "qdrant_upsert_error",
+                        &e.to_string(),
+                        &original_payload,
+                        1,
+                    )
+                    .await
+                {
                     error!(error = %dlq_err, "Failed to send to DLQ - event lost");
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_embedding_metadata_event_without_vectors() {
+        let payload = r#"{
+            "type":"EmbeddingsGenerated",
+            "package_id":"npm:react",
+            "version":"19.0.0",
+            "symbol_count":42,
+            "embedding_count":42
+        }"#;
+
+        let event: AnalysisEvent = serde_json::from_str(payload).unwrap();
+
+        match event {
+            AnalysisEvent::EmbeddingsGenerated(event) => {
+                assert!(event.symbols.is_empty());
+                assert_eq!(event.symbol_count, Some(42));
+                assert_eq!(event.embedding_count, Some(42));
+            }
+            AnalysisEvent::Other => panic!("expected embeddings event"),
         }
     }
 }

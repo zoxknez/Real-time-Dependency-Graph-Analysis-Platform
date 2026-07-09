@@ -8,16 +8,15 @@
 //! - https://www.apollographql.com/docs/react/data/subscriptions/
 //! - https://github.com/enisdenjo/graphql-ws
 
-use async_graphql::*;
+use anyhow::Result;
+use async_graphql::{OutputType, SimpleObject};
 use futures::stream::{Stream, StreamExt};
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
-
-pub mod package_stream;
-pub mod dependency_stream;
 
 /// Stream configuration
 #[derive(Debug, Clone)]
@@ -69,32 +68,29 @@ where
     Fut: std::future::Future<Output = Result<Vec<T>>> + Send,
 {
     let (tx, rx) = mpsc::channel(config.buffer_size);
-    
+
     tokio::spawn(async move {
         let mut batch_number = 0;
         let mut total_items = 0;
-        
+
         loop {
             // Check if we've reached max items
             if total_items >= config.max_items {
-                debug!(
-                    total_items = total_items,
-                    "Reached max items limit"
-                );
+                debug!(total_items = total_items, "Reached max items limit");
                 break;
             }
-            
+
             // Fetch next batch
             let offset = batch_number * config.batch_size;
             let limit = config.batch_size.min(config.max_items - total_items);
-            
+
             match fetch_fn(offset, limit).await {
                 Ok(items) => {
                     let item_count = items.len();
                     let has_more = item_count == config.batch_size;
-                    
+
                     total_items += item_count;
-                    
+
                     let batch = StreamBatch {
                         items,
                         batch_number,
@@ -102,14 +98,14 @@ where
                         has_more,
                         cursor: Some(format!("batch:{}", batch_number + 1)),
                     };
-                    
+
                     if tx.send(Ok(batch)).await.is_err() {
                         debug!("Stream receiver dropped");
                         break;
                     }
-                    
+
                     batch_number += 1;
-                    
+
                     // Stop if no more items
                     if !has_more {
                         debug!(
@@ -119,21 +115,21 @@ where
                         );
                         break;
                     }
-                    
+
                     // Backpressure delay
                     if config.batch_delay > Duration::ZERO {
                         tokio::time::sleep(config.batch_delay).await;
                     }
                 }
                 Err(e) => {
-                    warn!(error = %e, "Stream fetch error");
+                    warn!(error = ?e, "Stream fetch error");
                     let _ = tx.send(Err(e)).await;
                     break;
                 }
             }
         }
     });
-    
+
     Box::pin(ReceiverStream::new(rx))
 }
 
@@ -155,7 +151,7 @@ impl<T> ProgressStream<T> {
             processed: 0,
         }
     }
-    
+
     pub fn progress(&self) -> f64 {
         if let Some(total) = self.total {
             if total > 0 {
@@ -168,7 +164,7 @@ impl<T> ProgressStream<T> {
 
 impl<T> Stream for ProgressStream<T> {
     type Item = Result<(T, f64)>; // (item, progress_percentage)
-    
+
     fn poll_next(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -179,9 +175,7 @@ impl<T> Stream for ProgressStream<T> {
                 let progress = self.progress();
                 std::task::Poll::Ready(Some(Ok((item, progress))))
             }
-            std::task::Poll::Ready(Some(Err(e))) => {
-                std::task::Poll::Ready(Some(Err(e)))
-            }
+            std::task::Poll::Ready(Some(Err(e))) => std::task::Poll::Ready(Some(Err(e))),
             std::task::Poll::Ready(None) => std::task::Poll::Ready(None),
             std::task::Poll::Pending => std::task::Poll::Pending,
         }
@@ -196,16 +190,17 @@ pub fn buffered_stream<T, F, Fut>(
 ) -> Pin<Box<dyn Stream<Item = Result<T>> + Send>>
 where
     T: Send + 'static,
-    F: Fn(String) -> Fut + Send + 'static,
+    F: Fn(String) -> Fut + Send + Sync + 'static,
     Fut: std::future::Future<Output = Result<T>> + Send + 'static,
 {
+    let fetch_fn = Arc::new(fetch_fn);
     let stream = futures::stream::iter(items)
         .map(move |item| {
-            let fetch_fn = &fetch_fn;
+            let fetch_fn = Arc::clone(&fetch_fn);
             async move { fetch_fn(item).await }
         })
         .buffer_unordered(concurrency);
-    
+
     Box::pin(stream)
 }
 
@@ -221,7 +216,7 @@ where
         tokio::time::sleep(rate).await;
         item
     });
-    
+
     Box::pin(throttled)
 }
 
@@ -237,7 +232,7 @@ where
     Fut: std::future::Future<Output = Result<T>> + Send + 'static,
 {
     let (tx, rx) = mpsc::channel(1);
-    
+
     tokio::spawn(async move {
         for attempt in 0..=max_retries {
             match fetch_fn().await {
@@ -250,19 +245,19 @@ where
                         let _ = tx.send(Err(e)).await;
                         return;
                     }
-                    
+
                     warn!(
                         attempt = attempt + 1,
                         max_retries = max_retries,
                         "Retry attempt failed, retrying..."
                     );
-                    
+
                     tokio::time::sleep(retry_delay * (attempt as u32 + 1)).await;
                 }
             }
         }
     });
-    
+
     Box::pin(ReceiverStream::new(rx))
 }
 
@@ -309,7 +304,7 @@ mod tests {
     #[tokio::test]
     async fn test_buffered_stream() {
         let items = vec!["a".to_string(), "b".to_string(), "c".to_string()];
-        
+
         let fetch_fn = |item: String| async move {
             tokio::time::sleep(Duration::from_millis(10)).await;
             Ok::<_, anyhow::Error>(item.to_uppercase())
@@ -332,12 +327,9 @@ mod tests {
     async fn test_throttled_stream() {
         let items = vec![1, 2, 3];
         let stream = futures::stream::iter(items);
-        
+
         let start = std::time::Instant::now();
-        let mut throttled = throttled_stream(
-            Box::pin(stream),
-            Duration::from_millis(50)
-        );
+        let mut throttled = throttled_stream(Box::pin(stream), Duration::from_millis(50));
 
         let mut count = 0;
         while let Some(_) = throttled.next().await {
@@ -345,7 +337,7 @@ mod tests {
         }
 
         let elapsed = start.elapsed();
-        
+
         assert_eq!(count, 3);
         // Should take at least 150ms (3 items * 50ms)
         assert!(elapsed >= Duration::from_millis(150));
@@ -353,8 +345,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_retry_stream() {
-        use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
         let attempts = Arc::new(AtomicUsize::new(0));
         let attempts_clone = attempts.clone();
@@ -371,11 +363,7 @@ mod tests {
             }
         };
 
-        let mut stream = retry_stream(
-            fetch_fn,
-            3,
-            Duration::from_millis(10)
-        );
+        let mut stream = retry_stream(fetch_fn, 3, Duration::from_millis(10));
 
         if let Some(result) = stream.next().await {
             assert!(result.is_ok());

@@ -5,15 +5,15 @@
 //! - Configurable batch windows
 //! - Per-request deduplication
 
+use async_graphql::ID;
+use async_graphql::dataloader::Loader;
 use std::collections::HashMap;
 use std::sync::Arc;
-use async_graphql::dataloader::Loader;
-use async_graphql::ID;
 use tracing::{debug, instrument};
 use uuid::Uuid;
 
-use crate::graph::{GraphClient, GraphQueries};
 use crate::gql::types::{Ecosystem, Package, Version};
+use crate::graph::{GraphClient, GraphQueries};
 
 // ============================================================================
 // Async-GraphQL DataLoader Implementations
@@ -47,14 +47,19 @@ impl Loader<String> for PackageBatchLoader {
             "DataLoader batch loading packages"
         );
 
-        let tenant_str = self.tenant_id
+        let tenant_str = self
+            .tenant_id
             .map(|t| t.to_string())
             .unwrap_or_else(|| "public".to_string());
 
         let query = GraphQueries::get_packages_batch(&tenant_str, keys);
-        
-        let rows = self.graph.query(query, None).await
-            .map_err(|e| Arc::new(async_graphql::Error::new(format!("DataLoader query failed: {}", e))))?;
+
+        let rows = self.graph.query(query, None).await.map_err(|e| {
+            Arc::new(async_graphql::Error::new(format!(
+                "DataLoader query failed: {}",
+                e
+            )))
+        })?;
 
         let mut map = HashMap::with_capacity(keys.len());
         for row in rows {
@@ -62,9 +67,7 @@ impl Loader<String> for PackageBatchLoader {
             let pkg = Package {
                 id: ID(id.clone()),
                 ecosystem: Ecosystem::from(
-                    row.get::<String>("ecosystem")
-                        .unwrap_or_default()
-                        .as_str(),
+                    row.get::<String>("ecosystem").unwrap_or_default().as_str(),
                 ),
                 name: row.get::<String>("name").unwrap_or_default(),
                 created_at: row.get("created_at").ok(),
@@ -81,7 +84,8 @@ impl Loader<String> for PackageBatchLoader {
 
         // Record metrics
         metrics::counter!("dataloader_batch_requests", "loader" => "package").increment(1);
-        metrics::histogram!("dataloader_batch_size", "loader" => "package").record(keys.len() as f64);
+        metrics::histogram!("dataloader_batch_size", "loader" => "package")
+            .record(keys.len() as f64);
         if !keys.is_empty() {
             metrics::histogram!("dataloader_batch_hit_rate", "loader" => "package")
                 .record(map.len() as f64 / keys.len() as f64);
@@ -119,14 +123,19 @@ impl Loader<String> for VersionBatchLoader {
             "DataLoader batch loading versions"
         );
 
-        let tenant_str = self.tenant_id
+        let tenant_str = self
+            .tenant_id
             .map(|t| t.to_string())
             .unwrap_or_else(|| "public".to_string());
 
         let query = GraphQueries::get_versions_batch(&tenant_str, keys);
-        
-        let rows = self.graph.query(query, None).await
-            .map_err(|e| Arc::new(async_graphql::Error::new(format!("Version DataLoader failed: {}", e))))?;
+
+        let rows = self.graph.query(query, None).await.map_err(|e| {
+            Arc::new(async_graphql::Error::new(format!(
+                "Version DataLoader failed: {}",
+                e
+            )))
+        })?;
 
         let mut map = HashMap::with_capacity(keys.len());
         for row in rows {
@@ -142,7 +151,8 @@ impl Loader<String> for VersionBatchLoader {
         }
 
         metrics::counter!("dataloader_batch_requests", "loader" => "version").increment(1);
-        metrics::histogram!("dataloader_batch_size", "loader" => "version").record(keys.len() as f64);
+        metrics::histogram!("dataloader_batch_size", "loader" => "version")
+            .record(keys.len() as f64);
 
         Ok(map)
     }
@@ -170,27 +180,34 @@ impl Loader<String> for DependenciesLoader {
             return Ok(HashMap::new());
         }
 
-        let tenant_str = self.tenant_id
+        let tenant_str = self
+            .tenant_id
             .map(|t| t.to_string())
             .unwrap_or_else(|| "public".to_string());
 
         let query = GraphQueries::get_dependencies_batch(&tenant_str, keys);
-        
-        let rows = self.graph.query(query, None).await
-            .map_err(|e| Arc::new(async_graphql::Error::new(format!("Dependencies loader failed: {}", e))))?;
+
+        let rows = self.graph.query(query, None).await.map_err(|e| {
+            Arc::new(async_graphql::Error::new(format!(
+                "Dependencies loader failed: {}",
+                e
+            )))
+        })?;
 
         let mut map: HashMap<String, Vec<Package>> = HashMap::with_capacity(keys.len());
-        
+
         for row in rows {
             let source_id: String = row.get("source_id").unwrap_or_default();
             let pkg = Package {
                 id: ID(row.get::<String>("id").unwrap_or_default()),
-                ecosystem: Ecosystem::from(row.get::<String>("ecosystem").unwrap_or_default().as_str()),
+                ecosystem: Ecosystem::from(
+                    row.get::<String>("ecosystem").unwrap_or_default().as_str(),
+                ),
                 name: row.get::<String>("name").unwrap_or_default(),
                 created_at: None,
                 updated_at: None,
             };
-            
+
             map.entry(source_id).or_default().push(pkg);
         }
 
@@ -225,19 +242,15 @@ impl PackageLoader {
     pub async fn load(&self, id: &str, tenant_id: &str) -> Option<Package> {
         let query = GraphQueries::get_package(tenant_id, id);
         match self.graph.query_one(query, None).await {
-            Ok(Some(row)) => {
-                Some(Package {
-                    id: ID(row.get::<String>("id").unwrap_or_default()),
-                    ecosystem: Ecosystem::from(
-                        row.get::<String>("ecosystem")
-                            .unwrap_or_default()
-                            .as_str(),
-                    ),
-                    name: row.get::<String>("name").unwrap_or_default(),
-                    created_at: row.get("created_at").ok(),
-                    updated_at: row.get("updated_at").ok(),
-                })
-            }
+            Ok(Some(row)) => Some(Package {
+                id: ID(row.get::<String>("id").unwrap_or_default()),
+                ecosystem: Ecosystem::from(
+                    row.get::<String>("ecosystem").unwrap_or_default().as_str(),
+                ),
+                name: row.get::<String>("name").unwrap_or_default(),
+                created_at: row.get("created_at").ok(),
+                updated_at: row.get("updated_at").ok(),
+            }),
             Ok(None) => None,
             Err(e) => {
                 tracing::warn!("Failed to load package {}: {}", id, e);
@@ -263,9 +276,7 @@ impl PackageLoader {
                 let pkg = Package {
                     id: ID(id.clone()),
                     ecosystem: Ecosystem::from(
-                        row.get::<String>("ecosystem")
-                            .unwrap_or_default()
-                            .as_str(),
+                        row.get::<String>("ecosystem").unwrap_or_default().as_str(),
                     ),
                     name: row.get::<String>("name").unwrap_or_default(),
                     created_at: row.get("created_at").ok(),

@@ -5,9 +5,9 @@
 //! Uses manual offset commit for at-least-once semantics
 
 use anyhow::{Context, Result};
-use rdkafka::consumer::{CommitMode, Consumer, StreamConsumer};
-use rdkafka::message::{Headers, BorrowedMessage, Message};
 use rdkafka::ClientConfig;
+use rdkafka::consumer::{CommitMode, Consumer, StreamConsumer};
+use rdkafka::message::{BorrowedMessage, Headers, Message};
 use std::sync::Arc;
 use tokio::sync::watch;
 use tracing::{debug, error, info, instrument, warn};
@@ -16,9 +16,10 @@ use crate::config::KafkaConfig;
 use crate::dlq::DlqPublisher;
 use crate::graph::MemgraphClient;
 use crate::handlers::{
-    handle_package_deleted, handle_version_upserted, handle_version_yanked,
-    EVENT_TYPE_PACKAGE_DELETED, EVENT_TYPE_VERSION_UPSERTED, EVENT_TYPE_VERSION_YANKED,
-    EVENT_TYPE_DOMAIN_VERSION_UPSERT, EVENT_TYPE_DOMAIN_PACKAGE_UPSERT,
+    EVENT_TYPE_DOMAIN_PACKAGE_DELETED, EVENT_TYPE_DOMAIN_PACKAGE_UPSERT,
+    EVENT_TYPE_DOMAIN_VERSION_UPSERT, EVENT_TYPE_DOMAIN_VERSION_YANKED, EVENT_TYPE_PACKAGE_DELETED,
+    EVENT_TYPE_VERSION_UPSERTED, EVENT_TYPE_VERSION_YANKED, handle_package_deleted,
+    handle_version_upserted, handle_version_yanked,
 };
 
 /// Event consumer that processes domain package events
@@ -54,9 +55,11 @@ impl EventConsumer {
         // Subscribe to domain events topics (single topic + per-event-type topics)
         // This allows consuming from both the main envelope topic and specific topics
         let topics = [
-            &config.topic as &str,                      // domain.package.events.v1
+            &config.topic as &str, // domain.package.events.v1
             "domain.package.upsert.v1",
             "domain.version.upsert.v1",
+            "domain.version.yanked.v1",
+            "domain.package.deleted.v1",
         ];
         consumer
             .subscribe(&topics)
@@ -125,8 +128,10 @@ impl EventConsumer {
         metrics::counter!("graph_writer_messages_received_total").increment(1);
 
         // Get event type from header
-        let event_type = self.get_header(msg, "event_type")
-            .unwrap_or_default();
+        let event_type = self
+            .get_header(msg, "event_type")
+            .filter(|event_type| !event_type.is_empty())
+            .unwrap_or_else(|| msg.topic().to_string());
 
         // Get payload
         let payload = match msg.payload() {
@@ -147,18 +152,18 @@ impl EventConsumer {
         // Route by event type
         let result = match event_type.as_str() {
             // Original C4-style event types
-            EVENT_TYPE_VERSION_UPSERTED => {
-                handle_version_upserted(&self.memgraph, payload).await
-            }
-            EVENT_TYPE_VERSION_YANKED => {
-                handle_version_yanked(&self.memgraph, payload).await
-            }
-            EVENT_TYPE_PACKAGE_DELETED => {
-                handle_package_deleted(&self.memgraph, payload).await
-            }
+            EVENT_TYPE_VERSION_UPSERTED => handle_version_upserted(&self.memgraph, payload).await,
+            EVENT_TYPE_VERSION_YANKED => handle_version_yanked(&self.memgraph, payload).await,
+            EVENT_TYPE_PACKAGE_DELETED => handle_package_deleted(&self.memgraph, payload).await,
             // PyPI/Cargo topic-style event types (same handlers)
             EVENT_TYPE_DOMAIN_VERSION_UPSERT => {
                 handle_version_upserted(&self.memgraph, payload).await
+            }
+            EVENT_TYPE_DOMAIN_VERSION_YANKED => {
+                handle_version_yanked(&self.memgraph, payload).await
+            }
+            EVENT_TYPE_DOMAIN_PACKAGE_DELETED => {
+                handle_package_deleted(&self.memgraph, payload).await
             }
             EVENT_TYPE_DOMAIN_PACKAGE_UPSERT => {
                 // For package upsert, we create the Package node via version handler
@@ -172,7 +177,8 @@ impl EventConsumer {
                     payload,
                     "unknown_event_type",
                     &format!("Unknown event type: {}", unknown),
-                ).await?;
+                )
+                .await?;
                 // Commit offset even for unknown events (they're in DLQ now)
                 self.commit_offset(msg)?;
                 return Ok(());
@@ -187,11 +193,11 @@ impl EventConsumer {
             Ok(()) => {
                 // SUCCESS: Commit offset only after Memgraph write
                 self.commit_offset(msg)?;
-                
+
                 let elapsed = start.elapsed();
                 metrics::counter!("graph_writer_messages_processed_total", "status" => "success", "event_type" => event_type_label.clone()).increment(1);
                 metrics::histogram!("graph_writer_message_processing_seconds", "event_type" => event_type_label.clone()).record(elapsed.as_secs_f64());
-                
+
                 debug!(
                     event_type = %event_type,
                     elapsed_ms = elapsed.as_millis(),
@@ -205,16 +211,13 @@ impl EventConsumer {
                     event_type = %event_type,
                     "Failed to process event, sending to DLQ"
                 );
-                
-                self.send_to_dlq(
-                    payload,
-                    "processing_error",
-                    &e.to_string(),
-                ).await?;
-                
+
+                self.send_to_dlq(payload, "processing_error", &e.to_string())
+                    .await?;
+
                 // Commit offset after DLQ write (event is handled, just failed)
                 self.commit_offset(msg)?;
-                
+
                 metrics::counter!("graph_writer_messages_processed_total", "status" => "failed", "event_type" => event_type_label).increment(1);
             }
         }
@@ -254,23 +257,25 @@ impl EventConsumer {
     ) -> Result<()> {
         // Try to extract ecosystem/package from payload (best effort)
         let (ecosystem, package_name) = self.extract_identifiers(payload);
-        
-        self.dlq.publish(
-            &ecosystem,
-            &package_name,
-            error_type,
-            error_message,
-            payload,
-            1, // Single attempt before DLQ (can be enhanced with retry logic)
-        ).await
+
+        self.dlq
+            .publish(
+                &ecosystem,
+                &package_name,
+                error_type,
+                error_message,
+                payload,
+                1, // Single attempt before DLQ (can be enhanced with retry logic)
+            )
+            .await
     }
 
     /// Best-effort extraction of ecosystem and package from protobuf payload
     fn extract_identifiers(&self, payload: &[u8]) -> (String, String) {
         // Try to decode as VersionUpserted first (most common)
-        use prost::Message;
         use crate::proto_gen::domain::package::v1::VersionUpserted;
-        
+        use prost::Message;
+
         if let Ok(event) = VersionUpserted::decode(payload) {
             return (event.ecosystem, event.package_name);
         }

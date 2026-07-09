@@ -13,6 +13,7 @@ use neo4rs::Query;
 use std::collections::{HashMap, HashSet};
 use tracing::{debug, info, instrument};
 
+use super::DEFAULT_TENANT_ID;
 use super::MemgraphClient;
 
 // ═══════════════════════════════════════════════════════════════
@@ -79,14 +80,9 @@ impl BatchBuilder {
     }
 
     /// Add a package upsert to the batch
-    pub fn upsert_package(
-        &mut self,
-        ecosystem: &str,
-        name: &str,
-        event_seq: u64,
-    ) {
+    pub fn upsert_package(&mut self, ecosystem: &str, name: &str, event_seq: u64) {
         let id = format!("{}:{}", ecosystem, name);
-        
+
         // Only update if this event is newer
         if let Some(existing) = self.packages.get(&id) {
             if existing.event_seq >= event_seq {
@@ -95,12 +91,15 @@ impl BatchBuilder {
             }
         }
 
-        self.packages.insert(id.clone(), PackageData {
-            id,
-            ecosystem: ecosystem.to_string(),
-            name: name.to_string(),
-            event_seq,
-        });
+        self.packages.insert(
+            id.clone(),
+            PackageData {
+                id,
+                ecosystem: ecosystem.to_string(),
+                name: name.to_string(),
+                event_seq,
+            },
+        );
     }
 
     /// Add a version upsert to the batch
@@ -128,15 +127,18 @@ impl BatchBuilder {
         self.upsert_package(ecosystem, name, event_seq);
 
         // Add version
-        self.versions.insert(version_id.clone(), VersionData {
-            id: version_id.clone(),
-            package_id,
-            ecosystem: ecosystem.to_string(),
-            name: name.to_string(),
-            version: version.to_string(),
-            published_at,
-            event_seq,
-        });
+        self.versions.insert(
+            version_id.clone(),
+            VersionData {
+                id: version_id.clone(),
+                package_id,
+                ecosystem: ecosystem.to_string(),
+                name: name.to_string(),
+                version: version.to_string(),
+                published_at,
+                event_seq,
+            },
+        );
 
         // Add dependencies
         let deps: Vec<DependencyData> = dependencies
@@ -171,7 +173,10 @@ impl BatchBuilder {
 
     /// Get current batch size
     pub fn size(&self) -> usize {
-        self.packages.len() + self.versions.len() + self.yanked_versions.len() + self.deleted_packages.len()
+        self.packages.len()
+            + self.versions.len()
+            + self.yanked_versions.len()
+            + self.deleted_packages.len()
     }
 
     /// Check if batch is ready to flush
@@ -214,7 +219,7 @@ impl BatchBuilder {
         // 2. Batch upsert versions
         if !self.versions.is_empty() {
             let version_list: Vec<_> = self.versions.values().cloned().collect();
-            queries.push(Self::build_version_batch_query(&version_list, now));
+            queries.extend(Self::build_version_queries(&version_list, now));
         }
 
         // 3. Handle dependencies (needs individual queries due to variable deps per version)
@@ -222,9 +227,15 @@ impl BatchBuilder {
             // Delete old deps
             queries.push(
                 neo4rs::query(
-                    "MATCH (v:Version {id: $vid})-[d:DEPENDS_ON]->() DELETE d"
+                    r#"
+                    MATCH (v:Version {id: $vid})-[d:DEPENDS_ON]->()
+                    WHERE v.tenant_id = $tenant_id OR v.tenant_id IS NULL
+                    SET v.tenant_id = coalesce(v.tenant_id, $tenant_id)
+                    DELETE d
+                    "#,
                 )
-                .param("vid", version_id.clone())
+                .param("tenant_id", DEFAULT_TENANT_ID.to_string())
+                .param("vid", version_id.clone()),
             );
 
             // Create new deps
@@ -254,7 +265,8 @@ impl BatchBuilder {
             queries_executed: queries.len(),
         };
 
-        client.execute_transaction(queries)
+        client
+            .execute_transaction(queries)
             .await
             .context("Failed to execute batch transaction")?;
 
@@ -288,14 +300,19 @@ impl BatchBuilder {
             UNWIND $packages AS pkg
             MERGE (p:Package {id: pkg.id})
             ON CREATE SET
+                p.tenant_id = $tenant_id,
                 p.ecosystem = pkg.ecosystem,
                 p.name = pkg.name,
+                p.name_lc = toLower(pkg.name),
                 p.created_at = $now,
                 p.updated_at = $now
             ON MATCH SET
+                p.tenant_id = coalesce(p.tenant_id, $tenant_id),
+                p.name_lc = coalesce(p.name_lc, toLower(pkg.name)),
                 p.updated_at = $now
-            "#
+            "#,
         )
+        .param("tenant_id", DEFAULT_TENANT_ID.to_string())
         .param("packages", package_params)
         .param("now", now)
     }
@@ -309,7 +326,10 @@ impl BatchBuilder {
         let ecosystems: Vec<String> = versions.iter().map(|v| v.ecosystem.clone()).collect();
         let names: Vec<String> = versions.iter().map(|v| v.name.clone()).collect();
         let version_nums: Vec<String> = versions.iter().map(|v| v.version.clone()).collect();
-        let published_ats: Vec<i64> = versions.iter().map(|v| v.published_at.unwrap_or(now)).collect();
+        let published_ats: Vec<i64> = versions
+            .iter()
+            .map(|v| v.published_at.unwrap_or(now))
+            .collect();
 
         // Use multiple MERGE statements for each version (simpler but still batched in one tx)
         // For truly large batches, consider UNWIND with explicit type handling
@@ -318,8 +338,11 @@ impl BatchBuilder {
             let q = neo4rs::query(
                 r#"
                 MATCH (p:Package {id: $package_id})
+                WHERE p.tenant_id = $tenant_id OR p.tenant_id IS NULL
+                SET p.tenant_id = coalesce(p.tenant_id, $tenant_id)
                 MERGE (v:Version {id: $vid})
                 ON CREATE SET
+                    v.tenant_id = $tenant_id,
                     v.package_id = $package_id,
                     v.ecosystem = $ecosystem,
                     v.name = $name,
@@ -329,10 +352,12 @@ impl BatchBuilder {
                     v.created_at = $now,
                     v.updated_at = $now
                 ON MATCH SET
+                    v.tenant_id = coalesce(v.tenant_id, $tenant_id),
                     v.updated_at = $now
                 MERGE (v)-[:BELONGS_TO]->(p)
-                "#
+                "#,
             )
+            .param("tenant_id", DEFAULT_TENANT_ID.to_string())
             .param("vid", version_ids[i].clone())
             .param("package_id", package_ids[i].clone())
             .param("ecosystem", ecosystems[i].clone())
@@ -342,22 +367,28 @@ impl BatchBuilder {
             .param("now", now);
             queries.push(q);
         }
-        
+
         // Return first query if any, caller should handle multiple
         // This is a simplification - for proper batching use build_version_queries
-        queries.into_iter().next().unwrap_or_else(|| {
-            neo4rs::query("RETURN 1").param("now", now)
-        })
+        queries
+            .into_iter()
+            .next()
+            .unwrap_or_else(|| neo4rs::query("RETURN 1").param("now", now))
     }
 
     /// Build individual queries for each version (for batch transaction)
     fn build_version_queries(versions: &[VersionData], now: i64) -> Vec<Query> {
-        versions.iter().map(|v| {
-            neo4rs::query(
-                r#"
+        versions
+            .iter()
+            .map(|v| {
+                neo4rs::query(
+                    r#"
                 MATCH (p:Package {id: $package_id})
+                WHERE p.tenant_id = $tenant_id OR p.tenant_id IS NULL
+                SET p.tenant_id = coalesce(p.tenant_id, $tenant_id)
                 MERGE (v:Version {id: $vid})
                 ON CREATE SET
+                    v.tenant_id = $tenant_id,
                     v.package_id = $package_id,
                     v.ecosystem = $ecosystem,
                     v.name = $name,
@@ -367,31 +398,47 @@ impl BatchBuilder {
                     v.created_at = $now,
                     v.updated_at = $now
                 ON MATCH SET
+                    v.tenant_id = coalesce(v.tenant_id, $tenant_id),
                     v.updated_at = $now
                 MERGE (v)-[:BELONGS_TO]->(p)
-                "#
-            )
-            .param("vid", v.id.clone())
-            .param("package_id", v.package_id.clone())
-            .param("ecosystem", v.ecosystem.clone())
-            .param("name", v.name.clone())
-            .param("version", v.version.clone())
-            .param("published_at", v.published_at.unwrap_or(now))
-            .param("now", now)
-        }).collect()
+                "#,
+                )
+                .param("tenant_id", DEFAULT_TENANT_ID.to_string())
+                .param("vid", v.id.clone())
+                .param("package_id", v.package_id.clone())
+                .param("ecosystem", v.ecosystem.clone())
+                .param("name", v.name.clone())
+                .param("version", v.version.clone())
+                .param("published_at", v.published_at.unwrap_or(now))
+                .param("now", now)
+            })
+            .collect()
     }
 
     /// Build queries for dependencies
-    fn build_dependency_queries(version_id: &str, deps: &[DependencyData], _now: i64) -> Vec<Query> {
+    fn build_dependency_queries(
+        version_id: &str,
+        deps: &[DependencyData],
+        _now: i64,
+    ) -> Vec<Query> {
         deps.iter()
             .map(|dep| {
                 neo4rs::query(
                     r#"
                     MATCH (v:Version {id: $vid})
+                    WHERE v.tenant_id = $tenant_id OR v.tenant_id IS NULL
+                    SET v.tenant_id = coalesce(v.tenant_id, $tenant_id)
+                    MATCH (v)-[:BELONGS_TO]->(srcPkg:Package)
                     MATCH (p:Package {id: $dep_id})
+                    WHERE (srcPkg.tenant_id = $tenant_id OR srcPkg.tenant_id IS NULL)
+                      AND (p.tenant_id = $tenant_id OR p.tenant_id IS NULL)
+                    SET srcPkg.tenant_id = coalesce(srcPkg.tenant_id, $tenant_id),
+                        p.tenant_id = coalesce(p.tenant_id, $tenant_id)
                     CREATE (v)-[:DEPENDS_ON {version_req: $ver_req}]->(p)
-                    "#
+                    MERGE (srcPkg)-[:DEPENDS_ON_PKG]->(p)
+                    "#,
                 )
+                .param("tenant_id", DEFAULT_TENANT_ID.to_string())
                 .param("vid", version_id.to_string())
                 .param("dep_id", dep.dep_package_id.clone())
                 .param("ver_req", dep.version_req.clone())
@@ -405,9 +452,11 @@ impl BatchBuilder {
             r#"
             UNWIND $version_ids AS vid
             MATCH (v:Version {id: vid})
+            WHERE v.tenant_id = $tenant_id OR v.tenant_id IS NULL
             SET v.yanked = true, v.yanked_at = $now, v.updated_at = $now
-            "#
+            "#,
         )
+        .param("tenant_id", DEFAULT_TENANT_ID.to_string())
         .param("version_ids", version_ids.to_vec())
         .param("now", now)
     }
@@ -418,9 +467,11 @@ impl BatchBuilder {
             r#"
             UNWIND $package_ids AS pid
             MATCH (p:Package {id: pid})
+            WHERE p.tenant_id = $tenant_id OR p.tenant_id IS NULL
             SET p.deleted_at = $now, p.updated_at = $now
-            "#
+            "#,
         )
+        .param("tenant_id", DEFAULT_TENANT_ID.to_string())
         .param("package_ids", package_ids.to_vec())
         .param("now", now)
     }
@@ -472,7 +523,10 @@ mod tests {
         batch.upsert_version("npm", "express", "1.0.0", None, vec![], 5);
 
         // Should keep the newer one
-        assert_eq!(batch.versions.get("npm:express:1.0.0").unwrap().event_seq, 10);
+        assert_eq!(
+            batch.versions.get("npm:express:1.0.0").unwrap().event_seq,
+            10
+        );
     }
 
     #[test]
@@ -484,7 +538,11 @@ mod tests {
             "express",
             "1.0.0",
             None,
-            vec![("npm".to_string(), "body-parser".to_string(), "^1.0".to_string())],
+            vec![(
+                "npm".to_string(),
+                "body-parser".to_string(),
+                "^1.0".to_string(),
+            )],
             1,
         );
 

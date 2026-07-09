@@ -11,12 +11,12 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::time::Duration;
-use tracing::{info, error};
+use tracing::{error, info};
 use uuid::Uuid;
 
-use crate::proto_gen::domain::package::v1::{VersionUpserted, Dependency};
+use crate::proto_gen::domain::package::v1::{Dependency, VersionUpserted};
 use crate::proto_gen::shared::event::v1::EventMeta;
-use crate::store::outbox::{OutboxRepo, OutboxEvent};
+use crate::store::outbox::{OutboxEvent, OutboxRepo};
 
 /// Seed configuration
 #[derive(Debug, Clone)]
@@ -71,7 +71,9 @@ impl SeedRunner {
         for crate_name in &config.cargo_crates {
             match self.seed_cargo_crate(crate_name).await {
                 Ok(_) => info!(crate_name = %crate_name, "Cargo crate seeded"),
-                Err(e) => error!(crate_name = %crate_name, error = %e, "Failed to seed Cargo crate"),
+                Err(e) => {
+                    error!(crate_name = %crate_name, error = %e, "Failed to seed Cargo crate")
+                }
             }
         }
 
@@ -94,7 +96,8 @@ impl SeedRunner {
         let data: PypiPackageJson = response.json().await?;
 
         // Extract versions
-        let versions: Vec<PypiVersionInfo> = data.releases
+        let versions: Vec<PypiVersionInfo> = data
+            .releases
             .iter()
             .filter_map(|(version, files)| {
                 if files.is_empty() {
@@ -154,7 +157,8 @@ impl SeedRunner {
 
         // Emit version upsert events for each version using Protobuf
         let deps = data.info.requires_dist.unwrap_or_default();
-        let parsed_deps: Vec<Dependency> = deps.iter()
+        let parsed_deps: Vec<Dependency> = deps
+            .iter()
             .filter_map(|d| parse_pypi_dep_proto(d))
             .collect();
 
@@ -165,7 +169,7 @@ impl SeedRunner {
 
             let event_id = Uuid::new_v4().to_string();
             let version_id = format!("{}@{}", package_id, v.version);
-            
+
             // Create protobuf VersionUpserted event
             let event_meta = EventMeta {
                 event_id: event_id.clone(),
@@ -192,10 +196,10 @@ impl SeedRunner {
 
             let version_event = OutboxEvent {
                 event_id,
-                event_type: "version.upserted".to_string(),  // Match graph-writer expected format
+                event_type: "version.upserted".to_string(), // Match graph-writer expected format
                 topic: "domain.version.upsert.v1".to_string(),
                 partition_key: version_id.clone(),
-                payload: proto_event.encode_to_vec(),  // Protobuf binary
+                payload: proto_event.encode_to_vec(), // Protobuf binary
                 headers: serde_json::json!({
                     "ecosystem": "pypi",
                     "content_type": "application/x-protobuf"
@@ -224,7 +228,8 @@ impl SeedRunner {
         let path = cargo_index_path(crate_name);
         let url = format!("https://index.crates.io/{}", path);
 
-        let response = self.client
+        let response = self
+            .client
             .get(&url)
             .header("Accept", "text/plain")
             .send()
@@ -234,12 +239,14 @@ impl SeedRunner {
             anyhow::bail!("Cargo index returned status {}", response.status());
         }
 
-        let etag = response.headers()
+        let etag = response
+            .headers()
             .get("ETag")
             .and_then(|v| v.to_str().ok())
             .map(String::from);
 
-        let last_modified = response.headers()
+        let last_modified = response
+            .headers()
             .get("Last-Modified")
             .and_then(|v| v.to_str().ok())
             .map(String::from);
@@ -262,7 +269,8 @@ impl SeedRunner {
             anyhow::bail!("No versions found for crate {}", crate_name);
         }
 
-        let latest = versions.iter()
+        let latest = versions
+            .iter()
             .filter(|v| !v.yanked)
             .max_by(|a, b| compare_semver(&a.version, &b.version))
             .map(|v| v.version.clone());
@@ -321,14 +329,18 @@ impl SeedRunner {
 
             let event_id = Uuid::new_v4().to_string();
             let version_id = format!("{}@{}", package_id, v.version);
-            
+
             // Parse deps for this version to protobuf format
-            let deps: Vec<Dependency> = v.deps.iter()
+            let deps: Vec<Dependency> = v
+                .deps
+                .iter()
                 .filter(|d| d.kind.as_deref().unwrap_or("normal") == "normal")
                 .map(|d| parse_cargo_dep_proto(&d.name, &d.req))
                 .collect();
 
-            let dev_deps: Vec<Dependency> = v.deps.iter()
+            let dev_deps: Vec<Dependency> = v
+                .deps
+                .iter()
                 .filter(|d| d.kind.as_deref() == Some("dev"))
                 .map(|d| parse_cargo_dep_proto(&d.name, &d.req))
                 .collect();
@@ -359,10 +371,10 @@ impl SeedRunner {
 
             let version_event = OutboxEvent {
                 event_id,
-                event_type: "version.upserted".to_string(),  // Match graph-writer expected format
+                event_type: "version.upserted".to_string(), // Match graph-writer expected format
                 topic: "domain.version.upsert.v1".to_string(),
                 partition_key: version_id.clone(),
-                payload: proto_event.encode_to_vec(),  // Protobuf binary
+                payload: proto_event.encode_to_vec(), // Protobuf binary
                 headers: serde_json::json!({
                     "ecosystem": "cargo",
                     "content_type": "application/x-protobuf"
@@ -491,7 +503,7 @@ fn parse_pypi_dep(spec: &str) -> Option<serde_json::Value> {
     // Simple PEP 508 parsing
     let spec = spec.trim();
     let (main, _marker) = spec.split_once(';').unwrap_or((spec, ""));
-    
+
     let (name, version_req) = if let Some(idx) = main.find(|c: char| "(<>=!~[".contains(c)) {
         let n = main[..idx].trim();
         let v = main[idx..].trim().trim_matches(|c| c == '(' || c == ')');
@@ -516,7 +528,7 @@ fn parse_pypi_dep_proto(spec: &str) -> Option<Dependency> {
     // Simple PEP 508 parsing
     let spec = spec.trim();
     let (main, _marker) = spec.split_once(';').unwrap_or((spec, ""));
-    
+
     let (name, version_req) = if let Some(idx) = main.find(|c: char| "(<>=!~[".contains(c)) {
         let n = main[..idx].trim();
         let v = main[idx..].trim().trim_matches(|c| c == '(' || c == ')');
@@ -563,7 +575,7 @@ mod tests {
     fn test_parse_pypi_dep() {
         let dep = parse_pypi_dep("requests>=2.0.0").unwrap();
         assert_eq!(dep["package_id"], "pypi:requests");
-        
+
         let dep2 = parse_pypi_dep("urllib3").unwrap();
         assert_eq!(dep2["package_id"], "pypi:urllib3");
     }

@@ -5,7 +5,7 @@
 
 use std::time::Instant;
 
-pub use metrics::{counter, gauge, histogram, Counter, Gauge, Histogram};
+pub use metrics::{Counter, Gauge, Histogram, counter, gauge, histogram};
 pub use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
 
 /// Common metric prefixes for each service
@@ -25,30 +25,30 @@ pub mod names {
     pub const MESSAGES_PROCESSED: &str = "messages_processed_total";
     pub const MESSAGES_FAILED: &str = "messages_failed_total";
     pub const MESSAGE_PROCESSING_DURATION: &str = "message_processing_duration_seconds";
-    
+
     // Kafka metrics
     pub const KAFKA_CONSUMER_LAG: &str = "kafka_consumer_lag";
     pub const KAFKA_MESSAGES_SENT: &str = "kafka_messages_sent_total";
     pub const KAFKA_SEND_ERRORS: &str = "kafka_send_errors_total";
-    
+
     // Database metrics
     pub const DB_OPERATIONS: &str = "db_operations_total";
     pub const DB_OPERATION_DURATION: &str = "db_operation_duration_seconds";
     pub const DB_ERRORS: &str = "db_errors_total";
     pub const DB_CONNECTIONS: &str = "db_connections";
-    
+
     // Registry/crawler metrics
     pub const REGISTRY_REQUESTS: &str = "registry_requests_total";
     pub const REGISTRY_REQUEST_DURATION: &str = "registry_request_duration_seconds";
     pub const REGISTRY_ERRORS: &str = "registry_errors_total";
     pub const REGISTRY_RATE_LIMITED: &str = "registry_rate_limited_total";
-    
+
     // Analysis metrics
     pub const PACKAGES_ANALYZED: &str = "packages_analyzed_total";
     pub const ANALYSIS_DURATION: &str = "analysis_duration_seconds";
     pub const VECTORS_GENERATED: &str = "vectors_generated_total";
     pub const BREAKING_CHANGES_DETECTED: &str = "breaking_changes_detected_total";
-    
+
     // Graph metrics
     pub const NODES_CREATED: &str = "nodes_created_total";
     pub const EDGES_CREATED: &str = "edges_created_total";
@@ -106,14 +106,14 @@ pub fn init_metrics_with_config(config: MetricsConfig) -> PrometheusHandle {
             &[0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0],
         )
         .expect("Failed to set analysis buckets");
-    
+
     // Apply custom buckets
     for (metric, buckets) in config.custom_buckets {
         builder = builder
             .set_buckets_for_metric(Matcher::Full(metric), &buckets)
             .expect("Failed to set custom buckets");
     }
-    
+
     builder
         .install_recorder()
         .expect("Failed to install metrics recorder")
@@ -159,7 +159,8 @@ pub fn record_message_received(service: &str, topic: &str) {
             ("service", service.to_string()),
             ("topic", topic.to_string())
         ]
-    ).increment(1);
+    )
+    .increment(1);
 }
 
 /// Record a message processed
@@ -169,14 +170,15 @@ pub fn record_message_processed(service: &str, topic: &str, success: bool) {
     } else {
         names::MESSAGES_FAILED
     };
-    
+
     counter!(
         metric,
         &[
             ("service", service.to_string()),
             ("topic", topic.to_string())
         ]
-    ).increment(1);
+    )
+    .increment(1);
 }
 
 /// Record message processing duration
@@ -187,7 +189,8 @@ pub fn record_message_duration(service: &str, topic: &str, duration_secs: f64) {
             ("service", service.to_string()),
             ("topic", topic.to_string())
         ]
-    ).record(duration_secs);
+    )
+    .record(duration_secs);
 }
 
 /// Record a database operation
@@ -199,16 +202,18 @@ pub fn record_db_operation(database: &str, operation: &str, duration_secs: f64, 
             ("operation", operation.to_string()),
             ("success", success.to_string())
         ]
-    ).increment(1);
-    
+    )
+    .increment(1);
+
     histogram!(
         names::DB_OPERATION_DURATION,
         &[
             ("database", database.to_string()),
             ("operation", operation.to_string())
         ]
-    ).record(duration_secs);
-    
+    )
+    .record(duration_secs);
+
     if !success {
         counter!(
             names::DB_ERRORS,
@@ -216,7 +221,8 @@ pub fn record_db_operation(database: &str, operation: &str, duration_secs: f64, 
                 ("database", database.to_string()),
                 ("operation", operation.to_string())
             ]
-        ).increment(1);
+        )
+        .increment(1);
     }
 }
 
@@ -229,7 +235,8 @@ pub fn set_consumer_lag(service: &str, topic: &str, partition: i32, lag: i64) {
             ("topic", topic.to_string()),
             ("partition", partition.to_string())
         ]
-    ).set(lag as f64);
+    )
+    .set(lag as f64);
 }
 
 /// Record registry request
@@ -241,21 +248,24 @@ pub fn record_registry_request(registry: &str, endpoint: &str, status: u16, dura
             ("endpoint", endpoint.to_string()),
             ("status", status.to_string())
         ]
-    ).increment(1);
-    
+    )
+    .increment(1);
+
     histogram!(
         names::REGISTRY_REQUEST_DURATION,
         &[
             ("registry", registry.to_string()),
             ("endpoint", endpoint.to_string())
         ]
-    ).record(duration_secs);
-    
+    )
+    .record(duration_secs);
+
     if status == 429 {
         counter!(
             names::REGISTRY_RATE_LIMITED,
             &[("registry", registry.to_string())]
-        ).increment(1);
+        )
+        .increment(1);
     } else if status >= 400 {
         counter!(
             names::REGISTRY_ERRORS,
@@ -263,7 +273,8 @@ pub fn record_registry_request(registry: &str, endpoint: &str, status: u16, dura
                 ("registry", registry.to_string()),
                 ("status", status.to_string())
             ]
-        ).increment(1);
+        )
+        .increment(1);
     }
 }
 
@@ -275,7 +286,7 @@ pub fn render_metrics(handle: &PrometheusHandle) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_timing_guard() {
         // Just ensure it compiles and works

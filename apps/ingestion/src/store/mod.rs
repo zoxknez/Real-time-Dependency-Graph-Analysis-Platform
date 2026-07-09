@@ -1,7 +1,6 @@
 pub mod checkpoints;
-pub mod poison;
 pub mod outbox;
+pub mod poison;
 
 pub use checkpoints::PostgresCheckpointStore;
 pub use outbox::*;
-

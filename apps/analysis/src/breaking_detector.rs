@@ -8,7 +8,9 @@
 //!
 //! Implements semantic versioning analysis with confidence scoring.
 
-use crate::ast_parser::{ExtractedSymbol, ParameterInfo, PublicApiSnapshot, SymbolKind, Visibility};
+use crate::ast_parser::{
+    ExtractedSymbol, ParameterInfo, PublicApiSnapshot, SymbolKind, Visibility,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use tracing::{debug, info, instrument};
@@ -186,9 +188,10 @@ impl BreakingDetector {
         let removed_paths: Vec<&str> = old_paths.difference(&new_paths).copied().collect();
         for path in &removed_paths {
             let old_sym = old_by_path[path];
-            
+
             // Check if it was renamed
-            if let Some((new_path, similarity)) = self.find_potential_rename(old_sym, &new_by_path) {
+            if let Some((new_path, similarity)) = self.find_potential_rename(old_sym, &new_by_path)
+            {
                 let new_sym = new_by_path[new_path];
                 changes.push(
                     BreakingChange::new(
@@ -244,8 +247,14 @@ impl BreakingDetector {
         }
 
         // 3. Log summary
-        let breaking_count = changes.iter().filter(|c| c.severity == SeverityLevel::Breaking).count();
-        let warning_count = changes.iter().filter(|c| c.severity == SeverityLevel::Warning).count();
+        let breaking_count = changes
+            .iter()
+            .filter(|c| c.severity == SeverityLevel::Breaking)
+            .count();
+        let warning_count = changes
+            .iter()
+            .filter(|c| c.severity == SeverityLevel::Warning)
+            .count();
 
         info!(
             total = changes.len(),
@@ -293,7 +302,7 @@ impl BreakingDetector {
 
         // Check parameter changes
         let param_changes = self.compare_parameters(&old.parameters, &new.parameters);
-        
+
         for change in param_changes {
             match change {
                 ParamChange::Added(param) => {
@@ -314,7 +323,11 @@ impl BreakingDetector {
                         Some(new.raw_signature.clone()),
                         format!(
                             "New {} parameter '{}' added to {}",
-                            if param.is_optional { "optional" } else { "required" },
+                            if param.is_optional {
+                                "optional"
+                            } else {
+                                "required"
+                            },
                             param.name,
                             old.name
                         ),
@@ -402,15 +415,11 @@ impl BreakingDetector {
     ) -> Vec<ParamChange> {
         let mut changes = Vec::new();
 
-        let old_by_name: HashMap<&str, &ParameterInfo> = old_params
-            .iter()
-            .map(|p| (p.name.as_str(), p))
-            .collect();
+        let old_by_name: HashMap<&str, &ParameterInfo> =
+            old_params.iter().map(|p| (p.name.as_str(), p)).collect();
 
-        let new_by_name: HashMap<&str, &ParameterInfo> = new_params
-            .iter()
-            .map(|p| (p.name.as_str(), p))
-            .collect();
+        let new_by_name: HashMap<&str, &ParameterInfo> =
+            new_params.iter().map(|p| (p.name.as_str(), p)).collect();
 
         // Check for removed parameters
         for (name, old_param) in &old_by_name {
@@ -442,7 +451,7 @@ impl BreakingDetector {
     /// Check if return type change is compatible (e.g., narrowing)
     fn is_return_type_compatible(&self, old: &Option<String>, new: &Option<String>) -> bool {
         match (old, new) {
-            (None, Some(_)) => true,      // Adding return type is usually safe
+            (None, Some(_)) => true, // Adding return type is usually safe
             (Some(o), Some(n)) if o == n => true,
             _ => false,
         }
@@ -520,7 +529,11 @@ impl BreakingDetector {
 
         for i in 1..=a_len {
             for j in 1..=b_len {
-                let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+                let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                    0
+                } else {
+                    1
+                };
                 matrix[i][j] = (matrix[i - 1][j] + 1)
                     .min(matrix[i][j - 1] + 1)
                     .min(matrix[i - 1][j - 1] + cost);
@@ -590,14 +603,18 @@ mod tests {
     fn test_detect_removed_symbol() {
         let detector = BreakingDetector::new();
 
-        let old = make_snapshot("1.0.0", vec![
-            make_symbol("foo", "fn foo()", Visibility::Public),
-            make_symbol("bar", "fn bar()", Visibility::Public),
-        ]);
+        let old = make_snapshot(
+            "1.0.0",
+            vec![
+                make_symbol("foo", "fn foo()", Visibility::Public),
+                make_symbol("bar", "fn bar()", Visibility::Public),
+            ],
+        );
 
-        let new = make_snapshot("2.0.0", vec![
-            make_symbol("foo", "fn foo()", Visibility::Public),
-        ]);
+        let new = make_snapshot(
+            "2.0.0",
+            vec![make_symbol("foo", "fn foo()", Visibility::Public)],
+        );
 
         let changes = detector.detect_breaking_changes(&old, &new);
 
@@ -611,9 +628,10 @@ mod tests {
     fn test_detect_visibility_reduction() {
         let detector = BreakingDetector::new();
 
-        let old = make_snapshot("1.0.0", vec![
-            make_symbol("foo", "fn foo()", Visibility::Public),
-        ]);
+        let old = make_snapshot(
+            "1.0.0",
+            vec![make_symbol("foo", "fn foo()", Visibility::Public)],
+        );
 
         let mut new_sym = make_symbol("foo", "fn foo()", Visibility::Private);
         new_sym.is_exported = false;
@@ -664,7 +682,11 @@ mod tests {
         let changes = detector.detect_breaking_changes(&old, &new);
 
         assert!(!changes.is_empty());
-        assert!(changes.iter().any(|c| c.change_type == BreakingChangeType::RequiredParameterAdded));
+        assert!(
+            changes
+                .iter()
+                .any(|c| c.change_type == BreakingChangeType::RequiredParameterAdded)
+        );
     }
 
     #[test]

@@ -7,7 +7,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{postgres::PgPoolOptions, PgPool, Row};
+use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
@@ -73,22 +73,22 @@ impl RisingWaveSource {
     /// Create new RisingWave source
     pub async fn new(config: RisingWaveConfig) -> Result<Self> {
         info!(url = %config.url, pool_size = %config.pool_size, "Connecting to RisingWave");
-        
+
         let pool = PgPoolOptions::new()
             .max_connections(config.pool_size)
             .acquire_timeout(Duration::from_secs(10))
             .connect(&config.url)
             .await
             .context("Failed to connect to RisingWave")?;
-        
+
         // Verify connection
         sqlx::query("SELECT 1")
             .fetch_one(&pool)
             .await
             .context("RisingWave connection test failed")?;
-        
+
         info!("✅ Connected to RisingWave");
-        
+
         Ok(Self {
             pool,
             config,
@@ -97,14 +97,14 @@ impl RisingWaveSource {
             last_embedding_sync: DateTime::<Utc>::MIN_UTC,
         })
     }
-    
+
     /// Start streaming changes to the given channel
     pub async fn start_streaming(&mut self, tx: mpsc::Sender<SyncEvent>) -> Result<()> {
         info!(
             poll_interval_ms = %self.config.poll_interval_ms,
             "Starting RisingWave change stream"
         );
-        
+
         loop {
             // Fetch packages updated since last sync
             let packages = self.fetch_updated_packages().await?;
@@ -118,7 +118,7 @@ impl RisingWaveSource {
                     }
                 }
             }
-            
+
             // Fetch dependencies updated since last sync
             let dependencies = self.fetch_updated_dependencies().await?;
             let deps_count = dependencies.len();
@@ -131,7 +131,7 @@ impl RisingWaveSource {
                     }
                 }
             }
-            
+
             // Fetch embeddings updated since last sync
             let embeddings = self.fetch_updated_embeddings().await?;
             let emb_count = embeddings.len();
@@ -144,20 +144,20 @@ impl RisingWaveSource {
                     }
                 }
             }
-            
+
             let total = packages_count + deps_count + emb_count;
             if total > 0 {
                 let _ = tx.send(SyncEvent::BatchComplete { count: total }).await;
             }
-            
+
             // Wait before next poll
             tokio::time::sleep(Duration::from_millis(self.config.poll_interval_ms)).await;
         }
     }
-    
+
     /// Fetch packages updated since last sync
     async fn fetch_updated_packages(&mut self) -> Result<Vec<PackageRecord>> {
-        let rows = sqlx::query(
+        let rows = match sqlx::query(
             r#"
             SELECT 
                 id, name, ecosystem, version,
@@ -167,17 +167,25 @@ impl RisingWaveSource {
             WHERE updated_at > $1
             ORDER BY updated_at ASC
             LIMIT 1000
-            "#
+            "#,
         )
         .bind(self.last_package_sync)
         .fetch_all(&self.pool)
-        .await?;
-        
+        .await
+        {
+            Ok(rows) => rows,
+            Err(err) if is_missing_relation_error(&err) => {
+                debug!(view = "mv_packages_latest", error = %err, "RisingWave view not available yet");
+                return Ok(Vec::new());
+            }
+            Err(err) => return Err(err.into()),
+        };
+
         let mut packages = Vec::with_capacity(rows.len());
-        
+
         for row in rows {
             let updated_at: DateTime<Utc> = row.get("updated_at");
-            
+
             packages.push(PackageRecord {
                 id: row.get("id"),
                 name: row.get("name"),
@@ -189,20 +197,20 @@ impl RisingWaveSource {
                 license: row.get("license"),
                 updated_at,
             });
-            
+
             // Track latest sync point
             if updated_at > self.last_package_sync {
                 self.last_package_sync = updated_at;
             }
         }
-        
+
         debug!(count = packages.len(), last_sync = %self.last_package_sync, "Fetched packages");
         Ok(packages)
     }
-    
+
     /// Fetch dependencies updated since last sync
     async fn fetch_updated_dependencies(&mut self) -> Result<Vec<DependencyRecord>> {
-        let rows = sqlx::query(
+        let rows = match sqlx::query(
             r#"
             SELECT 
                 from_package_id, to_package_id, 
@@ -212,17 +220,25 @@ impl RisingWaveSource {
             WHERE updated_at > $1
             ORDER BY updated_at ASC
             LIMIT 1000
-            "#
+            "#,
         )
         .bind(self.last_dependency_sync)
         .fetch_all(&self.pool)
-        .await?;
-        
+        .await
+        {
+            Ok(rows) => rows,
+            Err(err) if is_missing_relation_error(&err) => {
+                debug!(view = "mv_dependencies_latest", error = %err, "RisingWave view not available yet");
+                return Ok(Vec::new());
+            }
+            Err(err) => return Err(err.into()),
+        };
+
         let mut dependencies = Vec::with_capacity(rows.len());
-        
+
         for row in rows {
             let updated_at: DateTime<Utc> = row.get("updated_at");
-            
+
             dependencies.push(DependencyRecord {
                 from_package_id: row.get("from_package_id"),
                 to_package_id: row.get("to_package_id"),
@@ -230,19 +246,19 @@ impl RisingWaveSource {
                 dependency_type: row.get("dependency_type"),
                 updated_at,
             });
-            
+
             if updated_at > self.last_dependency_sync {
                 self.last_dependency_sync = updated_at;
             }
         }
-        
+
         debug!(count = dependencies.len(), "Fetched dependencies");
         Ok(dependencies)
     }
-    
+
     /// Fetch embeddings updated since last sync
     async fn fetch_updated_embeddings(&mut self) -> Result<Vec<EmbeddingRecord>> {
-        let rows = sqlx::query(
+        let rows = match sqlx::query(
             r#"
             SELECT 
                 package_id, embedding, model, updated_at
@@ -250,40 +266,48 @@ impl RisingWaveSource {
             WHERE updated_at > $1
             ORDER BY updated_at ASC
             LIMIT 1000
-            "#
+            "#,
         )
         .bind(self.last_embedding_sync)
         .fetch_all(&self.pool)
-        .await?;
-        
+        .await
+        {
+            Ok(rows) => rows,
+            Err(err) if is_missing_relation_error(&err) => {
+                debug!(view = "mv_embeddings_latest", error = %err, "RisingWave view not available yet");
+                return Ok(Vec::new());
+            }
+            Err(err) => return Err(err.into()),
+        };
+
         let mut embeddings = Vec::with_capacity(rows.len());
-        
+
         for row in rows {
             let updated_at: DateTime<Utc> = row.get("updated_at");
             let embedding_bytes: Vec<u8> = row.get("embedding");
-            
+
             // Decode embedding from bytes (assuming f32 little-endian)
             let embedding: Vec<f32> = embedding_bytes
                 .chunks_exact(4)
                 .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
                 .collect();
-            
+
             embeddings.push(EmbeddingRecord {
                 package_id: row.get("package_id"),
                 embedding,
                 model: row.get("model"),
                 updated_at,
             });
-            
+
             if updated_at > self.last_embedding_sync {
                 self.last_embedding_sync = updated_at;
             }
         }
-        
+
         debug!(count = embeddings.len(), "Fetched embeddings");
         Ok(embeddings)
     }
-    
+
     /// Get current sync positions (for metrics/debugging)
     #[allow(dead_code)]
     pub fn sync_positions(&self) -> (DateTime<Utc>, DateTime<Utc>, DateTime<Utc>) {
@@ -293,7 +317,7 @@ impl RisingWaveSource {
             self.last_embedding_sync,
         )
     }
-    
+
     /// Health check
     #[allow(dead_code)]
     pub async fn health_check(&self) -> Result<bool> {
@@ -305,10 +329,15 @@ impl RisingWaveSource {
     }
 }
 
+fn is_missing_relation_error(error: &sqlx::Error) -> bool {
+    let message = error.to_string();
+    message.contains("table or source not found") || message.contains("does not exist")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_package_record_serialization() {
         let pkg = PackageRecord {
@@ -322,7 +351,7 @@ mod tests {
             license: Some("MIT".to_string()),
             updated_at: Utc::now(),
         };
-        
+
         let json = serde_json::to_string(&pkg).unwrap();
         assert!(json.contains("lodash"));
     }

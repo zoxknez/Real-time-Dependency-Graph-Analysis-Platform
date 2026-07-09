@@ -11,62 +11,50 @@
 
 mod cache;
 mod config;
+mod embeddings;
 mod gql;
 mod graph;
 mod handlers;
-mod embeddings;
 mod kafka;
 mod metrics;
 mod middleware;
+mod proto_gen;
 mod services;
 
 use anyhow::Result;
 use async_graphql::http::GraphiQLSource;
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLProtocol, GraphQLWebSocket};
+use async_graphql_axum::{GraphQLProtocol, GraphQLRequest, GraphQLResponse, GraphQLWebSocket};
+use axum::http::{HeaderValue, Method};
 use axum::{
+    Router,
     extract::{State, WebSocketUpgrade},
     response::{Html, IntoResponse, Json},
     routing::get,
-    Router,
 };
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::cors::CorsLayer;
-use tower_http::trace::TraceLayer;
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::timeout::TimeoutLayer;
+use tower_http::trace::TraceLayer;
 use tracing::info;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
-use axum::http::{HeaderValue, Method};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::Config;
-use crate::gql::ApiSchema;
-use crate::handlers::AppState;
-use crate::handlers::{security_agent_stream, live_token_handler};
-use crate::middleware::security_headers::SecurityHeadersLayer;
+use crate::handlers::{AppState, CombinedState};
+use crate::handlers::{live_token_handler, security_agent_stream};
+use crate::middleware::audit::init_audit_persistence;
+use crate::middleware::auth::{JwtConfig, optional_jwt_middleware};
 #[allow(unused_imports)]
 use crate::middleware::create_rate_limiter;
+use crate::middleware::security_headers::SecurityHeadersLayer;
 use crate::middleware::{
-    distributed_rate_limit_middleware, DistributedRateLimiter, DistributedRateLimiterConfig,
+    DistributedRateLimiter, DistributedRateLimiterConfig, distributed_rate_limit_middleware,
 };
-use crate::middleware::auth::{optional_jwt_middleware, JwtConfig, JwtState};
-use crate::middleware::audit::init_audit_persistence;
-use models::tenant::TenantContext;
 use axum::{Extension, middleware as axum_middleware};
+use models::tenant::TenantContext;
 use sqlx::postgres::PgPoolOptions;
-
-/// Combined app state
-#[derive(Clone)]
-pub struct CombinedState {
-    pub schema: ApiSchema,
-    pub app_state: AppState,
-    pub rate_limit_rpm: u32,
-    pub jwt_state: JwtState,
-    pub query_timeout: Duration,
-    pub gemini_api_key: String,
-    pub max_results: i32,
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -108,14 +96,17 @@ async fn main() -> Result<()> {
         .acquire_timeout(Duration::from_secs(config.postgres.connect_timeout_secs))
         .connect(&config.postgres.url)
         .await;
-    
+
     match pg_pool {
         Ok(pool) => {
             info!("✓ PostgreSQL pool initialized for audit logging");
             init_audit_persistence(pool);
         }
         Err(e) => {
-            tracing::warn!("⚠️  PostgreSQL connection failed: {} - audit persistence disabled", e);
+            tracing::warn!(
+                "⚠️  PostgreSQL connection failed: {} - audit persistence disabled",
+                e
+            );
         }
     }
 
@@ -130,7 +121,7 @@ async fn main() -> Result<()> {
 
     // Wrap cache in Arc for sharing across components
     let cache_arc = cache.map(Arc::new);
-    
+
     // Create app state for health checks
     let app_state = AppState {
         graph: graph.clone(),
@@ -171,18 +162,27 @@ async fn main() -> Result<()> {
                     Arc::new(limiter)
                 }
                 Err(e) => {
-                    tracing::warn!("Redis connection for rate limiter failed: {}, using local fallback", e);
-                    Arc::new(DistributedRateLimiter::local_only(DistributedRateLimiterConfig::default()))
+                    tracing::warn!(
+                        "Redis connection for rate limiter failed: {}, using local fallback",
+                        e
+                    );
+                    Arc::new(DistributedRateLimiter::local_only(
+                        DistributedRateLimiterConfig::default(),
+                    ))
                 }
             },
             Err(e) => {
                 tracing::warn!("Redis client creation failed: {}, using local fallback", e);
-                Arc::new(DistributedRateLimiter::local_only(DistributedRateLimiterConfig::default()))
+                Arc::new(DistributedRateLimiter::local_only(
+                    DistributedRateLimiterConfig::default(),
+                ))
             }
         }
     } else {
         info!("Redis not configured, using local rate limiter");
-        Arc::new(DistributedRateLimiter::local_only(DistributedRateLimiterConfig::default()))
+        Arc::new(DistributedRateLimiter::local_only(
+            DistributedRateLimiterConfig::default(),
+        ))
     };
 
     // Clone schema for WebSocket subscription service
@@ -234,7 +234,7 @@ async fn main() -> Result<()> {
     let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port)
         .parse()
         .expect("Invalid server address");
-    
+
     info!(address = %addr, "Starting HTTP server");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -246,25 +246,25 @@ async fn main() -> Result<()> {
 /// Build CORS layer from configuration
 fn build_cors_layer(config: &Config) -> CorsLayer {
     let cors_config = &config.cors;
-    
+
     // Parse origins into HeaderValues
     let origins: Vec<HeaderValue> = cors_config
         .allowed_origins
         .iter()
         .filter_map(|o| o.parse::<HeaderValue>().ok())
         .collect();
-    
+
     if origins.is_empty() {
         tracing::warn!("⚠️  No valid CORS origins configured, using permissive defaults");
         return CorsLayer::permissive();
     }
-    
+
     info!(
         origins = ?cors_config.allowed_origins,
         credentials = cors_config.allow_credentials,
         "CORS configured"
     );
-    
+
     CorsLayer::new()
         .allow_origin(origins)
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
@@ -287,11 +287,9 @@ async fn health_handler() -> Json<handlers::HealthResponse> {
 }
 
 /// Readiness check endpoint
-async fn ready_handler(
-    State(state): State<CombinedState>,
-) -> Json<handlers::ReadinessResponse> {
+async fn ready_handler(State(state): State<CombinedState>) -> Json<handlers::ReadinessResponse> {
     let memgraph_ok = state.app_state.graph.health_check().await;
-    
+
     let redis_ok = match &state.app_state.cache {
         Some(cache) => cache.health_check().await,
         None => true,
@@ -348,13 +346,14 @@ async fn graphql_handler(
     req: GraphQLRequest,
 ) -> Result<GraphQLResponse, axum::http::StatusCode> {
     use tokio::time::timeout;
-    
+
     let result = timeout(state.query_timeout, async {
         let mut request = req.into_inner();
         request = request.data(tenant_context);
         state.schema.execute(request).await
-    }).await;
-    
+    })
+    .await;
+
     match result {
         Ok(response) => Ok(response.into()),
         Err(_) => {
@@ -366,10 +365,12 @@ async fn graphql_handler(
 
 /// GraphQL Playground UI (GraphiQL)
 async fn graphql_playground() -> impl IntoResponse {
-    Html(GraphiQLSource::build()
-        .endpoint("/graphql")
-        .subscription_endpoint("/graphql/ws")
-        .finish())
+    Html(
+        GraphiQLSource::build()
+            .endpoint("/graphql")
+            .subscription_endpoint("/graphql/ws")
+            .finish(),
+    )
 }
 
 /// GraphQL WebSocket handler for subscriptions
@@ -379,9 +380,5 @@ async fn graphql_ws_handler(
     schema: axum::Extension<gql::ApiSchema>,
 ) -> impl IntoResponse {
     ws.protocols(["graphql-transport-ws", "graphql-ws"])
-        .on_upgrade(move |socket| {
-            GraphQLWebSocket::new(socket, schema.0.clone(), protocol)
-                .serve()
-        })
+        .on_upgrade(move |socket| GraphQLWebSocket::new(socket, schema.0.clone(), protocol).serve())
 }
-

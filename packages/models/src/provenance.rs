@@ -5,9 +5,9 @@
 //!
 //! Reference: https://slsa.dev/spec/v1.0/
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SLSA BUILD LEVELS
@@ -42,7 +42,9 @@ impl SlsaBuildLevel {
             SlsaBuildLevel::L0 => "No SLSA - No provenance guarantees",
             SlsaBuildLevel::L1 => "Provenance exists - Build attestation available",
             SlsaBuildLevel::L2 => "Hosted build platform - Signed provenance from hosted service",
-            SlsaBuildLevel::L3 => "Hardened builds - Isolated ephemeral environment, non-falsifiable provenance",
+            SlsaBuildLevel::L3 => {
+                "Hardened builds - Isolated ephemeral environment, non-falsifiable provenance"
+            }
         }
     }
 
@@ -135,7 +137,10 @@ pub struct BuildDefinition {
     #[serde(rename = "internalParameters", skip_serializing_if = "Option::is_none")]
     pub internal_parameters: Option<HashMap<String, serde_json::Value>>,
     /// Resolved dependencies
-    #[serde(rename = "resolvedDependencies", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "resolvedDependencies",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub resolved_dependencies: Option<Vec<ResourceDescriptor>>,
 }
 
@@ -205,7 +210,10 @@ pub struct Builder {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<HashMap<String, String>>,
     /// Builder dependencies
-    #[serde(rename = "builderDependencies", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "builderDependencies",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub builder_dependencies: Option<Vec<ResourceDescriptor>>,
 }
 
@@ -429,7 +437,11 @@ impl ProvenanceVerifier {
         checks.push(VerificationCheck {
             name: "Valid in-toto statement".to_string(),
             passed: valid_statement,
-            message: if valid_statement { None } else { Some("Invalid statement type".to_string()) },
+            message: if valid_statement {
+                None
+            } else {
+                Some("Invalid statement type".to_string())
+            },
         });
 
         // Check 2: Valid predicate type
@@ -437,7 +449,11 @@ impl ProvenanceVerifier {
         checks.push(VerificationCheck {
             name: "Valid SLSA predicate".to_string(),
             passed: valid_predicate,
-            message: if valid_predicate { None } else { Some("Invalid predicate type".to_string()) },
+            message: if valid_predicate {
+                None
+            } else {
+                Some("Invalid predicate type".to_string())
+            },
         });
 
         // Check 3: Has subjects
@@ -445,7 +461,11 @@ impl ProvenanceVerifier {
         checks.push(VerificationCheck {
             name: "Has subjects".to_string(),
             passed: has_subjects,
-            message: if has_subjects { None } else { Some("No subjects defined".to_string()) },
+            message: if has_subjects {
+                None
+            } else {
+                Some("No subjects defined".to_string())
+            },
         });
 
         // Check 4: Subjects have digests
@@ -453,26 +473,46 @@ impl ProvenanceVerifier {
         checks.push(VerificationCheck {
             name: "Subjects have digests".to_string(),
             passed: subjects_have_digests,
-            message: if subjects_have_digests { None } else { Some("Some subjects missing digests".to_string()) },
+            message: if subjects_have_digests {
+                None
+            } else {
+                Some("Some subjects missing digests".to_string())
+            },
         });
 
         // Check 5: Builder is trusted
-        let builder_trusted = self.trusted_builders.is_empty() 
-            || self.trusted_builders.contains(&provenance.predicate.run_details.builder.id);
+        let builder_trusted = self.trusted_builders.is_empty()
+            || self
+                .trusted_builders
+                .contains(&provenance.predicate.run_details.builder.id);
         checks.push(VerificationCheck {
             name: "Builder is trusted".to_string(),
             passed: builder_trusted,
-            message: if builder_trusted { None } else { 
-                Some(format!("Builder {} not in trusted list", provenance.predicate.run_details.builder.id))
+            message: if builder_trusted {
+                None
+            } else {
+                Some(format!(
+                    "Builder {} not in trusted list",
+                    provenance.predicate.run_details.builder.id
+                ))
             },
         });
 
         // Check 6: Has build metadata
-        let has_metadata = provenance.predicate.run_details.metadata.started_on.is_some();
+        let has_metadata = provenance
+            .predicate
+            .run_details
+            .metadata
+            .started_on
+            .is_some();
         checks.push(VerificationCheck {
             name: "Has build timestamps".to_string(),
             passed: has_metadata,
-            message: if has_metadata { None } else { Some("Missing build timestamps".to_string()) },
+            message: if has_metadata {
+                None
+            } else {
+                Some("Missing build timestamps".to_string())
+            },
         });
 
         // Determine SLSA level
@@ -573,7 +613,7 @@ mod tests {
         assert!(SlsaBuildLevel::L3 > SlsaBuildLevel::L2);
         assert!(SlsaBuildLevel::L2 > SlsaBuildLevel::L1);
         assert!(SlsaBuildLevel::L1 > SlsaBuildLevel::L0);
-        
+
         assert!(SlsaBuildLevel::L3.meets(SlsaBuildLevel::L2));
         assert!(SlsaBuildLevel::L2.meets(SlsaBuildLevel::L1));
         assert!(!SlsaBuildLevel::L1.meets(SlsaBuildLevel::L2));
@@ -594,7 +634,11 @@ mod tests {
         assert_eq!(provenance.subject.len(), 1);
         assert_eq!(provenance.predicate_type, SLSA_PROVENANCE_V1);
         assert_eq!(
-            provenance.predicate.build_definition.external_parameters.repository,
+            provenance
+                .predicate
+                .build_definition
+                .external_parameters
+                .repository,
             "https://github.com/example/repo"
         );
     }
@@ -613,7 +657,7 @@ mod tests {
             .trust_builder("https://github.com/actions/runner");
 
         let result = verifier.verify(&provenance);
-        
+
         assert!(result.valid);
         assert!(result.slsa_level >= SlsaBuildLevel::L1);
     }
@@ -622,7 +666,7 @@ mod tests {
     fn test_slsa_assessment_recommendations() {
         let l0_recs = SlsaAssessment::generate_recommendations(SlsaBuildLevel::L0);
         assert!(l0_recs.len() >= 2);
-        
+
         let l3_recs = SlsaAssessment::generate_recommendations(SlsaBuildLevel::L3);
         assert!(l3_recs.iter().any(|r| r.contains("Maintain")));
     }
@@ -639,7 +683,7 @@ mod tests {
         let json = serde_json::to_string_pretty(&provenance).unwrap();
         assert!(json.contains("slsa.dev"));
         assert!(json.contains("in-toto"));
-        
+
         // Roundtrip
         let parsed: SlsaProvenance = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.subject.len(), 1);

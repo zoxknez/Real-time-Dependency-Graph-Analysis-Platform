@@ -1,20 +1,36 @@
 //! HTTP handlers
 
-use axum::{extract::State, Json};
 use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::{Json, extract::State};
 use futures::Stream;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::convert::Infallible;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
 use crate::cache::CacheClient;
+use crate::gql::ApiSchema;
 use crate::graph::GraphClient;
-use crate::services::{execute_security_agent_tool, GeminiSecurityAgent, AgentAction};
+use crate::middleware::auth::JwtState;
 use crate::services::gemini_agent::{AgentStep, VulnerabilityFinding};
-use crate::CombinedState;
+use crate::services::{AgentAction, GeminiSecurityAgent, execute_security_agent_tool};
+
+/// Combined app state shared by router handlers.
+#[derive(Clone)]
+pub struct CombinedState {
+    pub schema: ApiSchema,
+    pub app_state: AppState,
+    #[allow(dead_code)]
+    pub rate_limit_rpm: u32,
+    #[allow(dead_code)]
+    pub jwt_state: JwtState,
+    pub query_timeout: Duration,
+    pub gemini_api_key: String,
+    pub max_results: i32,
+}
 
 /// Application state for health checks
 #[derive(Clone)]
@@ -47,11 +63,9 @@ pub async fn health_check() -> Json<HealthResponse> {
 
 /// Readiness check endpoint (dependency checks)
 #[allow(dead_code)]
-pub async fn readiness_check(
-    State(state): State<AppState>,
-) -> Json<ReadinessResponse> {
+pub async fn readiness_check(State(state): State<AppState>) -> Json<ReadinessResponse> {
     let memgraph_ok = state.graph.health_check().await;
-    
+
     let redis_ok = match &state.cache {
         Some(cache) => cache.health_check().await,
         None => true, // Redis disabled, consider ready
@@ -233,7 +247,9 @@ pub async fn security_agent_stream(
         let start = std::time::Instant::now();
         if api_key.is_empty() {
             let _ = tx
-                .send(Ok(Event::default().event("error").data("Gemini API key missing")))
+                .send(Ok(Event::default()
+                    .event("error")
+                    .data("Gemini API key missing")))
                 .await;
             return;
         }
@@ -279,13 +295,17 @@ pub async fn security_agent_stream(
                     packages_analyzed: res.packages_analyzed,
                     vulnerabilities_found: res.vulnerabilities_found,
                     recommendations: res.recommendations,
-                    structured_report_json: res.structured_report
+                    structured_report_json: res
+                        .structured_report
                         .map(|r| serde_json::to_string_pretty(&r).unwrap_or_default()),
                     success: true,
                     execution_time_ms,
                 };
                 let _ = tx
-                    .send(Ok(Event::default().event("final").json_data(&final_payload).unwrap()))
+                    .send(Ok(Event::default()
+                        .event("final")
+                        .json_data(&final_payload)
+                        .unwrap()))
                     .await;
             }
             Err(e) => {
@@ -296,5 +316,6 @@ pub async fn security_agent_stream(
         }
     });
 
-    Sse::new(ReceiverStream::new(rx)).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+    Sse::new(ReceiverStream::new(rx))
+        .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
 }

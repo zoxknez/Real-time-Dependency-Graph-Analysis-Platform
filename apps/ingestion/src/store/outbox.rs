@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
-use sqlx::{PgExecutor, PgPool, Postgres, Transaction, Row};
+use sqlx::{PgExecutor, PgPool, Postgres, Row, Transaction};
 use tracing::{debug, info, warn};
 
 /// Status of an outbox event
@@ -81,11 +81,7 @@ impl OutboxRepo {
     ///
     /// If an event with the same event_id already exists, this is a no-op (idempotent).
     /// This is safe because event_id is deterministic based on the event content.
-    pub async fn insert<'a, E>(
-        &self,
-        executor: E,
-        event: &OutboxEvent,
-    ) -> Result<()>
+    pub async fn insert<'a, E>(&self, executor: E, event: &OutboxEvent) -> Result<()>
     where
         E: PgExecutor<'a>,
     {
@@ -144,11 +140,7 @@ impl OutboxRepo {
     /// without blocking each other. Each publisher gets a different batch.
     ///
     /// Returns events that are now locked by this worker.
-    pub async fn claim_batch(
-        &self,
-        worker_id: &str,
-        batch_size: i32,
-    ) -> Result<Vec<OutboxRow>> {
+    pub async fn claim_batch(&self, worker_id: &str, batch_size: i32) -> Result<Vec<OutboxRow>> {
         let rows = sqlx::query_as::<_, OutboxRow>(
             r#"
             UPDATE ingestion_outbox
@@ -214,12 +206,7 @@ impl OutboxRepo {
     /// - Attempt 4: 10 minutes
     /// - Attempt 5: 30 minutes
     /// - Attempt 6+: 1 hour (capped)
-    pub async fn mark_failed(
-        &self,
-        event_id: &str,
-        error: &str,
-        max_attempts: i32,
-    ) -> Result<()> {
+    pub async fn mark_failed(&self, event_id: &str, error: &str, max_attempts: i32) -> Result<()> {
         let row = sqlx::query(
             r#"
             UPDATE ingestion_outbox
@@ -348,10 +335,7 @@ impl OutboxRepo {
     ///
     /// Published events can be safely deleted after a retention period
     /// since they've already been delivered to Kafka.
-    pub async fn cleanup_old_published(
-        &self,
-        retention_days: i32,
-    ) -> Result<u64> {
+    pub async fn cleanup_old_published(&self, retention_days: i32) -> Result<u64> {
         let result = sqlx::query(
             r#"
             DELETE FROM ingestion_outbox
@@ -378,8 +362,6 @@ impl OutboxRepo {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     // TODO: Add unit tests with mock database
     // - Test insert idempotency
     // - Test claim_batch SKIP LOCKED behavior

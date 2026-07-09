@@ -4,6 +4,8 @@ use tracing::instrument;
 /// Graph query builder for package events
 pub struct GraphQueries;
 
+pub const DEFAULT_TENANT_ID: &str = "public";
+
 impl GraphQueries {
     /// Build stable Package ID: "{ecosystem}:{name}"
     pub fn package_id(ecosystem: &str, name: &str) -> String {
@@ -16,7 +18,7 @@ impl GraphQueries {
     }
 
     /// Process VersionUpserted event
-    /// 
+    ///
     /// This creates/updates:
     /// 1. Package node (MERGE by id)
     /// 2. Version node (MERGE by id)
@@ -24,6 +26,7 @@ impl GraphQueries {
     /// 4. DEPENDS_ON edges (replace pattern - delete old, create new)
     #[instrument(skip_all, fields(ecosystem, name, version))]
     pub fn version_upserted(
+        tenant_id: &str,
         ecosystem: &str,
         name: &str,
         version: &str,
@@ -42,19 +45,22 @@ impl GraphQueries {
                 r#"
                 MERGE (p:Package {id: $package_id})
                 ON CREATE SET
+                    p.tenant_id = $tenant_id,
                     p.ecosystem = $ecosystem,
                     p.name = $name,
                     p.name_lc = toLower($name),
                     p.created_at = $now,
                     p.updated_at = $now
                 ON MATCH SET
+                    p.tenant_id = coalesce(p.tenant_id, $tenant_id),
                     p.updated_at = $now
-                "#
+                "#,
             )
+            .param("tenant_id", tenant_id.to_string())
             .param("package_id", package_id.clone())
             .param("ecosystem", ecosystem.to_string())
             .param("name", name.to_string())
-            .param("now", now)
+            .param("now", now),
         );
 
         // 2. MERGE Version node with BELONGS_TO edge
@@ -62,8 +68,11 @@ impl GraphQueries {
             neo4rs::query(
                 r#"
                 MATCH (p:Package {id: $package_id})
+                WHERE p.tenant_id = $tenant_id OR p.tenant_id IS NULL
+                SET p.tenant_id = coalesce(p.tenant_id, $tenant_id)
                 MERGE (v:Version {id: $version_id})
                 ON CREATE SET
+                    v.tenant_id = $tenant_id,
                     v.package_id = $package_id,
                     v.ecosystem = $ecosystem,
                     v.name = $name,
@@ -73,60 +82,72 @@ impl GraphQueries {
                     v.created_at = $now,
                     v.updated_at = $now
                 ON MATCH SET
+                    v.tenant_id = coalesce(v.tenant_id, $tenant_id),
                     v.updated_at = $now
                 MERGE (v)-[:BELONGS_TO]->(p)
-                "#
+                "#,
             )
+            .param("tenant_id", tenant_id.to_string())
             .param("package_id", package_id.clone())
             .param("version_id", version_id.clone())
             .param("ecosystem", ecosystem.to_string())
             .param("name", name.to_string())
             .param("version", version.to_string())
             .param("published_at", published_at.unwrap_or(now))
-            .param("now", now)
+            .param("now", now),
         );
 
         // 3. Replace DEPENDS_ON edges (delete old, create new)
         // Per spec: "obrišeš sve postojeće DEPENDS_ON sa te verzije, upišeš novi set iz eventa"
-        
+
         // First, always delete old DEPENDS_ON edges
         queries.push(
             neo4rs::query(
                 r#"
                 MATCH (v:Version {id: $version_id})-[old:DEPENDS_ON]->()
+                WHERE v.tenant_id = $tenant_id OR v.tenant_id IS NULL
+                SET v.tenant_id = coalesce(v.tenant_id, $tenant_id)
                 DELETE old
-                "#
+                "#,
             )
-            .param("version_id", version_id.clone())
+            .param("tenant_id", tenant_id.to_string())
+            .param("version_id", version_id.clone()),
         );
-        
+
         // Then create new DEPENDS_ON edges one by one
         // neo4rs doesn't support complex list parameters, so we do individual queries
         for (dep_eco, dep_name, ver_req) in dependencies {
             let dep_package_id = Self::package_id(dep_eco, dep_name);
-            
+
             queries.push(
                 neo4rs::query(
                     r#"
                     MATCH (v:Version {id: $version_id})
+                    WHERE v.tenant_id = $tenant_id OR v.tenant_id IS NULL
+                    SET v.tenant_id = coalesce(v.tenant_id, $tenant_id)
                     MERGE (p:Package {id: $dep_package_id})
                     ON CREATE SET
+                        p.tenant_id = $tenant_id,
                         p.ecosystem = $dep_ecosystem,
                         p.name = $dep_name,
                         p.name_lc = toLower($dep_name),
                         p.created_at = $now,
                         p.updated_at = $now
+                    ON MATCH SET
+                        p.tenant_id = coalesce(p.tenant_id, $tenant_id),
+                        p.updated_at = $now
                     CREATE (v)-[:DEPENDS_ON {version_req: $version_req}]->(p)
-                    "#
+                    "#,
                 )
+                .param("tenant_id", tenant_id.to_string())
                 .param("version_id", version_id.clone())
                 .param("dep_package_id", dep_package_id.clone())
                 .param("dep_ecosystem", dep_eco.clone())
                 .param("dep_name", dep_name.clone())
                 .param("version_req", ver_req.clone())
-                .param("now", now)
+                .param("now", now),
             );
-            
+
             // 4. DEPENDS_ON_PKG: Package-level projection for fast GraphQL traversals
             // This denormalized edge enables efficient reverseDependents/dependencyPath queries
             queries.push(
@@ -134,11 +155,16 @@ impl GraphQueries {
                     r#"
                     MATCH (srcPkg:Package {id: $package_id})
                     MATCH (depPkg:Package {id: $dep_package_id})
+                    WHERE (srcPkg.tenant_id = $tenant_id OR srcPkg.tenant_id IS NULL)
+                      AND (depPkg.tenant_id = $tenant_id OR depPkg.tenant_id IS NULL)
+                    SET srcPkg.tenant_id = coalesce(srcPkg.tenant_id, $tenant_id),
+                        depPkg.tenant_id = coalesce(depPkg.tenant_id, $tenant_id)
                     MERGE (srcPkg)-[:DEPENDS_ON_PKG]->(depPkg)
-                    "#
+                    "#,
                 )
+                .param("tenant_id", tenant_id.to_string())
                 .param("package_id", package_id.clone())
-                .param("dep_package_id", dep_package_id)
+                .param("dep_package_id", dep_package_id),
             );
         }
 
@@ -148,16 +174,18 @@ impl GraphQueries {
     /// Process VersionYanked event
     /// Sets yanked=true on the Version node
     #[instrument(skip_all, fields(ecosystem, name, version))]
-    pub fn version_yanked(ecosystem: &str, name: &str, version: &str) -> Query {
+    pub fn version_yanked(tenant_id: &str, ecosystem: &str, name: &str, version: &str) -> Query {
         let version_id = Self::version_id(ecosystem, name, version);
         let now = chrono::Utc::now().timestamp_millis();
 
         neo4rs::query(
             r#"
             MATCH (v:Version {id: $version_id})
+            WHERE v.tenant_id = $tenant_id OR v.tenant_id IS NULL
             SET v.yanked = true, v.yanked_at = $now, v.updated_at = $now
-            "#
+            "#,
         )
+        .param("tenant_id", tenant_id.to_string())
         .param("version_id", version_id)
         .param("now", now)
     }
@@ -165,16 +193,18 @@ impl GraphQueries {
     /// Process PackageDeleted event
     /// Soft delete - sets deleted_at timestamp on Package node
     #[instrument(skip_all, fields(ecosystem, name))]
-    pub fn package_deleted(ecosystem: &str, name: &str) -> Query {
+    pub fn package_deleted(tenant_id: &str, ecosystem: &str, name: &str) -> Query {
         let package_id = Self::package_id(ecosystem, name);
         let now = chrono::Utc::now().timestamp_millis();
 
         neo4rs::query(
             r#"
             MATCH (p:Package {id: $package_id})
+            WHERE p.tenant_id = $tenant_id OR p.tenant_id IS NULL
             SET p.deleted_at = $now, p.updated_at = $now
-            "#
+            "#,
         )
+        .param("tenant_id", tenant_id.to_string())
         .param("package_id", package_id)
         .param("now", now)
     }
@@ -192,7 +222,7 @@ impl GraphQueries {
             OPTIONAL MATCH (v)-[d:DEPENDS_ON]->()
             OPTIONAL MATCH ()-[r:DEPENDS_ON]->(p)
             DELETE d, r, v, p
-            "#
+            "#,
         )
         .param("package_id", package_id)
     }
@@ -217,10 +247,19 @@ mod tests {
 
     #[test]
     fn test_version_upserted_creates_queries() {
-        let deps = vec![
-            ("npm".to_string(), "body-parser".to_string(), "^1.0.0".to_string()),
-        ];
-        let queries = GraphQueries::version_upserted("npm", "express", "4.18.2", None, &deps);
+        let deps = vec![(
+            "npm".to_string(),
+            "body-parser".to_string(),
+            "^1.0.0".to_string(),
+        )];
+        let queries = GraphQueries::version_upserted(
+            DEFAULT_TENANT_ID,
+            "npm",
+            "express",
+            "4.18.2",
+            None,
+            &deps,
+        );
         // Package + Version + Delete old deps + (DEPENDS_ON + DEPENDS_ON_PKG) per dependency
         // 1 + 1 + 1 + 2*1 = 5
         assert_eq!(queries.len(), 5);
@@ -228,7 +267,14 @@ mod tests {
 
     #[test]
     fn test_version_upserted_no_deps() {
-        let queries = GraphQueries::version_upserted("npm", "express", "4.18.2", None, &[]);
+        let queries = GraphQueries::version_upserted(
+            DEFAULT_TENANT_ID,
+            "npm",
+            "express",
+            "4.18.2",
+            None,
+            &[],
+        );
         assert_eq!(queries.len(), 3); // Package + Version + Delete old deps
     }
 }

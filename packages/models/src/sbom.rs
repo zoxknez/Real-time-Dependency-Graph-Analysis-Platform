@@ -663,7 +663,7 @@ impl SbomGenerator {
     pub fn new(config: SbomGeneratorConfig) -> Self {
         Self { config }
     }
-    
+
     /// Generate SPDX 2.3 document from packages
     pub fn generate_spdx(
         &self,
@@ -681,13 +681,13 @@ impl SbomGenerator {
             project_version,
             doc_uuid
         );
-        
+
         // Convert packages to SPDX format
         let spdx_packages: Vec<SpdxPackage> = packages
             .iter()
             .map(|pkg| self.to_spdx_package(pkg))
             .collect();
-        
+
         // Build relationships
         let mut relationships = vec![
             // Document describes root package
@@ -698,7 +698,7 @@ impl SbomGenerator {
                 comment: None,
             },
         ];
-        
+
         // Add dependency relationships
         for dep in dependencies {
             relationships.push(SpdxRelationship {
@@ -708,12 +708,13 @@ impl SbomGenerator {
                     DependencyRelation::DevDependsOn => "DEV_DEPENDENCY_OF",
                     DependencyRelation::OptionalDependsOn => "OPTIONAL_DEPENDENCY_OF",
                     DependencyRelation::BuildDependsOn => "BUILD_TOOL_OF",
-                }.to_string(),
+                }
+                .to_string(),
                 related_spdx_element: format!("SPDXRef-Package-{}", sanitize_id(&dep.to)),
                 comment: None,
             });
         }
-        
+
         SpdxDocument {
             spdx_version: "SPDX-2.3".to_string(),
             data_license: "CC0-1.0".to_string(),
@@ -723,7 +724,10 @@ impl SbomGenerator {
             creation_info: SpdxCreationInfo {
                 created: now.to_rfc3339(),
                 creators: vec![
-                    format!("Tool: {}-{}", self.config.tool_name, self.config.tool_version),
+                    format!(
+                        "Tool: {}-{}",
+                        self.config.tool_name, self.config.tool_version
+                    ),
                     format!("Organization: {}", self.config.tool_vendor),
                 ],
                 license_list_version: Some("3.19".to_string()),
@@ -736,7 +740,7 @@ impl SbomGenerator {
             annotations: vec![],
         }
     }
-    
+
     /// Generate CycloneDX 1.5 BOM from packages
     pub fn generate_cyclonedx(
         &self,
@@ -748,13 +752,13 @@ impl SbomGenerator {
     ) -> CycloneDxBom {
         let now = Utc::now();
         let serial = Uuid::new_v4();
-        
+
         // Convert packages to CycloneDX format
         let components: Vec<CdxComponent> = packages
             .iter()
             .map(|pkg| self.to_cdx_component(pkg))
             .collect();
-        
+
         // Build dependency graph
         let mut dep_map: HashMap<String, Vec<String>> = HashMap::new();
         for dep in dependencies {
@@ -763,7 +767,7 @@ impl SbomGenerator {
                 .or_default()
                 .push(dep.to.clone());
         }
-        
+
         let cdx_deps: Vec<CdxDependency> = dep_map
             .into_iter()
             .map(|(from, deps)| CdxDependency {
@@ -771,7 +775,7 @@ impl SbomGenerator {
                 depends_on: deps,
             })
             .collect();
-        
+
         // Convert vulnerabilities
         let cdx_vulns: Vec<CdxVulnerability> = if self.config.include_vulnerabilities {
             vulnerabilities
@@ -781,7 +785,7 @@ impl SbomGenerator {
         } else {
             vec![]
         };
-        
+
         // Build tool component
         let tool_component = CdxComponent {
             component_type: "application".to_string(),
@@ -804,7 +808,7 @@ impl SbomGenerator {
             external_references: vec![],
             properties: vec![],
         };
-        
+
         CycloneDxBom {
             bom_format: "CycloneDX".to_string(),
             spec_version: "1.5".to_string(),
@@ -857,17 +861,15 @@ impl SbomGenerator {
             external_references: vec![],
         }
     }
-    
+
     fn to_spdx_package(&self, pkg: &SbomPackage) -> SpdxPackage {
-        let mut external_refs = vec![
-            SpdxExternalRef {
-                reference_category: "PACKAGE-MANAGER".to_string(),
-                reference_type: "purl".to_string(),
-                reference_locator: pkg.purl.clone(),
-                comment: None,
-            },
-        ];
-        
+        let mut external_refs = vec![SpdxExternalRef {
+            reference_category: "PACKAGE-MANAGER".to_string(),
+            reference_type: "purl".to_string(),
+            reference_locator: pkg.purl.clone(),
+            comment: None,
+        }];
+
         if let Some(ref cpe) = pkg.cpe {
             external_refs.push(SpdxExternalRef {
                 reference_category: "SECURITY".to_string(),
@@ -876,21 +878,30 @@ impl SbomGenerator {
                 comment: None,
             });
         }
-        
+
         let checksums = if self.config.include_hashes {
-            pkg.sha256.as_ref().map(|h| vec![SpdxChecksum {
-                algorithm: "SHA256".to_string(),
-                checksum_value: h.clone(),
-            }]).unwrap_or_default()
+            pkg.sha256
+                .as_ref()
+                .map(|h| {
+                    vec![SpdxChecksum {
+                        algorithm: "SHA256".to_string(),
+                        checksum_value: h.clone(),
+                    }]
+                })
+                .unwrap_or_default()
         } else {
             vec![]
         };
-        
+
         SpdxPackage {
             spdx_id: format!("SPDXRef-Package-{}", sanitize_id(&pkg.id)),
             name: pkg.name.clone(),
             version_info: Some(pkg.version.clone()),
-            download_location: format!("https://registry.{}.org/{}", pkg.ecosystem.to_lowercase(), pkg.name),
+            download_location: format!(
+                "https://registry.{}.org/{}",
+                pkg.ecosystem.to_lowercase(),
+                pkg.name
+            ),
             files_analyzed: false,
             checksums,
             license_concluded: pkg.license.clone(),
@@ -904,24 +915,33 @@ impl SbomGenerator {
             primary_package_purpose: Some("LIBRARY".to_string()),
         }
     }
-    
+
     fn to_cdx_component(&self, pkg: &SbomPackage) -> CdxComponent {
         let hashes = if self.config.include_hashes {
-            pkg.sha256.as_ref().map(|h| vec![CdxHash {
-                algorithm: "SHA-256".to_string(),
-                content: h.clone(),
-            }]).unwrap_or_default()
+            pkg.sha256
+                .as_ref()
+                .map(|h| {
+                    vec![CdxHash {
+                        algorithm: "SHA-256".to_string(),
+                        content: h.clone(),
+                    }]
+                })
+                .unwrap_or_default()
         } else {
             vec![]
         };
-        
-        let licenses = pkg.license.as_ref().map(|l| {
-            vec![CdxLicenseChoice {
-                license: None,
-                expression: Some(l.clone()),
-            }]
-        }).unwrap_or_default();
-        
+
+        let licenses = pkg
+            .license
+            .as_ref()
+            .map(|l| {
+                vec![CdxLicenseChoice {
+                    license: None,
+                    expression: Some(l.clone()),
+                }]
+            })
+            .unwrap_or_default();
+
         CdxComponent {
             component_type: match pkg.component_type {
                 ComponentType::Library => "library",
@@ -932,7 +952,8 @@ impl SbomGenerator {
                 ComponentType::Device => "device",
                 ComponentType::Firmware => "firmware",
                 ComponentType::File => "file",
-            }.to_string(),
+            }
+            .to_string(),
             mime_type: None,
             bom_ref: Some(pkg.id.clone()),
             supplier: None,
@@ -942,7 +963,14 @@ impl SbomGenerator {
             name: pkg.name.clone(),
             version: Some(pkg.version.clone()),
             description: pkg.description.clone(),
-            scope: Some(if pkg.is_direct { "required" } else { "optional" }.to_string()),
+            scope: Some(
+                if pkg.is_direct {
+                    "required"
+                } else {
+                    "optional"
+                }
+                .to_string(),
+            ),
             hashes,
             licenses,
             copyright: None,
@@ -962,7 +990,7 @@ impl SbomGenerator {
             ],
         }
     }
-    
+
     fn to_cdx_vulnerability(&self, vuln: &SbomVulnerability) -> CdxVulnerability {
         CdxVulnerability {
             bom_ref: Some(vuln.id.clone()),
@@ -972,28 +1000,40 @@ impl SbomGenerator {
                 url: None,
             }),
             references: vec![],
-            ratings: vuln.cvss_score.map(|s| vec![CdxVulnRating {
-                source: Some(CdxVulnSource {
-                    name: Some("NVD".to_string()),
-                    url: None,
-                }),
-                score: Some(s as f64),
-                severity: Some(vuln.severity.clone()),
-                method: Some("CVSSv3".to_string()),
-                vector: None,
-            }]).unwrap_or_default(),
+            ratings: vuln
+                .cvss_score
+                .map(|s| {
+                    vec![CdxVulnRating {
+                        source: Some(CdxVulnSource {
+                            name: Some("NVD".to_string()),
+                            url: None,
+                        }),
+                        score: Some(s as f64),
+                        severity: Some(vuln.severity.clone()),
+                        method: Some("CVSSv3".to_string()),
+                        vector: None,
+                    }]
+                })
+                .unwrap_or_default(),
             cwes: vec![],
             description: Some(vuln.description.clone()),
             detail: None,
-            recommendation: vuln.fixed_version.as_ref().map(|v| format!("Upgrade to version {}", v)),
+            recommendation: vuln
+                .fixed_version
+                .as_ref()
+                .map(|v| format!("Upgrade to version {}", v)),
             advisories: vec![],
             created: None,
             published: vuln.published_at.clone(),
             updated: None,
-            affects: vuln.affected_packages.iter().map(|p| CdxAffectedComponent {
-                reference: p.clone(),
-                versions: vec![],
-            }).collect(),
+            affects: vuln
+                .affected_packages
+                .iter()
+                .map(|p| CdxAffectedComponent {
+                    reference: p.clone(),
+                    versions: vec![],
+                })
+                .collect(),
         }
     }
 }
@@ -1001,7 +1041,13 @@ impl SbomGenerator {
 /// Sanitize string for use as SPDX ID
 fn sanitize_id(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '.' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '.' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }
 
@@ -1016,14 +1062,14 @@ pub fn generate_purl(ecosystem: &str, name: &str, version: &str) -> String {
         "go" | "golang" => "golang",
         _ => "generic",
     };
-    
+
     format!("pkg:{}/{}@{}", pkg_type, name, version)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_generate_purl() {
         assert_eq!(
@@ -1035,62 +1081,58 @@ mod tests {
             "pkg:pypi/requests@2.28.0"
         );
     }
-    
+
     #[test]
     fn test_sanitize_id() {
         assert_eq!(sanitize_id("npm:lodash"), "npm-lodash");
         assert_eq!(sanitize_id("@angular/core"), "-angular-core");
     }
-    
+
     #[test]
     fn test_spdx_generation() {
         let generator = SbomGenerator::new(SbomGeneratorConfig::default());
-        let packages = vec![
-            SbomPackage {
-                id: "npm:lodash".to_string(),
-                name: "lodash".to_string(),
-                version: "4.17.21".to_string(),
-                ecosystem: "npm".to_string(),
-                purl: "pkg:npm/lodash@4.17.21".to_string(),
-                license: Some("MIT".to_string()),
-                description: Some("Lodash library".to_string()),
-                homepage: Some("https://lodash.com".to_string()),
-                sha256: None,
-                component_type: ComponentType::Library,
-                is_direct: true,
-                cpe: None,
-            },
-        ];
-        
+        let packages = vec![SbomPackage {
+            id: "npm:lodash".to_string(),
+            name: "lodash".to_string(),
+            version: "4.17.21".to_string(),
+            ecosystem: "npm".to_string(),
+            purl: "pkg:npm/lodash@4.17.21".to_string(),
+            license: Some("MIT".to_string()),
+            description: Some("Lodash library".to_string()),
+            homepage: Some("https://lodash.com".to_string()),
+            sha256: None,
+            component_type: ComponentType::Library,
+            is_direct: true,
+            cpe: None,
+        }];
+
         let doc = generator.generate_spdx("test-app", "1.0.0", &packages, &[], &[]);
-        
+
         assert_eq!(doc.spdx_version, "SPDX-2.3");
         assert_eq!(doc.packages.len(), 1);
         assert_eq!(doc.packages[0].name, "lodash");
     }
-    
+
     #[test]
     fn test_cyclonedx_generation() {
         let generator = SbomGenerator::new(SbomGeneratorConfig::default());
-        let packages = vec![
-            SbomPackage {
-                id: "npm:express".to_string(),
-                name: "express".to_string(),
-                version: "4.18.2".to_string(),
-                ecosystem: "npm".to_string(),
-                purl: "pkg:npm/express@4.18.2".to_string(),
-                license: Some("MIT".to_string()),
-                description: None,
-                homepage: None,
-                sha256: None,
-                component_type: ComponentType::Framework,
-                is_direct: true,
-                cpe: None,
-            },
-        ];
-        
+        let packages = vec![SbomPackage {
+            id: "npm:express".to_string(),
+            name: "express".to_string(),
+            version: "4.18.2".to_string(),
+            ecosystem: "npm".to_string(),
+            purl: "pkg:npm/express@4.18.2".to_string(),
+            license: Some("MIT".to_string()),
+            description: None,
+            homepage: None,
+            sha256: None,
+            component_type: ComponentType::Framework,
+            is_direct: true,
+            cpe: None,
+        }];
+
         let bom = generator.generate_cyclonedx("test-app", "1.0.0", &packages, &[], &[]);
-        
+
         assert_eq!(bom.bom_format, "CycloneDX");
         assert_eq!(bom.spec_version, "1.5");
         assert_eq!(bom.components.len(), 1);

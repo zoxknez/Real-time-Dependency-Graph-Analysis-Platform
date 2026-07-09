@@ -110,9 +110,9 @@ struct FeatureWeights {
 impl Default for FeatureWeights {
     fn default() -> Self {
         Self {
-            major_version_bump: 0.40,      // Strong signal
-            breaking_keywords: 0.30,       // Direct indication
-            dependencies_removed: 0.15,    // May break dependents
+            major_version_bump: 0.40,   // Strong signal
+            breaking_keywords: 0.30,    // Direct indication
+            dependencies_removed: 0.15, // May break dependents
             dependencies_major_update: 0.10,
             api_surface_reduced: 0.25,
             author_history: 0.10,
@@ -151,21 +151,46 @@ pub struct PredictionInput {
 impl BreakingChangePredictor {
     pub fn new() -> Self {
         let breaking_keywords: HashSet<String> = [
-            "breaking", "BREAKING", "breaking change", "breaking-change",
-            "incompatible", "INCOMPATIBLE", "backwards-incompatible",
-            "migration required", "migrate", "upgrade guide",
-            "removed", "REMOVED", "deprecated and removed",
-            "no longer supports", "dropped support",
-            "renamed", "RENAMED", "moved to",
-            "changed signature", "new api", "API change",
-            "must update", "action required",
-        ].iter().map(|s| s.to_lowercase()).collect();
+            "breaking",
+            "BREAKING",
+            "breaking change",
+            "breaking-change",
+            "incompatible",
+            "INCOMPATIBLE",
+            "backwards-incompatible",
+            "migration required",
+            "migrate",
+            "upgrade guide",
+            "removed",
+            "REMOVED",
+            "deprecated and removed",
+            "no longer supports",
+            "dropped support",
+            "renamed",
+            "RENAMED",
+            "moved to",
+            "changed signature",
+            "new api",
+            "API change",
+            "must update",
+            "action required",
+        ]
+        .iter()
+        .map(|s| s.to_lowercase())
+        .collect();
 
         let deprecation_keywords: HashSet<String> = [
-            "deprecated", "DEPRECATED", "deprecating",
-            "will be removed", "scheduled for removal",
-            "legacy", "obsolete",
-        ].iter().map(|s| s.to_lowercase()).collect();
+            "deprecated",
+            "DEPRECATED",
+            "deprecating",
+            "will be removed",
+            "scheduled for removal",
+            "legacy",
+            "obsolete",
+        ]
+        .iter()
+        .map(|s| s.to_lowercase())
+        .collect();
 
         Self {
             breaking_keywords,
@@ -190,7 +215,10 @@ impl BreakingChangePredictor {
                     signals.push(BreakingSignal {
                         signal_type: SignalType::MajorVersionBump,
                         weight: self.weights.major_version_bump,
-                        description: format!("Major version bump: {} -> {}", old, input.new_version),
+                        description: format!(
+                            "Major version bump: {} -> {}",
+                            old, input.new_version
+                        ),
                     });
                     total_weight += self.weights.major_version_bump;
                     confidence += 0.2;
@@ -201,7 +229,8 @@ impl BreakingChangePredictor {
         // 2. Check changelog for breaking keywords
         if let Some(ref changelog) = input.changelog {
             let lowercase = changelog.to_lowercase();
-            let breaking_found: Vec<_> = self.breaking_keywords
+            let breaking_found: Vec<_> = self
+                .breaking_keywords
                 .iter()
                 .filter(|kw| lowercase.contains(kw.as_str()))
                 .collect();
@@ -210,14 +239,18 @@ impl BreakingChangePredictor {
                 signals.push(BreakingSignal {
                     signal_type: SignalType::BreakingKeywords,
                     weight: self.weights.breaking_keywords,
-                    description: format!("Breaking keywords found: {:?}", breaking_found.iter().take(3).collect::<Vec<_>>()),
+                    description: format!(
+                        "Breaking keywords found: {:?}",
+                        breaking_found.iter().take(3).collect::<Vec<_>>()
+                    ),
                 });
                 total_weight += self.weights.breaking_keywords;
                 confidence += 0.15;
             }
 
             // Check for deprecation keywords (lower weight)
-            let deprecation_found: Vec<_> = self.deprecation_keywords
+            let deprecation_found: Vec<_> = self
+                .deprecation_keywords
                 .iter()
                 .filter(|kw| lowercase.contains(kw.as_str()))
                 .collect();
@@ -226,7 +259,10 @@ impl BreakingChangePredictor {
                 signals.push(BreakingSignal {
                     signal_type: SignalType::BreakingKeywords,
                     weight: self.weights.breaking_keywords * 0.5,
-                    description: format!("Deprecation warnings: {:?}", deprecation_found.iter().take(3).collect::<Vec<_>>()),
+                    description: format!(
+                        "Deprecation warnings: {:?}",
+                        deprecation_found.iter().take(3).collect::<Vec<_>>()
+                    ),
                 });
                 total_weight += self.weights.breaking_keywords * 0.5;
             }
@@ -234,8 +270,8 @@ impl BreakingChangePredictor {
 
         // 3. Dependencies removed
         if input.dependencies_removed > 0 {
-            let weight = (input.dependencies_removed as f64 * 0.1)
-                .min(self.weights.dependencies_removed);
+            let weight =
+                (input.dependencies_removed as f64 * 0.1).min(self.weights.dependencies_removed);
             signals.push(BreakingSignal {
                 signal_type: SignalType::DependenciesRemoved,
                 weight,
@@ -251,15 +287,18 @@ impl BreakingChangePredictor {
             signals.push(BreakingSignal {
                 signal_type: SignalType::DependenciesMajorUpdate,
                 weight,
-                description: format!("{} dependencies with major version updates", input.dependencies_major_updates),
+                description: format!(
+                    "{} dependencies with major version updates",
+                    input.dependencies_major_updates
+                ),
             });
             total_weight += weight;
         }
 
         // 5. API surface reduced
         if input.api_items_removed > 0 {
-            let weight = (input.api_items_removed as f64 * 0.05)
-                .min(self.weights.api_surface_reduced);
+            let weight =
+                (input.api_items_removed as f64 * 0.05).min(self.weights.api_surface_reduced);
             signals.push(BreakingSignal {
                 signal_type: SignalType::ApiSurfaceReduced,
                 weight,
@@ -275,7 +314,10 @@ impl BreakingChangePredictor {
                 signals.push(BreakingSignal {
                     signal_type: SignalType::AuthorHistory,
                     weight: self.weights.author_history * rate,
-                    description: format!("Author has {:.0}% historical breaking change rate", rate * 100.0),
+                    description: format!(
+                        "Author has {:.0}% historical breaking change rate",
+                        rate * 100.0
+                    ),
                 });
                 total_weight += self.weights.author_history * rate;
             }
@@ -366,7 +408,7 @@ mod tests {
     #[test]
     fn test_major_version_bump_detection() {
         let predictor = BreakingChangePredictor::new();
-        
+
         let input = PredictionInput {
             old_version: Some("1.5.3".to_string()),
             new_version: "2.0.0".to_string(),
@@ -375,13 +417,18 @@ mod tests {
 
         let result = predictor.predict("npm:some-package", &input);
         assert!(result.probability > 0.3);
-        assert!(result.signals.iter().any(|s| s.signal_type == SignalType::MajorVersionBump));
+        assert!(
+            result
+                .signals
+                .iter()
+                .any(|s| s.signal_type == SignalType::MajorVersionBump)
+        );
     }
 
     #[test]
     fn test_breaking_keyword_detection() {
         let predictor = BreakingChangePredictor::new();
-        
+
         let input = PredictionInput {
             old_version: Some("1.0.0".to_string()),
             new_version: "1.1.0".to_string(),
@@ -391,26 +438,36 @@ mod tests {
 
         let result = predictor.predict("npm:some-package", &input);
         assert!(result.probability > 0.2);
-        assert!(result.signals.iter().any(|s| s.signal_type == SignalType::BreakingKeywords));
+        assert!(
+            result
+                .signals
+                .iter()
+                .any(|s| s.signal_type == SignalType::BreakingKeywords)
+        );
     }
 
     #[test]
     fn test_pre_release_detection() {
         let predictor = BreakingChangePredictor::new();
-        
+
         let input = PredictionInput {
             new_version: "2.0.0-beta.1".to_string(),
             ..Default::default()
         };
 
         let result = predictor.predict("npm:some-package", &input);
-        assert!(result.signals.iter().any(|s| s.signal_type == SignalType::PreRelease));
+        assert!(
+            result
+                .signals
+                .iter()
+                .any(|s| s.signal_type == SignalType::PreRelease)
+        );
     }
 
     #[test]
     fn test_low_risk_patch() {
         let predictor = BreakingChangePredictor::new();
-        
+
         let input = PredictionInput {
             old_version: Some("1.5.3".to_string()),
             new_version: "1.5.4".to_string(),

@@ -3,13 +3,13 @@
 //! A flexible policy engine that evaluates packages against configurable
 //! security, license, and supply chain policies.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 use crate::license::LicenseInfo;
-use crate::vex::VexSeverity;
 use crate::provenance::SlsaBuildLevel;
+use crate::vex::VexSeverity;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // POLICY TYPES
@@ -103,62 +103,37 @@ impl PolicyCategory {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum PolicyCondition {
     /// License must be in allowed list
-    LicenseAllowed {
-        allowed: Vec<String>,
-    },
+    LicenseAllowed { allowed: Vec<String> },
     /// License must not be in denied list
-    LicenseDenied {
-        denied: Vec<String>,
-    },
+    LicenseDenied { denied: Vec<String> },
     /// License must be OSI approved
     LicenseOsiApproved,
     /// No vulnerabilities above severity threshold
-    MaxVulnerabilitySeverity {
-        max_severity: VexSeverity,
-    },
+    MaxVulnerabilitySeverity { max_severity: VexSeverity },
     /// All vulnerabilities must have VEX assessment
     RequireVexAssessment,
     /// Minimum SLSA level required
-    MinSlsaLevel {
-        min_level: SlsaBuildLevel,
-    },
+    MinSlsaLevel { min_level: SlsaBuildLevel },
     /// Package must have SBOM
     RequireSbom,
     /// Package must have provenance
     RequireProvenance,
     /// OpenSSF Scorecard minimum score
-    MinScorecardScore {
-        min_score: f64,
-    },
+    MinScorecardScore { min_score: f64 },
     /// Specific scorecard check must pass
-    ScorecardCheckRequired {
-        check_name: String,
-        min_score: i32,
-    },
+    ScorecardCheckRequired { check_name: String, min_score: i32 },
     /// Package age limit (unmaintained detection)
-    MaxPackageAge {
-        max_days: u32,
-    },
+    MaxPackageAge { max_days: u32 },
     /// Dependency depth limit
-    MaxDependencyDepth {
-        max_depth: u32,
-    },
+    MaxDependencyDepth { max_depth: u32 },
     /// Custom expression (for advanced use)
-    CustomExpression {
-        expression: String,
-    },
+    CustomExpression { expression: String },
     /// Combined conditions (AND)
-    All {
-        conditions: Vec<PolicyCondition>,
-    },
+    All { conditions: Vec<PolicyCondition> },
     /// Combined conditions (OR)
-    Any {
-        conditions: Vec<PolicyCondition>,
-    },
+    Any { conditions: Vec<PolicyCondition> },
     /// Negation
-    Not {
-        condition: Box<PolicyCondition>,
-    },
+    Not { condition: Box<PolicyCondition> },
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -210,7 +185,10 @@ impl PolicySet {
 
     /// Get rules by category
     pub fn rules_by_category(&self, category: PolicyCategory) -> Vec<&PolicyRule> {
-        self.rules.iter().filter(|r| r.category == category).collect()
+        self.rules
+            .iter()
+            .filter(|r| r.category == category)
+            .collect()
     }
 
     /// Count blocking rules
@@ -349,7 +327,11 @@ impl PolicyEngine {
     }
 
     /// Evaluate a context against a policy set
-    pub fn evaluate(&self, policy_set_id: &str, context: &PolicyContext) -> Option<PolicyEvaluation> {
+    pub fn evaluate(
+        &self,
+        policy_set_id: &str,
+        context: &PolicyContext,
+    ) -> Option<PolicyEvaluation> {
         let policy_set = self.policy_sets.get(policy_set_id)?;
         let start = std::time::Instant::now();
 
@@ -357,7 +339,7 @@ impl PolicyEngine {
 
         for rule in &policy_set.rules {
             let (result, message) = self.evaluate_condition(&rule.condition, context);
-            
+
             rule_results.push(RuleEvaluation {
                 rule_id: rule.id.clone(),
                 rule_name: rule.name.clone(),
@@ -373,10 +355,20 @@ impl PolicyEngine {
             });
         }
 
-        let passed_count = rule_results.iter().filter(|r| r.result == PolicyResult::Pass).count();
-        let failed_count = rule_results.iter().filter(|r| r.result == PolicyResult::Fail).count();
-        let warning_count = rule_results.iter().filter(|r| r.result == PolicyResult::Warn).count();
-        let blocking_failures = rule_results.iter()
+        let passed_count = rule_results
+            .iter()
+            .filter(|r| r.result == PolicyResult::Pass)
+            .count();
+        let failed_count = rule_results
+            .iter()
+            .filter(|r| r.result == PolicyResult::Fail)
+            .count();
+        let warning_count = rule_results
+            .iter()
+            .filter(|r| r.result == PolicyResult::Warn)
+            .count();
+        let blocking_failures = rule_results
+            .iter()
             .filter(|r| r.result == PolicyResult::Fail && r.blocking)
             .count();
 
@@ -403,78 +395,127 @@ impl PolicyEngine {
     }
 
     /// Evaluate a single condition
-    fn evaluate_condition(&self, condition: &PolicyCondition, context: &PolicyContext) -> (PolicyResult, String) {
+    fn evaluate_condition(
+        &self,
+        condition: &PolicyCondition,
+        context: &PolicyContext,
+    ) -> (PolicyResult, String) {
         match condition {
-            PolicyCondition::LicenseAllowed { allowed } => {
-                match &context.license {
-                    Some(license) => {
-                        if allowed.iter().any(|l| l.eq_ignore_ascii_case(&license.id)) {
-                            (PolicyResult::Pass, format!("License {} is allowed", license.id))
-                        } else {
-                            (PolicyResult::Fail, format!("License {} is not in allowed list", license.id))
-                        }
+            PolicyCondition::LicenseAllowed { allowed } => match &context.license {
+                Some(license) => {
+                    if allowed.iter().any(|l| l.eq_ignore_ascii_case(&license.id)) {
+                        (
+                            PolicyResult::Pass,
+                            format!("License {} is allowed", license.id),
+                        )
+                    } else {
+                        (
+                            PolicyResult::Fail,
+                            format!("License {} is not in allowed list", license.id),
+                        )
                     }
-                    None => (PolicyResult::Skip, "No license information available".to_string()),
                 }
-            }
-            PolicyCondition::LicenseDenied { denied } => {
-                match &context.license {
-                    Some(license) => {
-                        if denied.iter().any(|l| l.eq_ignore_ascii_case(&license.id)) {
-                            (PolicyResult::Fail, format!("License {} is denied", license.id))
-                        } else {
-                            (PolicyResult::Pass, format!("License {} is not denied", license.id))
-                        }
+                None => (
+                    PolicyResult::Skip,
+                    "No license information available".to_string(),
+                ),
+            },
+            PolicyCondition::LicenseDenied { denied } => match &context.license {
+                Some(license) => {
+                    if denied.iter().any(|l| l.eq_ignore_ascii_case(&license.id)) {
+                        (
+                            PolicyResult::Fail,
+                            format!("License {} is denied", license.id),
+                        )
+                    } else {
+                        (
+                            PolicyResult::Pass,
+                            format!("License {} is not denied", license.id),
+                        )
                     }
-                    None => (PolicyResult::Skip, "No license information available".to_string()),
                 }
-            }
-            PolicyCondition::LicenseOsiApproved => {
-                match &context.license {
-                    Some(license) => {
-                        if license.osi_approved {
-                            (PolicyResult::Pass, "License is OSI approved".to_string())
-                        } else {
-                            (PolicyResult::Fail, format!("License {} is not OSI approved", license.id))
-                        }
+                None => (
+                    PolicyResult::Skip,
+                    "No license information available".to_string(),
+                ),
+            },
+            PolicyCondition::LicenseOsiApproved => match &context.license {
+                Some(license) => {
+                    if license.osi_approved {
+                        (PolicyResult::Pass, "License is OSI approved".to_string())
+                    } else {
+                        (
+                            PolicyResult::Fail,
+                            format!("License {} is not OSI approved", license.id),
+                        )
                     }
-                    None => (PolicyResult::Skip, "No license information available".to_string()),
                 }
-            }
+                None => (
+                    PolicyResult::Skip,
+                    "No license information available".to_string(),
+                ),
+            },
             PolicyCondition::MaxVulnerabilitySeverity { max_severity } => {
-                let has_violations = context.vulnerabilities.iter().any(|(sev, count)| {
-                    *count > 0 && *sev > *max_severity
-                });
+                let has_violations = context
+                    .vulnerabilities
+                    .iter()
+                    .any(|(sev, count)| *count > 0 && *sev > *max_severity);
                 if has_violations {
-                    (PolicyResult::Fail, format!("Has vulnerabilities above {:?} severity", max_severity))
+                    (
+                        PolicyResult::Fail,
+                        format!("Has vulnerabilities above {:?} severity", max_severity),
+                    )
                 } else {
-                    (PolicyResult::Pass, "No high-severity vulnerabilities".to_string())
+                    (
+                        PolicyResult::Pass,
+                        "No high-severity vulnerabilities".to_string(),
+                    )
                 }
             }
             PolicyCondition::RequireVexAssessment => {
                 let total_vulns: usize = context.vulnerabilities.values().sum();
                 if total_vulns == 0 {
-                    (PolicyResult::Pass, "No vulnerabilities to assess".to_string())
+                    (
+                        PolicyResult::Pass,
+                        "No vulnerabilities to assess".to_string(),
+                    )
                 } else if context.vex_assessments >= total_vulns {
-                    (PolicyResult::Pass, "All vulnerabilities have VEX assessments".to_string())
+                    (
+                        PolicyResult::Pass,
+                        "All vulnerabilities have VEX assessments".to_string(),
+                    )
                 } else {
-                    (PolicyResult::Fail, format!(
-                        "Missing VEX assessments: {} of {} vulnerabilities assessed",
-                        context.vex_assessments, total_vulns
-                    ))
+                    (
+                        PolicyResult::Fail,
+                        format!(
+                            "Missing VEX assessments: {} of {} vulnerabilities assessed",
+                            context.vex_assessments, total_vulns
+                        ),
+                    )
                 }
             }
-            PolicyCondition::MinSlsaLevel { min_level } => {
-                match context.slsa_level {
-                    Some(level) if level >= *min_level => {
-                        (PolicyResult::Pass, format!("SLSA level {} meets minimum {}", level.as_str(), min_level.as_str()))
-                    }
-                    Some(level) => {
-                        (PolicyResult::Fail, format!("SLSA level {} below minimum {}", level.as_str(), min_level.as_str()))
-                    }
-                    None => (PolicyResult::Fail, "No SLSA level information available".to_string()),
-                }
-            }
+            PolicyCondition::MinSlsaLevel { min_level } => match context.slsa_level {
+                Some(level) if level >= *min_level => (
+                    PolicyResult::Pass,
+                    format!(
+                        "SLSA level {} meets minimum {}",
+                        level.as_str(),
+                        min_level.as_str()
+                    ),
+                ),
+                Some(level) => (
+                    PolicyResult::Fail,
+                    format!(
+                        "SLSA level {} below minimum {}",
+                        level.as_str(),
+                        min_level.as_str()
+                    ),
+                ),
+                None => (
+                    PolicyResult::Fail,
+                    "No SLSA level information available".to_string(),
+                ),
+            },
             PolicyCondition::RequireSbom => {
                 if context.has_sbom {
                     (PolicyResult::Pass, "SBOM is available".to_string())
@@ -489,62 +530,90 @@ impl PolicyEngine {
                     (PolicyResult::Fail, "No provenance available".to_string())
                 }
             }
-            PolicyCondition::MinScorecardScore { min_score } => {
-                match context.scorecard_score {
-                    Some(score) if score >= *min_score => {
-                        (PolicyResult::Pass, format!("Scorecard score {:.1} meets minimum {:.1}", score, min_score))
+            PolicyCondition::MinScorecardScore { min_score } => match context.scorecard_score {
+                Some(score) if score >= *min_score => (
+                    PolicyResult::Pass,
+                    format!(
+                        "Scorecard score {:.1} meets minimum {:.1}",
+                        score, min_score
+                    ),
+                ),
+                Some(score) => (
+                    PolicyResult::Fail,
+                    format!(
+                        "Scorecard score {:.1} below minimum {:.1}",
+                        score, min_score
+                    ),
+                ),
+                None => (
+                    PolicyResult::Skip,
+                    "No scorecard score available".to_string(),
+                ),
+            },
+            PolicyCondition::ScorecardCheckRequired {
+                check_name,
+                min_score,
+            } => match context.scorecard_checks.get(check_name) {
+                Some(score) if *score >= *min_score => (
+                    PolicyResult::Pass,
+                    format!(
+                        "{} check score {} meets minimum {}",
+                        check_name, score, min_score
+                    ),
+                ),
+                Some(score) => (
+                    PolicyResult::Fail,
+                    format!(
+                        "{} check score {} below minimum {}",
+                        check_name, score, min_score
+                    ),
+                ),
+                None => (
+                    PolicyResult::Skip,
+                    format!("Scorecard check {} not available", check_name),
+                ),
+            },
+            PolicyCondition::MaxPackageAge { max_days } => match context.last_updated {
+                Some(updated) => {
+                    let age = Utc::now().signed_duration_since(updated);
+                    let days = age.num_days() as u32;
+                    if days <= *max_days {
+                        (
+                            PolicyResult::Pass,
+                            format!("Package updated {} days ago", days),
+                        )
+                    } else {
+                        (
+                            PolicyResult::Warn,
+                            format!("Package not updated in {} days (max: {})", days, max_days),
+                        )
                     }
-                    Some(score) => {
-                        (PolicyResult::Fail, format!("Scorecard score {:.1} below minimum {:.1}", score, min_score))
-                    }
-                    None => (PolicyResult::Skip, "No scorecard score available".to_string()),
                 }
-            }
-            PolicyCondition::ScorecardCheckRequired { check_name, min_score } => {
-                match context.scorecard_checks.get(check_name) {
-                    Some(score) if *score >= *min_score => {
-                        (PolicyResult::Pass, format!("{} check score {} meets minimum {}", check_name, score, min_score))
-                    }
-                    Some(score) => {
-                        (PolicyResult::Fail, format!("{} check score {} below minimum {}", check_name, score, min_score))
-                    }
-                    None => (PolicyResult::Skip, format!("Scorecard check {} not available", check_name)),
-                }
-            }
-            PolicyCondition::MaxPackageAge { max_days } => {
-                match context.last_updated {
-                    Some(updated) => {
-                        let age = Utc::now().signed_duration_since(updated);
-                        let days = age.num_days() as u32;
-                        if days <= *max_days {
-                            (PolicyResult::Pass, format!("Package updated {} days ago", days))
-                        } else {
-                            (PolicyResult::Warn, format!("Package not updated in {} days (max: {})", days, max_days))
-                        }
-                    }
-                    None => (PolicyResult::Skip, "No update date available".to_string()),
-                }
-            }
-            PolicyCondition::MaxDependencyDepth { max_depth } => {
-                match context.dependency_depth {
-                    Some(depth) if depth <= *max_depth => {
-                        (PolicyResult::Pass, format!("Dependency depth {} within limit {}", depth, max_depth))
-                    }
-                    Some(depth) => {
-                        (PolicyResult::Warn, format!("Dependency depth {} exceeds limit {}", depth, max_depth))
-                    }
-                    None => (PolicyResult::Skip, "Dependency depth unknown".to_string()),
-                }
-            }
+                None => (PolicyResult::Skip, "No update date available".to_string()),
+            },
+            PolicyCondition::MaxDependencyDepth { max_depth } => match context.dependency_depth {
+                Some(depth) if depth <= *max_depth => (
+                    PolicyResult::Pass,
+                    format!("Dependency depth {} within limit {}", depth, max_depth),
+                ),
+                Some(depth) => (
+                    PolicyResult::Warn,
+                    format!("Dependency depth {} exceeds limit {}", depth, max_depth),
+                ),
+                None => (PolicyResult::Skip, "Dependency depth unknown".to_string()),
+            },
             PolicyCondition::CustomExpression { expression } => {
                 // Custom expressions would need a proper expression evaluator
                 // For now, we just skip them
-                (PolicyResult::Skip, format!("Custom expression not evaluated: {}", expression))
+                (
+                    PolicyResult::Skip,
+                    format!("Custom expression not evaluated: {}", expression),
+                )
             }
             PolicyCondition::All { conditions } => {
                 let mut all_pass = true;
                 let mut messages = Vec::new();
-                
+
                 for cond in conditions {
                     let (result, msg) = self.evaluate_condition(cond, context);
                     if result == PolicyResult::Fail {
@@ -552,7 +621,7 @@ impl PolicyEngine {
                         messages.push(msg);
                     }
                 }
-                
+
                 if all_pass {
                     (PolicyResult::Pass, "All conditions passed".to_string())
                 } else {
@@ -582,7 +651,8 @@ impl PolicyEngine {
     /// Create default enterprise policy set
     pub fn create_default_enterprise_policy() -> PolicySet {
         let mut policy = PolicySet::new("enterprise-default", "Enterprise Default Policy");
-        policy.description = Some("Default security and compliance policy for enterprise environments".to_string());
+        policy.description =
+            Some("Default security and compliance policy for enterprise environments".to_string());
 
         // License rules
         policy.add_rule(PolicyRule {
@@ -643,7 +713,9 @@ impl PolicyEngine {
                 min_level: SlsaBuildLevel::L1,
             },
             blocking: false,
-            remediation: Some("Use packages from build systems that provide provenance".to_string()),
+            remediation: Some(
+                "Use packages from build systems that provide provenance".to_string(),
+            ),
             reference: Some("https://slsa.dev/spec/v1.0/levels".to_string()),
         });
 
@@ -653,11 +725,11 @@ impl PolicyEngine {
             description: "Dependencies should have minimum scorecard score of 5.0".to_string(),
             category: PolicyCategory::SupplyChain,
             severity: PolicySeverity::Low,
-            condition: PolicyCondition::MinScorecardScore {
-                min_score: 5.0,
-            },
+            condition: PolicyCondition::MinScorecardScore { min_score: 5.0 },
             blocking: false,
-            remediation: Some("Consider alternative packages with better security practices".to_string()),
+            remediation: Some(
+                "Consider alternative packages with better security practices".to_string(),
+            ),
             reference: Some("https://securityscorecards.dev".to_string()),
         });
 
@@ -668,9 +740,7 @@ impl PolicyEngine {
             description: "Warn about packages not updated in 2 years".to_string(),
             category: PolicyCategory::Quality,
             severity: PolicySeverity::Low,
-            condition: PolicyCondition::MaxPackageAge {
-                max_days: 730,
-            },
+            condition: PolicyCondition::MaxPackageAge { max_days: 730 },
             blocking: false,
             remediation: Some("Consider actively maintained alternatives".to_string()),
             reference: None,
@@ -721,7 +791,7 @@ mod tests {
     fn test_license_allowed() {
         let mut engine = PolicyEngine::new();
         let mut policy = PolicySet::new("test", "Test Policy");
-        
+
         policy.add_rule(PolicyRule {
             id: "lic-1".to_string(),
             name: "Allowed Licenses".to_string(),
@@ -735,9 +805,9 @@ mod tests {
             remediation: None,
             reference: None,
         });
-        
+
         engine.load_policy_set(policy);
-        
+
         let result = engine.evaluate("test", &test_context()).unwrap();
         assert_eq!(result.overall_result, PolicyResult::Pass);
     }
@@ -746,7 +816,7 @@ mod tests {
     fn test_license_denied() {
         let mut engine = PolicyEngine::new();
         let mut policy = PolicySet::new("test", "Test Policy");
-        
+
         policy.add_rule(PolicyRule {
             id: "lic-1".to_string(),
             name: "Denied Licenses".to_string(),
@@ -760,9 +830,9 @@ mod tests {
             remediation: None,
             reference: None,
         });
-        
+
         engine.load_policy_set(policy);
-        
+
         let result = engine.evaluate("test", &test_context()).unwrap();
         assert_eq!(result.overall_result, PolicyResult::Pass); // MIT is not denied
     }
@@ -770,18 +840,33 @@ mod tests {
     #[test]
     fn test_default_enterprise_policy() {
         let policy = PolicyEngine::create_default_enterprise_policy();
-        
+
         assert!(!policy.rules.is_empty());
-        assert!(policy.rules.iter().any(|r| r.category == PolicyCategory::License));
-        assert!(policy.rules.iter().any(|r| r.category == PolicyCategory::Security));
-        assert!(policy.rules.iter().any(|r| r.category == PolicyCategory::SupplyChain));
+        assert!(
+            policy
+                .rules
+                .iter()
+                .any(|r| r.category == PolicyCategory::License)
+        );
+        assert!(
+            policy
+                .rules
+                .iter()
+                .any(|r| r.category == PolicyCategory::Security)
+        );
+        assert!(
+            policy
+                .rules
+                .iter()
+                .any(|r| r.category == PolicyCategory::SupplyChain)
+        );
     }
 
     #[test]
     fn test_slsa_level_check() {
         let mut engine = PolicyEngine::new();
         let mut policy = PolicySet::new("test", "Test Policy");
-        
+
         policy.add_rule(PolicyRule {
             id: "slsa-1".to_string(),
             name: "SLSA L2".to_string(),
@@ -795,12 +880,12 @@ mod tests {
             remediation: None,
             reference: None,
         });
-        
+
         engine.load_policy_set(policy);
-        
+
         let context = test_context(); // Has L1
         let result = engine.evaluate("test", &context).unwrap();
-        
+
         // Should fail because context has L1 but requires L2
         assert_eq!(result.overall_result, PolicyResult::Fail);
     }
@@ -809,7 +894,7 @@ mod tests {
     fn test_combined_conditions() {
         let mut engine = PolicyEngine::new();
         let mut policy = PolicySet::new("test", "Test Policy");
-        
+
         policy.add_rule(PolicyRule {
             id: "combined-1".to_string(),
             name: "Combined Check".to_string(),
@@ -826,9 +911,9 @@ mod tests {
             remediation: None,
             reference: None,
         });
-        
+
         engine.load_policy_set(policy);
-        
+
         let result = engine.evaluate("test", &test_context()).unwrap();
         assert_eq!(result.overall_result, PolicyResult::Pass);
     }

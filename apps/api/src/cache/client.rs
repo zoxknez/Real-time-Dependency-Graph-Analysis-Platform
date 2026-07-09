@@ -1,9 +1,9 @@
 //! Redis cache client for GraphQL query caching
 
 use anyhow::{Context, Result};
-use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
-use serde::{de::DeserializeOwned, Serialize};
+use redis::aio::ConnectionManager;
+use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 use tracing::{debug, instrument, warn};
 
@@ -14,6 +14,7 @@ use storage::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
 #[derive(Clone)]
 pub struct CacheClient {
     conn: ConnectionManager,
+    #[allow(dead_code)]
     default_ttl: u64,
     circuit_breaker: Arc<CircuitBreaker>,
 }
@@ -50,12 +51,13 @@ impl CacheClient {
     }
 
     /// Get circuit breaker state for monitoring
+    #[allow(dead_code)]
     pub fn circuit_state(&self) -> storage::circuit_breaker::CircuitState {
         self.circuit_breaker.state()
     }
 
     /// Get a cached value by key with circuit breaker protection
-    /// 
+    ///
     /// Returns None if circuit is open (graceful degradation)
     pub async fn get<T: DeserializeOwned>(&self, key: &str) -> Option<T> {
         let mut conn = self.conn.clone();
@@ -72,20 +74,18 @@ impl CacheClient {
             .await;
 
         match result {
-            Ok(Some(data)) => {
-                match serde_json::from_str(&data) {
-                    Ok(value) => {
-                        debug!(key = key, "Cache HIT");
-                        metrics::counter!("cache_hits").increment(1);
-                        Some(value)
-                    }
-                    Err(e) => {
-                        warn!(key = key, error = %e, "Failed to deserialize cached value");
-                        metrics::counter!("cache_errors", "type" => "deserialize").increment(1);
-                        None
-                    }
+            Ok(Some(data)) => match serde_json::from_str(&data) {
+                Ok(value) => {
+                    debug!(key = key, "Cache HIT");
+                    metrics::counter!("cache_hits").increment(1);
+                    Some(value)
                 }
-            }
+                Err(e) => {
+                    warn!(key = key, error = %e, "Failed to deserialize cached value");
+                    metrics::counter!("cache_errors", "type" => "deserialize").increment(1);
+                    None
+                }
+            },
             Ok(None) => {
                 debug!(key = key, "Cache MISS");
                 metrics::counter!("cache_misses").increment(1);
@@ -101,23 +101,29 @@ impl CacheClient {
     }
 
     /// Set a value with default TTL
+    #[allow(dead_code)]
     pub async fn set<T: Serialize>(&self, key: &str, value: &T) -> Result<()> {
         self.set_with_ttl(key, value, self.default_ttl).await
     }
 
     /// Set a value with custom TTL (seconds) with circuit breaker protection
-    pub async fn set_with_ttl<T: Serialize>(&self, key: &str, value: &T, ttl_secs: u64) -> Result<()> {
+    pub async fn set_with_ttl<T: Serialize>(
+        &self,
+        key: &str,
+        value: &T,
+        ttl_secs: u64,
+    ) -> Result<()> {
         let mut conn = self.conn.clone();
         let cb = self.circuit_breaker.clone();
         let data = serde_json::to_string(value)?;
-        
+
         cb.call::<_, _, anyhow::Error>(async {
             conn.set_ex::<_, _, ()>(key, data.clone(), ttl_secs)
                 .await
                 .with_context(|| format!("Failed to SET key: {}", key))
         })
         .await?;
-        
+
         debug!(key = key, ttl = ttl_secs, "Cached value");
         Ok(())
     }
@@ -126,35 +132,38 @@ impl CacheClient {
     pub async fn delete(&self, key: &str) -> Result<()> {
         let mut conn = self.conn.clone();
         let cb = self.circuit_breaker.clone();
-        
+
         cb.call::<_, _, anyhow::Error>(async {
-            conn.del::<_, ()>(key).await.map_err(|e| anyhow::anyhow!("DEL error: {}", e))
+            conn.del::<_, ()>(key)
+                .await
+                .map_err(|e| anyhow::anyhow!("DEL error: {}", e))
         })
         .await
     }
 
     /// Delete keys matching a pattern using SCAN (non-blocking, O(1) per iteration)
-    /// 
+    ///
     /// # Safety
     /// - Uses SCAN instead of KEYS (O(1) per iteration vs O(N) blocking)
     /// - Limits total keys deleted per call to prevent runaway operations
     /// - Limits iterations to prevent infinite loops
-    /// 
+    ///
     /// # Arguments
     /// - `pattern`: Redis SCAN pattern (e.g., "user:*:cache")
     /// - `max_keys`: Maximum number of keys to delete in this call
-    /// 
+    ///
     /// # Returns
     /// Number of keys actually deleted
+    #[allow(dead_code)]
     pub async fn delete_pattern(&self, pattern: &str, max_keys: usize) -> Result<u64> {
         let mut conn = self.conn.clone();
         let mut cursor: u64 = 0;
         let mut total_deleted: u64 = 0;
         let mut iterations: usize = 0;
-        
-        const MAX_ITERATIONS: usize = 100;  // Prevent infinite loops
-        const SCAN_COUNT: usize = 100;      // Keys to scan per iteration
-        
+
+        const MAX_ITERATIONS: usize = 100; // Prevent infinite loops
+        const SCAN_COUNT: usize = 100; // Keys to scan per iteration
+
         loop {
             // Use SCAN instead of KEYS (non-blocking)
             let (new_cursor, keys): (u64, Vec<String>) = redis::cmd("SCAN")
@@ -165,12 +174,12 @@ impl CacheClient {
                 .arg(SCAN_COUNT)
                 .query_async(&mut conn)
                 .await?;
-            
+
             if !keys.is_empty() {
                 // Calculate how many keys we can still delete
                 let remaining_quota = max_keys.saturating_sub(total_deleted as usize);
                 let keys_to_delete: Vec<_> = keys.into_iter().take(remaining_quota).collect();
-                
+
                 if !keys_to_delete.is_empty() {
                     // Batch delete using DEL command
                     let deleted: u64 = redis::cmd("DEL")
@@ -180,10 +189,10 @@ impl CacheClient {
                     total_deleted += deleted;
                 }
             }
-            
+
             cursor = new_cursor;
             iterations += 1;
-            
+
             // Stop conditions:
             // 1. Cursor returned to 0 (full scan complete)
             // 2. Hit max iterations (safety limit)
@@ -192,7 +201,7 @@ impl CacheClient {
                 break;
             }
         }
-        
+
         if iterations >= MAX_ITERATIONS && cursor != 0 {
             warn!(
                 pattern = pattern,
@@ -201,13 +210,19 @@ impl CacheClient {
                 "SCAN hit max iterations limit - pattern may have more matching keys"
             );
         }
-        
-        debug!(pattern = pattern, count = total_deleted, iterations = iterations, "Deleted cached keys via SCAN");
+
+        debug!(
+            pattern = pattern,
+            count = total_deleted,
+            iterations = iterations,
+            "Deleted cached keys via SCAN"
+        );
         Ok(total_deleted)
     }
-    
+
     /// Delete keys matching a pattern with default limit
     /// Convenience wrapper around delete_pattern with max_keys = 10000
+    #[allow(dead_code)]
     pub async fn delete_pattern_default(&self, pattern: &str) -> Result<u64> {
         self.delete_pattern(pattern, 10_000).await
     }
@@ -232,7 +247,7 @@ pub struct CacheKeys;
 #[allow(dead_code)]
 impl CacheKeys {
     /// Create tenant-prefixed key
-    /// 
+    ///
     /// All keys are prefixed with tenant ID to ensure complete isolation.
     /// Format: `t:{tenant_id}:{key}`
     fn tenant_key(tenant_id: Option<&uuid::Uuid>, key: &str) -> String {
@@ -248,7 +263,11 @@ impl CacheKeys {
     }
 
     /// Cache key for reverse dependents query (tenant-isolated)
-    pub fn reverse_dependents(tenant_id: Option<&uuid::Uuid>, package_id: &str, depth: i32) -> String {
+    pub fn reverse_dependents(
+        tenant_id: Option<&uuid::Uuid>,
+        package_id: &str,
+        depth: i32,
+    ) -> String {
         Self::tenant_key(tenant_id, &format!("rev_deps:{}:d{}", package_id, depth))
     }
 

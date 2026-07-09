@@ -39,7 +39,7 @@ pub fn generate_event_id(
     hasher.update(entity_id.as_bytes());
     hasher.update(b"|");
     hasher.update(content_hash.as_bytes());
-    
+
     let result = hasher.finalize();
     hex::encode(result)
 }
@@ -72,12 +72,7 @@ pub fn generate_version_upsert_event_id(
     integrity: &str,
 ) -> String {
     let entity_id = format!("{}:{}", package_name, version);
-    generate_event_id(
-        "version.upserted",
-        ecosystem,
-        &entity_id,
-        integrity,
-    )
+    generate_event_id("version.upserted", ecosystem, &entity_id, integrity)
 }
 
 /// Generate event ID for version yanked
@@ -88,26 +83,13 @@ pub fn generate_version_yanked_event_id(
 ) -> String {
     let entity_id = format!("{}:{}", package_name, version);
     // For yank, we use a constant content hash since the action is the identifier
-    generate_event_id(
-        "version.yanked",
-        ecosystem,
-        &entity_id,
-        "yanked",
-    )
+    generate_event_id("version.yanked", ecosystem, &entity_id, "yanked")
 }
 
 /// Generate event ID for package deleted
-pub fn generate_package_deleted_event_id(
-    ecosystem: &str,
-    package_name: &str,
-) -> String {
+pub fn generate_package_deleted_event_id(ecosystem: &str, package_name: &str) -> String {
     // For deletion, we use a constant content hash
-    generate_event_id(
-        "package.deleted",
-        ecosystem,
-        package_name,
-        "deleted",
-    )
+    generate_event_id("package.deleted", ecosystem, package_name, "deleted")
 }
 
 /// Hash arbitrary bytes (for content hashing)
@@ -139,20 +121,29 @@ mod tests {
     fn test_event_id_different_content() {
         let id1 = generate_package_upsert_event_id("npm", "react", "abc123");
         let id2 = generate_package_upsert_event_id("npm", "react", "xyz789");
-        assert_ne!(id1, id2, "Different content should produce different event ID");
+        assert_ne!(
+            id1, id2,
+            "Different content should produce different event ID"
+        );
     }
 
     #[test]
     fn test_event_id_different_package() {
         let id1 = generate_package_upsert_event_id("npm", "react", "abc123");
         let id2 = generate_package_upsert_event_id("npm", "react", "vue");
-        assert_ne!(id1, id2, "Different packages should produce different event ID");
+        assert_ne!(
+            id1, id2,
+            "Different packages should produce different event ID"
+        );
     }
 
     #[test]
     fn test_event_id_format() {
         let id = generate_package_upsert_event_id("npm", "react", "abc123");
         assert_eq!(id.len(), 64, "SHA256 hash should be 64 hex characters");
-        assert!(id.chars().all(|c| c.is_ascii_hexdigit()), "Should be valid hex");
+        assert!(
+            id.chars().all(|c| c.is_ascii_hexdigit()),
+            "Should be valid hex"
+        );
     }
 }

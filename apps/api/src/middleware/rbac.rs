@@ -4,13 +4,13 @@
 //! Provides declarative permission checks for GraphQL resolvers using
 //! AsyncGraphQL's guard system.
 
-use async_graphql::{Context, Guard, Result as GqlResult, ErrorExtensions};
+use async_graphql::{Context, ErrorExtensions, Guard, Result as GqlResult};
 use models::tenant::{Permission, TenantContext};
 
 /// Guard that requires specific permissions to access a resolver
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// use crate::middleware::rbac::RequirePermission;
 /// use models::tenant::Permission;
 ///
@@ -48,14 +48,12 @@ impl RequirePermission {
 impl Guard for RequirePermission {
     async fn check(&self, ctx: &Context<'_>) -> GqlResult<()> {
         // Extract tenant context from GraphQL context
-        let tenant_ctx = ctx
-            .data::<Option<TenantContext>>()
-            .map_err(|_| {
-                async_graphql::Error::new("Internal error: TenantContext not found in context")
-                    .extend_with(|_, ext: &mut async_graphql::ErrorExtensionValues| {
-                        ext.set("code", "INTERNAL_ERROR");
-                    })
-            })?;
+        let tenant_ctx = ctx.data::<Option<TenantContext>>().map_err(|_| {
+            async_graphql::Error::new("Internal error: TenantContext not found in context")
+                .extend_with(|_, ext: &mut async_graphql::ErrorExtensionValues| {
+                    ext.set("code", "INTERNAL_ERROR");
+                })
+        })?;
 
         match tenant_ctx {
             Some(ctx) => {
@@ -66,22 +64,25 @@ impl Guard for RequirePermission {
                 if has_permission {
                     Ok(())
                 } else {
-                    Err(async_graphql::Error::new("Insufficient permissions")
-                        .extend_with(|_, ext: &mut async_graphql::ErrorExtensionValues| {
-                            ext.set("code", "FORBIDDEN");
-                            ext.set(
-                                "required_permissions",
-                                format!("{:?}", self.permissions),
-                            );
-                        }))
+                    Err(
+                        async_graphql::Error::new("Insufficient permissions").extend_with(
+                            |_, ext: &mut async_graphql::ErrorExtensionValues| {
+                                ext.set("code", "FORBIDDEN");
+                                ext.set("required_permissions", format!("{:?}", self.permissions));
+                            },
+                        ),
+                    )
                 }
             }
             None => {
                 // No tenant context = unauthenticated request
-                Err(async_graphql::Error::new("Authentication required")
-                    .extend_with(|_, ext: &mut async_graphql::ErrorExtensionValues| {
-                        ext.set("code", "UNAUTHENTICATED");
-                    }))
+                Err(
+                    async_graphql::Error::new("Authentication required").extend_with(
+                        |_, ext: &mut async_graphql::ErrorExtensionValues| {
+                            ext.set("code", "UNAUTHENTICATED");
+                        },
+                    ),
+                )
             }
         }
     }
@@ -90,7 +91,7 @@ impl Guard for RequirePermission {
 /// Guard that requires ALL of the specified permissions
 ///
 /// # Example
-/// ```rust
+/// ```rust,ignore
 /// use crate::middleware::rbac::RequireAllPermissions;
 /// use models::tenant::Permission;
 ///
@@ -115,14 +116,12 @@ impl RequireAllPermissions {
 
 impl Guard for RequireAllPermissions {
     async fn check(&self, ctx: &Context<'_>) -> GqlResult<()> {
-        let tenant_ctx = ctx
-            .data::<Option<TenantContext>>()
-            .map_err(|_| {
-                async_graphql::Error::new("Internal error: TenantContext not found in context")
-                    .extend_with(|_, ext: &mut async_graphql::ErrorExtensionValues| {
-                        ext.set("code", "INTERNAL_ERROR");
-                    })
-            })?;
+        let tenant_ctx = ctx.data::<Option<TenantContext>>().map_err(|_| {
+            async_graphql::Error::new("Internal error: TenantContext not found in context")
+                .extend_with(|_, ext: &mut async_graphql::ErrorExtensionValues| {
+                    ext.set("code", "INTERNAL_ERROR");
+                })
+        })?;
 
         match tenant_ctx {
             Some(ctx) => {
@@ -132,22 +131,23 @@ impl Guard for RequireAllPermissions {
                 if has_all {
                     Ok(())
                 } else {
-                    Err(async_graphql::Error::new("Insufficient permissions")
-                        .extend_with(|_, ext: &mut async_graphql::ErrorExtensionValues| {
-                            ext.set("code", "FORBIDDEN");
-                            ext.set(
-                                "required_permissions",
-                                format!("{:?}", self.permissions),
-                            );
-                        }))
+                    Err(
+                        async_graphql::Error::new("Insufficient permissions").extend_with(
+                            |_, ext: &mut async_graphql::ErrorExtensionValues| {
+                                ext.set("code", "FORBIDDEN");
+                                ext.set("required_permissions", format!("{:?}", self.permissions));
+                            },
+                        ),
+                    )
                 }
             }
-            None => {
-                Err(async_graphql::Error::new("Authentication required")
-                    .extend_with(|_, ext: &mut async_graphql::ErrorExtensionValues| {
+            None => Err(
+                async_graphql::Error::new("Authentication required").extend_with(
+                    |_, ext: &mut async_graphql::ErrorExtensionValues| {
                         ext.set("code", "UNAUTHENTICATED");
-                    }))
-            }
+                    },
+                ),
+            ),
         }
     }
 }
@@ -174,7 +174,9 @@ mod tests {
             "admin success".to_string()
         }
 
-        #[graphql(guard = "RequireAllPermissions::new(vec![Permission::PackageRead, Permission::GraphQuery])")]
+        #[graphql(
+            guard = "RequireAllPermissions::new(vec![Permission::PackageRead, Permission::GraphQuery])"
+        )]
         async fn multi_permission_query(&self) -> String {
             "multi success".to_string()
         }
@@ -214,10 +216,7 @@ mod tests {
             .await;
 
         assert!(result.errors.is_empty());
-        assert_eq!(
-            result.data.to_string(),
-            r#"{protectedQuery: "success"}"#
-        );
+        assert_eq!(result.data.to_string(), r#"{protectedQuery: "success"}"#);
     }
 
     #[tokio::test]
@@ -231,7 +230,11 @@ mod tests {
             .await;
 
         assert!(!result.errors.is_empty());
-        assert!(result.errors[0].message.contains("Insufficient permissions"));
+        assert!(
+            result.errors[0]
+                .message
+                .contains("Insufficient permissions")
+        );
     }
 
     #[tokio::test]
@@ -287,10 +290,8 @@ mod tests {
         assert!(!result.errors.is_empty());
 
         // Has both required permissions
-        let ctx = create_context_with_permissions(vec![
-            Permission::PackageRead,
-            Permission::GraphQuery,
-        ]);
+        let ctx =
+            create_context_with_permissions(vec![Permission::PackageRead, Permission::GraphQuery]);
         let result = schema
             .execute(async_graphql::Request::new(query).data(Some(ctx)))
             .await;

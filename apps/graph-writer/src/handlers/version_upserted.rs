@@ -2,25 +2,24 @@ use anyhow::{Context, Result};
 use prost::Message;
 use tracing::{debug, instrument};
 
-use crate::graph::{GraphQueries, MemgraphClient};
+use crate::graph::{DEFAULT_TENANT_ID, GraphQueries, MemgraphClient};
 use crate::proto_gen::domain::package::v1::VersionUpserted;
 
 /// Handle VersionUpserted event
-/// 
+///
 /// Creates/updates Package node, Version node, and DEPENDS_ON edges
 #[instrument(skip_all, fields(event_id))]
-pub async fn handle_version_upserted(
-    client: &MemgraphClient,
-    payload: &[u8],
-) -> Result<()> {
+pub async fn handle_version_upserted(client: &MemgraphClient, payload: &[u8]) -> Result<()> {
     // Decode protobuf message
-    let event = VersionUpserted::decode(payload)
-        .context("Failed to decode VersionUpserted protobuf")?;
+    let event =
+        VersionUpserted::decode(payload).context("Failed to decode VersionUpserted protobuf")?;
 
-    let event_id = event.meta.as_ref()
+    let event_id = event
+        .meta
+        .as_ref()
         .map(|m| m.event_id.as_str())
         .unwrap_or("unknown");
-    
+
     tracing::Span::current().record("event_id", event_id);
 
     debug!(
@@ -32,21 +31,28 @@ pub async fn handle_version_upserted(
     );
 
     // Extract timestamp from protobuf
-    let published_at = event.published_at.as_ref().map(|ts| {
-        ts.seconds * 1000 + (ts.nanos / 1_000_000) as i64
-    });
+    let published_at = event
+        .published_at
+        .as_ref()
+        .map(|ts| ts.seconds * 1000 + (ts.nanos / 1_000_000) as i64);
 
     // Convert dependencies to our format (dep_ecosystem, dep_name, version_req)
     // Since we're consuming npm events, dependencies are npm packages
-    let dependencies: Vec<(String, String, String)> = event.dependencies
+    let dependencies: Vec<(String, String, String)> = event
+        .dependencies
         .iter()
         .map(|dep| {
-            (event.ecosystem.clone(), dep.name.clone(), dep.version_range.clone())
+            (
+                event.ecosystem.clone(),
+                dep.name.clone(),
+                dep.version_range.clone(),
+            )
         })
         .collect();
 
     // Build and execute queries
     let queries = GraphQueries::version_upserted(
+        DEFAULT_TENANT_ID,
         &event.ecosystem,
         &event.package_name,
         &event.version,
@@ -90,7 +96,7 @@ mod tests {
 
         let encoded = event.encode_to_vec();
         let decoded = VersionUpserted::decode(encoded.as_slice()).unwrap();
-        
+
         assert_eq!(decoded.package_name, "express");
         assert_eq!(decoded.version, "4.18.2");
     }

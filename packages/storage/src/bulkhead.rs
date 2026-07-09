@@ -7,10 +7,10 @@
 //! - Configurable limits
 //! - Prometheus metrics
 
+use anyhow::{Result, anyhow};
+use metrics::{counter, gauge};
 use std::sync::Arc;
 use std::time::Duration;
-use anyhow::{anyhow, Result};
-use metrics::{counter, gauge};
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
 use tracing::warn;
@@ -76,7 +76,8 @@ impl Bulkhead {
         gauge!(
             "bulkhead_capacity",
             "service" => service.clone()
-        ).set(config.max_concurrent as f64);
+        )
+        .set(config.max_concurrent as f64);
 
         Self {
             service,
@@ -98,7 +99,8 @@ impl Bulkhead {
                     "bulkhead_rejected_total",
                     "service" => self.service.clone(),
                     "reason" => "semaphore_closed"
-                ).increment(1);
+                )
+                .increment(1);
                 return Err(anyhow!("Bulkhead semaphore closed for {}", self.service));
             }
             Err(_) => {
@@ -106,7 +108,8 @@ impl Bulkhead {
                     "bulkhead_rejected_total",
                     "service" => self.service.clone(),
                     "reason" => "timeout"
-                ).increment(1);
+                )
+                .increment(1);
                 warn!(
                     service = %self.service,
                     timeout_ms = self.config.acquire_timeout.as_millis(),
@@ -125,12 +128,14 @@ impl Bulkhead {
         gauge!(
             "bulkhead_available",
             "service" => self.service.clone()
-        ).set(available as f64);
+        )
+        .set(available as f64);
 
         counter!(
             "bulkhead_acquired_total",
             "service" => self.service.clone()
-        ).increment(1);
+        )
+        .increment(1);
 
         // Execute operation
         let result = operation.await;
@@ -143,7 +148,8 @@ impl Bulkhead {
         gauge!(
             "bulkhead_available",
             "service" => self.service.clone()
-        ).set(available as f64);
+        )
+        .set(available as f64);
 
         result
     }
@@ -166,10 +172,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulkhead_allows_concurrent_operations() {
-        let bulkhead = Bulkhead::new("test", BulkheadConfig {
-            max_concurrent: 5,
-            acquire_timeout: Duration::from_secs(1),
-        });
+        let bulkhead = Bulkhead::new(
+            "test",
+            BulkheadConfig {
+                max_concurrent: 5,
+                acquire_timeout: Duration::from_secs(1),
+            },
+        );
 
         let counter = Arc::new(AtomicU32::new(0));
 
@@ -179,11 +188,13 @@ mod tests {
             let bulkhead = bulkhead.clone();
             let counter = counter.clone();
             let handle = tokio::spawn(async move {
-                bulkhead.call(async {
-                    counter.fetch_add(1, Ordering::SeqCst);
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                    Ok::<_, anyhow::Error>(())
-                }).await
+                bulkhead
+                    .call(async {
+                        counter.fetch_add(1, Ordering::SeqCst);
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        Ok::<_, anyhow::Error>(())
+                    })
+                    .await
             });
             handles.push(handle);
         }
@@ -198,36 +209,41 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulkhead_rejects_when_full() {
-        let bulkhead = Bulkhead::new("test", BulkheadConfig {
-            max_concurrent: 2,
-            acquire_timeout: Duration::from_millis(100),
-        });
+        let bulkhead = Bulkhead::new(
+            "test",
+            BulkheadConfig {
+                max_concurrent: 2,
+                acquire_timeout: Duration::from_millis(100),
+            },
+        );
 
         // Start 2 long-running operations
         let bulkhead1 = bulkhead.clone();
         let bulkhead2 = bulkhead.clone();
-        
+
         let handle1 = tokio::spawn(async move {
-            bulkhead1.call(async {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                Ok::<_, anyhow::Error>(())
-            }).await
+            bulkhead1
+                .call(async {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    Ok::<_, anyhow::Error>(())
+                })
+                .await
         });
 
         let handle2 = tokio::spawn(async move {
-            bulkhead2.call(async {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                Ok::<_, anyhow::Error>(())
-            }).await
+            bulkhead2
+                .call(async {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    Ok::<_, anyhow::Error>(())
+                })
+                .await
         });
 
         // Wait a bit for them to acquire permits
         tokio::time::sleep(Duration::from_millis(50)).await;
 
         // Third operation should be rejected
-        let result = bulkhead.call(async {
-            Ok::<_, anyhow::Error>(())
-        }).await;
+        let result = bulkhead.call(async { Ok::<_, anyhow::Error>(()) }).await;
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Bulkhead timeout"));
@@ -239,10 +255,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulkhead_available_permits() {
-        let bulkhead = Bulkhead::new("test", BulkheadConfig {
-            max_concurrent: 10,
-            acquire_timeout: Duration::from_secs(1),
-        });
+        let bulkhead = Bulkhead::new(
+            "test",
+            BulkheadConfig {
+                max_concurrent: 10,
+                acquire_timeout: Duration::from_secs(1),
+            },
+        );
 
         assert_eq!(bulkhead.available_permits(), 10);
         assert!(!bulkhead.is_full());

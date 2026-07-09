@@ -6,12 +6,11 @@
 // - Exponential backoff reconnection
 // - Hybrid polling + notification mode
 
-pub mod outbox_publisher;
 pub mod notify_watcher;
+pub mod outbox_publisher;
 
-pub use outbox_publisher::{OutboxPublisher, OutboxPublisherConfig, OutboxStats};
 pub use notify_watcher::{
-    NotifyWatcher, NotifyWatcherConfig, HybridOutboxWatcher, 
-    OutboxNotification, ConnectionState, WatcherStats,
-    NOTIFY_TRIGGER_SQL,
+    ConnectionState, HybridOutboxWatcher, NOTIFY_TRIGGER_SQL, NotifyWatcher, NotifyWatcherConfig,
+    OutboxNotification, WatcherStats,
 };
+pub use outbox_publisher::{OutboxPublisher, OutboxPublisherConfig, OutboxStats};

@@ -11,6 +11,7 @@ pub mod handlers;
 pub mod kafka;
 pub mod metrics;
 pub mod middleware;
+pub mod proto_gen;
 pub mod services;
 pub mod streaming;
 
@@ -19,6 +20,6 @@ pub use cache::CacheClient;
 pub use config::Config;
 pub use graph::GraphClient;
 pub use handlers::AppState;
-pub use streaming::{stream_results, StreamConfig, StreamBatch};
+pub use streaming::{StreamBatch, StreamConfig, stream_results};
 
 // Made with Bob

@@ -19,13 +19,11 @@ impl PostgresCheckpointStore {
 impl CheckpointStore for PostgresCheckpointStore {
     #[instrument(skip(self), level = "debug")]
     async fn get_cursor(&self, registry: &str) -> Result<Option<String>> {
-        let rec = sqlx::query(
-            "SELECT cursor FROM ingestion_checkpoints WHERE registry = $1",
-        )
-        .bind(registry)
-        .fetch_optional(&self.pool)
-        .await
-        .context("Failed to fetch checkpoint")?;
+        let rec = sqlx::query("SELECT cursor FROM ingestion_checkpoints WHERE registry = $1")
+            .bind(registry)
+            .fetch_optional(&self.pool)
+            .await
+            .context("Failed to fetch checkpoint")?;
 
         Ok(rec.map(|r| r.try_get::<String, _>("cursor").unwrap_or_default()))
     }

@@ -12,11 +12,11 @@
 //! - https://resilience4j.readme.io/docs/circuitbreaker
 
 use anyhow::Result;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use tracing::{debug, warn, error};
+use tracing::{debug, warn};
 
 /// Circuit breaker state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,10 +128,10 @@ impl SlidingWindow {
     async fn record(&self, success: bool) {
         let mut requests = self.requests.write().await;
         let now = Instant::now();
-        
+
         // Remove old entries
         requests.retain(|(timestamp, _)| now.duration_since(*timestamp) < self.window_size);
-        
+
         // Add new entry
         requests.push((now, success));
     }
@@ -139,7 +139,7 @@ impl SlidingWindow {
     async fn error_rate(&self) -> f64 {
         let requests = self.requests.read().await;
         let now = Instant::now();
-        
+
         // Filter to window
         let recent: Vec<_> = requests
             .iter()
@@ -157,7 +157,7 @@ impl SlidingWindow {
     async fn count(&self) -> usize {
         let requests = self.requests.read().await;
         let now = Instant::now();
-        
+
         requests
             .iter()
             .filter(|(timestamp, _)| now.duration_since(*timestamp) < self.window_size)
@@ -194,7 +194,13 @@ impl EnhancedCircuitBreaker {
         F: std::future::Future<Output = Result<T, E>>,
     {
         // Check if we can proceed
-        self.check_state().await?;
+        self.check_state().await.map_err(|err| match err {
+            CircuitBreakerError::Open => CircuitBreakerError::Open,
+            CircuitBreakerError::BulkheadFull => CircuitBreakerError::BulkheadFull,
+            CircuitBreakerError::Inner(()) => {
+                unreachable!("check_state does not return inner errors")
+            }
+        })?;
 
         // Try to acquire bulkhead slot
         if !self.metrics.try_acquire(self.config.max_concurrent) {
@@ -251,10 +257,10 @@ impl EnhancedCircuitBreaker {
         self.sliding_window.record(true).await;
 
         let state = *self.state.read().await;
-        
+
         if state == CircuitState::HalfOpen {
             let successes = self.half_open_successes.fetch_add(1, Ordering::Relaxed) + 1;
-            
+
             if successes >= self.config.success_threshold {
                 self.transition_to_closed().await;
             }
@@ -296,7 +302,7 @@ impl EnhancedCircuitBreaker {
             *state = CircuitState::Open;
             *self.opened_at.write().await = Some(Instant::now());
             self.metrics.record_state_change();
-            
+
             warn!(
                 error_rate = self.metrics.error_rate(),
                 "Circuit breaker opened"
@@ -310,7 +316,7 @@ impl EnhancedCircuitBreaker {
         *state = CircuitState::HalfOpen;
         self.half_open_successes.store(0, Ordering::Relaxed);
         self.metrics.record_state_change();
-        
+
         debug!("Circuit breaker half-open, testing recovery");
     }
 
@@ -321,7 +327,7 @@ impl EnhancedCircuitBreaker {
         *self.opened_at.write().await = None;
         self.half_open_successes.store(0, Ordering::Relaxed);
         self.metrics.record_state_change();
-        
+
         debug!("Circuit breaker closed, service recovered");
     }
 
@@ -362,7 +368,7 @@ impl EnhancedCircuitBreaker {
         self.metrics.failed_requests.store(0, Ordering::Relaxed);
         self.metrics.rejected_requests.store(0, Ordering::Relaxed);
         self.metrics.state_changes.store(0, Ordering::Relaxed);
-        
+
         let mut requests = self.sliding_window.requests.write().await;
         requests.clear();
     }
@@ -373,10 +379,10 @@ impl EnhancedCircuitBreaker {
 pub enum CircuitBreakerError<E> {
     #[error("Circuit breaker is open")]
     Open,
-    
+
     #[error("Bulkhead is full, too many concurrent requests")]
     BulkheadFull,
-    
+
     #[error("Inner error: {0}")]
     Inner(#[source] E),
 }
@@ -464,25 +470,27 @@ mod tests {
         // Start 2 long-running requests
         let cb1 = cb.clone();
         let cb2 = cb.clone();
-        
+
         let handle1 = tokio::spawn(async move {
             cb1.call(async {
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 Ok::<_, ()>(())
-            }).await
+            })
+            .await
         });
 
         let handle2 = tokio::spawn(async move {
             cb2.call(async {
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 Ok::<_, ()>(())
-            }).await
+            })
+            .await
         });
 
         // Third request should be rejected
         tokio::time::sleep(Duration::from_millis(10)).await;
         let result = cb.call(async { Ok::<_, ()>(()) }).await;
-        
+
         assert!(matches!(result, Err(CircuitBreakerError::BulkheadFull)));
 
         // Wait for first two to complete

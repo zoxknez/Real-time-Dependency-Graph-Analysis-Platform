@@ -5,9 +5,9 @@
 //!
 //! Reference: https://cyclonedx.org/capabilities/vex/
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // VEX STATUS
@@ -73,24 +73,33 @@ impl VexJustification {
         match self {
             VexJustification::ComponentNotPresent => "component_not_present",
             VexJustification::VulnerableCodeNotPresent => "vulnerable_code_not_present",
-            VexJustification::VulnerableCodeNotInExecutePath => "vulnerable_code_not_in_execute_path",
-            VexJustification::VulnerableCodeCannotBeControlledByAdversary => "vulnerable_code_cannot_be_controlled_by_adversary",
+            VexJustification::VulnerableCodeNotInExecutePath => {
+                "vulnerable_code_not_in_execute_path"
+            }
+            VexJustification::VulnerableCodeCannotBeControlledByAdversary => {
+                "vulnerable_code_cannot_be_controlled_by_adversary"
+            }
             VexJustification::InlineMitigationsAlreadyExist => "inline_mitigations_already_exist",
         }
     }
 
     pub fn description(&self) -> &'static str {
         match self {
-            VexJustification::ComponentNotPresent => 
-                "The vulnerable component is not present in the product",
-            VexJustification::VulnerableCodeNotPresent => 
-                "The product uses the component but does not include the vulnerable code",
-            VexJustification::VulnerableCodeNotInExecutePath => 
-                "The vulnerable code is present but cannot be executed in the product's context",
-            VexJustification::VulnerableCodeCannotBeControlledByAdversary => 
-                "The vulnerable code requires specific conditions that cannot be achieved by an adversary",
-            VexJustification::InlineMitigationsAlreadyExist => 
-                "The product has inline mitigations that prevent exploitation of the vulnerability",
+            VexJustification::ComponentNotPresent => {
+                "The vulnerable component is not present in the product"
+            }
+            VexJustification::VulnerableCodeNotPresent => {
+                "The product uses the component but does not include the vulnerable code"
+            }
+            VexJustification::VulnerableCodeNotInExecutePath => {
+                "The vulnerable code is present but cannot be executed in the product's context"
+            }
+            VexJustification::VulnerableCodeCannotBeControlledByAdversary => {
+                "The vulnerable code requires specific conditions that cannot be achieved by an adversary"
+            }
+            VexJustification::InlineMitigationsAlreadyExist => {
+                "The product has inline mitigations that prevent exploitation of the vulnerability"
+            }
         }
     }
 }
@@ -352,7 +361,10 @@ impl VexAnalyzer {
     pub fn add_document(&mut self, document: VexDocument) {
         // Update cache
         for statement in &document.statements {
-            let key = (statement.vulnerability_id.clone(), statement.product.id.clone());
+            let key = (
+                statement.vulnerability_id.clone(),
+                statement.product.id.clone(),
+            );
             self.cache.insert(key, statement.clone());
         }
         self.documents.push(document);
@@ -376,7 +388,10 @@ impl VexAnalyzer {
                     action: statement.action.clone(),
                 },
                 VexStatus::Fixed => VexExploitability::Fixed {
-                    fixed_version: statement.action.as_ref().and_then(|a| a.target_release.clone()),
+                    fixed_version: statement
+                        .action
+                        .as_ref()
+                        .and_then(|a| a.target_release.clone()),
                 },
                 VexStatus::UnderInvestigation => VexExploitability::Unknown,
             },
@@ -399,20 +414,18 @@ impl VexAnalyzer {
             VexAnalysisResult::Affected { impact, action } => {
                 (VexStatus::Affected, None, Some(impact), Some(action))
             }
-            VexAnalysisResult::Fixed { version } => {
-                (
-                    VexStatus::Fixed,
-                    None,
-                    None,
-                    Some(VexActionStatement {
-                        action_type: VexActionType::Update,
-                        description: format!("Fixed in version {}", version),
-                        target_release: Some(version),
-                        workaround: None,
-                        estimated_fix_date: None,
-                    }),
-                )
-            }
+            VexAnalysisResult::Fixed { version } => (
+                VexStatus::Fixed,
+                None,
+                None,
+                Some(VexActionStatement {
+                    action_type: VexActionType::Update,
+                    description: format!("Fixed in version {}", version),
+                    target_release: Some(version),
+                    workaround: None,
+                    estimated_fix_date: None,
+                }),
+            ),
             VexAnalysisResult::UnderInvestigation => {
                 (VexStatus::UnderInvestigation, None, None, None)
             }
@@ -455,18 +468,23 @@ pub enum VexExploitability {
         action: Option<VexActionStatement>,
     },
     /// Fixed in specified version
-    Fixed {
-        fixed_version: Option<String>,
-    },
+    Fixed { fixed_version: Option<String> },
     /// Unknown - no VEX data available
     Unknown,
 }
 
 /// VEX analysis result for generating statements
 pub enum VexAnalysisResult {
-    NotAffected { reason: VexJustification },
-    Affected { impact: VexImpactStatement, action: VexActionStatement },
-    Fixed { version: String },
+    NotAffected {
+        reason: VexJustification,
+    },
+    Affected {
+        impact: VexImpactStatement,
+        action: VexActionStatement,
+    },
+    Fixed {
+        version: String,
+    },
     UnderInvestigation,
 }
 
@@ -500,7 +518,7 @@ mod tests {
     #[test]
     fn test_vex_document_creation() {
         let mut doc = VexDocument::new("test-vex-001", test_supplier());
-        
+
         let statement = VexStatement {
             id: "VEX-CVE-2021-23337-lodash".to_string(),
             vulnerability_id: "CVE-2021-23337".to_string(),
@@ -516,11 +534,11 @@ mod tests {
             first_issued: Some(Utc::now()),
             last_updated: Some(Utc::now()),
         };
-        
+
         doc.add_statement(statement);
-        
+
         assert_eq!(doc.statements.len(), 1);
-        
+
         let stats = doc.statistics();
         assert_eq!(stats.not_affected_count, 1);
         assert_eq!(stats.affected_count, 0);
@@ -529,7 +547,7 @@ mod tests {
     #[test]
     fn test_vex_analyzer() {
         let mut analyzer = VexAnalyzer::new();
-        
+
         let mut doc = VexDocument::new("test-vex-002", test_supplier());
         doc.add_statement(VexStatement {
             id: "VEX-CVE-2021-23337-lodash".to_string(),
@@ -546,15 +564,15 @@ mod tests {
             first_issued: None,
             last_updated: None,
         });
-        
+
         analyzer.add_document(doc);
-        
-        let exploitability = analyzer.is_exploitable(
-            "CVE-2021-23337",
-            "pkg:npm/lodash@4.17.21",
-        );
-        
-        assert!(matches!(exploitability, VexExploitability::NotExploitable { .. }));
+
+        let exploitability = analyzer.is_exploitable("CVE-2021-23337", "pkg:npm/lodash@4.17.21");
+
+        assert!(matches!(
+            exploitability,
+            VexExploitability::NotExploitable { .. }
+        ));
     }
 
     #[test]
@@ -565,7 +583,7 @@ mod tests {
             tooling: Some("randomapp-vex-generator/1.0.0".to_string()),
             related_sboms: vec!["sbom-123.json".to_string()],
         });
-        
+
         let json = doc.to_cyclonedx_json().unwrap();
         assert!(json.contains("cyclonedx"));
         assert!(json.contains("test-vex-003"));
@@ -573,10 +591,30 @@ mod tests {
 
     #[test]
     fn test_justification_descriptions() {
-        assert!(!VexJustification::ComponentNotPresent.description().is_empty());
-        assert!(!VexJustification::VulnerableCodeNotPresent.description().is_empty());
-        assert!(!VexJustification::VulnerableCodeNotInExecutePath.description().is_empty());
-        assert!(!VexJustification::VulnerableCodeCannotBeControlledByAdversary.description().is_empty());
-        assert!(!VexJustification::InlineMitigationsAlreadyExist.description().is_empty());
+        assert!(
+            !VexJustification::ComponentNotPresent
+                .description()
+                .is_empty()
+        );
+        assert!(
+            !VexJustification::VulnerableCodeNotPresent
+                .description()
+                .is_empty()
+        );
+        assert!(
+            !VexJustification::VulnerableCodeNotInExecutePath
+                .description()
+                .is_empty()
+        );
+        assert!(
+            !VexJustification::VulnerableCodeCannotBeControlledByAdversary
+                .description()
+                .is_empty()
+        );
+        assert!(
+            !VexJustification::InlineMitigationsAlreadyExist
+                .description()
+                .is_empty()
+        );
     }
 }

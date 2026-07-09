@@ -18,10 +18,10 @@ use thiserror::Error;
 pub enum ConfigError {
     #[error("Missing required environment variable: {0}")]
     MissingRequired(String),
-    
+
     #[error("Invalid environment variable {key}: {reason}")]
     InvalidValue { key: String, reason: String },
-    
+
     #[error("Configuration validation failed: {0}")]
     ValidationFailed(String),
 }
@@ -46,11 +46,11 @@ impl Environment {
             _ => Self::Development,
         }
     }
-    
+
     pub fn is_production(&self) -> bool {
         matches!(self, Self::Production)
     }
-    
+
     pub fn is_development(&self) -> bool {
         matches!(self, Self::Development)
     }
@@ -208,12 +208,12 @@ pub struct GuardrailsConfig {
 
 impl Config {
     /// Load configuration from environment with validation.
-    /// 
+    ///
     /// # Panics
     /// In production mode, panics if required environment variables are missing.
     pub fn from_env() -> Self {
         let environment = Environment::from_env();
-        
+
         // Log environment detection
         match environment {
             Environment::Production => {
@@ -226,38 +226,34 @@ impl Config {
                 tracing::info!("🛠️  Running in DEVELOPMENT mode - using defaults for missing vars");
             }
         }
-        
+
         // Validate required vars in production
         if environment.is_production() {
             Self::validate_production_env();
         }
-        
+
         let config = Self::load_with_defaults(environment);
-        
+
         // Warn about insecure defaults in development
         if environment.is_development() {
             Self::warn_insecure_defaults();
         }
-        
+
         config
     }
-    
+
     /// Validate that all required production variables are set
     fn validate_production_env() {
-        let required_vars = [
-            "JWT_SECRET",
-            "DATABASE_URL",
-            "MEMGRAPH_URI",
-        ];
-        
+        let required_vars = ["JWT_SECRET", "DATABASE_URL", "MEMGRAPH_URI"];
+
         let mut missing = Vec::new();
-        
+
         for var in required_vars {
             if env::var(var).is_err() {
                 missing.push(var);
             }
         }
-        
+
         // JWT_SECRET must be strong enough
         if let Ok(secret) = env::var("JWT_SECRET") {
             if secret.len() < 32 {
@@ -272,14 +268,14 @@ impl Config {
                 );
             }
         }
-        
+
         // CORS_ORIGINS must be set and not contain wildcard with credentials
         if let Ok(origins) = env::var("CORS_ORIGINS") {
             if origins == "*" {
                 let allow_creds = env::var("CORS_ALLOW_CREDENTIALS")
                     .map(|v| v == "true" || v == "1")
                     .unwrap_or(true);
-                    
+
                 if allow_creds {
                     panic!(
                         "❌ SECURITY ERROR: CORS_ORIGINS cannot be '*' when credentials are allowed"
@@ -287,7 +283,7 @@ impl Config {
                 }
             }
         }
-        
+
         if !missing.is_empty() {
             panic!(
                 "❌ CONFIGURATION ERROR: Missing required environment variables for production: {}",
@@ -295,32 +291,32 @@ impl Config {
             );
         }
     }
-    
+
     /// Warn about insecure default values in development mode
     fn warn_insecure_defaults() {
         if env::var("JWT_SECRET").is_err() {
             tracing::warn!("⚠️  JWT_SECRET not set - using insecure development default!");
         }
-        
+
         if env::var("CORS_ORIGINS").is_err() {
             tracing::warn!("⚠️  CORS_ORIGINS not set - defaulting to localhost:3000");
         }
     }
-    
+
     fn load_with_defaults(environment: Environment) -> Self {
         // Calculate optimal pool size based on CPU cores
         let cpu_count = std::thread::available_parallelism()
             .map(|p| p.get())
             .unwrap_or(4);
         let optimal_pool_size = (cpu_count * 2) + 1;
-        
+
         // Set stricter limits in production
         let (max_depth, max_complexity, query_timeout) = if environment.is_production() {
             (10, 500, 30)
         } else {
             (15, 1000, 60)
         };
-        
+
         Self {
             environment,
             server: ServerConfig {
@@ -366,8 +362,7 @@ impl Config {
                     .unwrap_or(optimal_pool_size),
             },
             redis: RedisConfig {
-                url: env::var("REDIS_URL")
-                    .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string()),
+                url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string()),
                 cache_ttl_secs: env::var("CACHE_TTL_SECS")
                     .ok()
                     .and_then(|s| s.parse().ok())
@@ -382,8 +377,9 @@ impl Config {
                     .unwrap_or_else(|_| "api-subscriptions-cg".to_string()),
             },
             postgres: PostgresConfig {
-                url: env::var("DATABASE_URL")
-                    .unwrap_or_else(|_| "postgres://postgres:postgres@127.0.0.1:5432/idp".to_string()),
+                url: env::var("DATABASE_URL").unwrap_or_else(|_| {
+                    "postgres://postgres:postgres@127.0.0.1:5432/idp".to_string()
+                }),
                 pool_size: env::var("POSTGRES_POOL_SIZE")
                     .ok()
                     .and_then(|s| s.parse().ok())
@@ -398,8 +394,7 @@ impl Config {
                     .ok()
                     .map(|s| matches!(s.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
                     .unwrap_or(true),
-                url: env::var("QDRANT_URL")
-                    .unwrap_or_else(|_| "http://127.0.0.1:6334".to_string()),
+                url: env::var("QDRANT_URL").unwrap_or_else(|_| "http://127.0.0.1:6334".to_string()),
                 collection: env::var("QDRANT_COLLECTION")
                     .unwrap_or_else(|_| "package_embeddings".to_string()),
                 dimension: env::var("QDRANT_DIMENSION")
@@ -408,8 +403,7 @@ impl Config {
                     .unwrap_or(384),
             },
             embedding: EmbeddingConfig {
-                provider: env::var("EMBEDDING_PROVIDER")
-                    .unwrap_or_else(|_| "openai".to_string()),
+                provider: env::var("EMBEDDING_PROVIDER").unwrap_or_else(|_| "openai".to_string()),
                 openai_api_key: env::var("OPENAI_API_KEY").ok(),
                 model: env::var("EMBEDDING_MODEL")
                     .unwrap_or_else(|_| "text-embedding-3-small".to_string()),
@@ -481,12 +475,12 @@ impl Config {
             },
         }
     }
-    
+
     /// Get request timeout as Duration
     pub fn request_timeout(&self) -> Duration {
         Duration::from_secs(self.server.request_timeout_secs)
     }
-    
+
     /// Get query timeout as Duration
     pub fn query_timeout(&self) -> Duration {
         Duration::from_secs(self.guardrails.query_timeout_secs)
@@ -500,13 +494,13 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_environment_detection() {
         // Default should be development
         assert!(Environment::from_env().is_development());
     }
-    
+
     #[test]
     fn test_config_loads_defaults() {
         // In test environment (development), this should not panic

@@ -1,12 +1,12 @@
-use crate::store::PostgresCheckpointStore;
 use crate::producer::EventProducer;
+use crate::store::PostgresCheckpointStore;
 use crate::traits::CheckpointStore;
-use anyhow::Result;
+use anyhow::{Result, bail};
+use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
-use tracing::{info, warn, error, instrument};
 use std::sync::Arc;
-use reqwest::Client;
+use std::time::Duration;
+use tracing::{debug, error, info, instrument, warn};
 
 const NPM_CHANGES_URL: &str = "https://replicate.npmjs.com/_changes";
 const BATCH_SIZE: usize = 1000;
@@ -35,6 +35,7 @@ pub struct NpmWatcher {
     checkpoint_store: Arc<PostgresCheckpointStore>,
     producer: Arc<EventProducer>,
     topic: String,
+    poll_interval: Duration,
 }
 
 impl NpmWatcher {
@@ -42,11 +43,11 @@ impl NpmWatcher {
         checkpoint_store: Arc<PostgresCheckpointStore>,
         producer: Arc<EventProducer>,
         topic: String,
+        poll_interval: Duration,
     ) -> Result<Self> {
-        // Dedicated client for long-polling
         let client = Client::builder()
             .user_agent("InverseDeps-Watcher/1.0")
-            .timeout(Duration::from_secs(90)) // > heartbeat
+            .timeout(Duration::from_secs(30))
             .build()?;
 
         Ok(Self {
@@ -54,42 +55,68 @@ impl NpmWatcher {
             checkpoint_store,
             producer,
             topic,
+            poll_interval,
         })
     }
 
     #[instrument(skip(self), name = "npm_watcher_loop")]
     pub async fn run(&self) -> Result<()> {
         info!("Starting NPM Watcher...");
-        
+
         loop {
             // 1. Get last cursor
-            let since = self.checkpoint_store.get_cursor("npm").await?
-                .unwrap_or_else(|| "0".to_string());
+            let since = match self.checkpoint_store.get_cursor("npm").await? {
+                Some(cursor) if !is_invalid_initial_cursor(&cursor) => cursor,
+                _ => {
+                    let latest = self.fetch_latest_cursor().await?;
+                    self.checkpoint_store.set_cursor("npm", &latest).await?;
+                    info!(cursor = %latest, "Initialized NPM changes cursor");
+                    tokio::time::sleep(self.poll_interval).await;
+                    continue;
+                }
+            };
 
             // 2. Poll _changes
-            // Note: In enterprise, we might process the stream chunk-by-chunk using `reqwest::Response::bytes_stream`
-            // For MVP/Simplicity, we use `feed=longpoll` which returns a JSON body after some time or events.
-            // NPM changes feed: heartbeat must be in seconds (not milliseconds)
-            let url = format!("{}?feed=longpoll&since={}&limit={}", 
-                NPM_CHANGES_URL, since, BATCH_SIZE);
+            let params = vec![("since", since.clone()), ("limit", BATCH_SIZE.to_string())];
 
-            match self.client.get(&url).send().await {
+            match self.client.get(NPM_CHANGES_URL).query(&params).send().await {
                 Ok(resp) => {
                     if !resp.status().is_success() {
-                        warn!("NPM Changes Feed returned status: {}", resp.status());
-                        tokio::time::sleep(Duration::from_secs(5)).await;
+                        let status = resp.status();
+                        warn!(%status, cursor = %since, "NPM Changes Feed returned non-success status");
+
+                        if status == StatusCode::BAD_REQUEST {
+                            let latest = self.fetch_latest_cursor().await?;
+                            self.checkpoint_store.set_cursor("npm", &latest).await?;
+                            warn!(
+                                old_cursor = %since,
+                                new_cursor = %latest,
+                                "Reset invalid NPM changes cursor"
+                            );
+                        }
+
+                        tokio::time::sleep(self.poll_interval).await;
                         continue;
                     }
 
                     match resp.json::<ChangesResponse>().await {
                         Ok(data) => {
                             if data.results.is_empty() {
-                                continue; // Heartbeat
+                                let new_cursor = cursor_to_string(&data.last_seq);
+                                self.checkpoint_store.set_cursor("npm", &new_cursor).await?;
+                                debug!(cursor = %new_cursor, "No new NPM changes");
+                                tokio::time::sleep(self.poll_interval).await;
+                                continue;
                             }
-                            
-                            info!("Got {} changes from NPM. Last seq: {}", data.results.len(), data.last_seq);
+
+                            info!(
+                                "Got {} changes from NPM. Last seq: {}",
+                                data.results.len(),
+                                data.last_seq
+                            );
 
                             // 3. Process Batch
+                            let mut all_published = true;
                             for change in &data.results {
                                 // Filter logic: ignore design docs
                                 if change.id.starts_with("_design") {
@@ -99,45 +126,105 @@ impl NpmWatcher {
                                 // Emit RAW event
                                 let payload = serde_json::to_vec(change)?;
                                 let key = format!("npm:{}", change.id);
-                                
+
                                 // Retry loop for Kafka produce with exponential backoff
                                 let mut kafka_retries = 0u32;
                                 const MAX_KAFKA_RETRIES: u32 = 5;
-                                
+
                                 loop {
-                                    match self.producer.publish_raw(&self.topic, &key, &payload).await {
+                                    match self
+                                        .producer
+                                        .publish_raw(&self.topic, &key, &payload)
+                                        .await
+                                    {
                                         Ok(_) => break,
                                         Err(e) => {
                                             kafka_retries += 1;
                                             if kafka_retries >= MAX_KAFKA_RETRIES {
-                                                error!("Failed to produce to Kafka after {} retries: {}. Skipping message.", MAX_KAFKA_RETRIES, e);
+                                                error!(
+                                                    "Failed to produce to Kafka after {} retries: {}. Skipping message.",
+                                                    MAX_KAFKA_RETRIES, e
+                                                );
+                                                all_published = false;
                                                 break;
                                             }
-                                            let backoff = Duration::from_secs(1 << kafka_retries.min(5));
-                                            warn!("Kafka publish failed (attempt {}): {}. Retrying in {:?}", kafka_retries, e, backoff);
+                                            let backoff =
+                                                Duration::from_secs(1 << kafka_retries.min(5));
+                                            warn!(
+                                                "Kafka publish failed (attempt {}): {}. Retrying in {:?}",
+                                                kafka_retries, e, backoff
+                                            );
                                             tokio::time::sleep(backoff).await;
                                         }
                                     }
                                 }
+
+                                if !all_published {
+                                    break;
+                                }
+                            }
+
+                            if !all_published {
+                                warn!(
+                                    cursor = %since,
+                                    "NPM batch was not fully published; checkpoint will not advance"
+                                );
+                                tokio::time::sleep(self.poll_interval).await;
+                                continue;
                             }
 
                             // 4. Update Checkpoint (Atomic Batch Commit)
                             // We use `last_seq` from the response as the new cursor
-                            // Note: `last_seq` needs to be stringified if it's a number/json
-                            let new_cursor = data.last_seq.to_string().replace("\"", ""); // Simple scrub
+                            let new_cursor = cursor_to_string(&data.last_seq);
                             self.checkpoint_store.set_cursor("npm", &new_cursor).await?;
+
+                            if data.results.len() < BATCH_SIZE {
+                                tokio::time::sleep(self.poll_interval).await;
+                            }
                         }
                         Err(e) => {
                             error!("Failed to parse NPM changes: {}", e);
-                            tokio::time::sleep(Duration::from_secs(5)).await;
+                            tokio::time::sleep(self.poll_interval).await;
                         }
                     }
                 }
                 Err(e) => {
                     warn!("Failed to fetch NPM changes: {}", e);
-                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    tokio::time::sleep(self.poll_interval).await;
                 }
             }
         }
     }
+
+    async fn fetch_latest_cursor(&self) -> Result<String> {
+        let params = [("descending", "true"), ("limit", "1")];
+        let resp = self
+            .client
+            .get(NPM_CHANGES_URL)
+            .query(&params)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            bail!(
+                "NPM Changes Feed latest cursor request returned {}",
+                resp.status()
+            );
+        }
+
+        let data = resp.json::<ChangesResponse>().await?;
+        Ok(cursor_to_string(&data.last_seq))
+    }
+}
+
+fn cursor_to_string(cursor: &serde_json::Value) -> String {
+    match cursor {
+        serde_json::Value::String(value) => value.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn is_invalid_initial_cursor(cursor: &str) -> bool {
+    let cursor = cursor.trim();
+    cursor.is_empty() || cursor == "0" || cursor.eq_ignore_ascii_case("now")
 }

@@ -5,6 +5,10 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+[features]
+default = ["onnx"]
+onnx = ["dep:ort"]
+
 [dependencies]
 tokio.workspace = true
 rdkafka.workspace = true
@@ -19,6 +23,7 @@ uuid.workspace = true
 config.workspace = true
 dotenvy.workspace = true
 prost.workspace = true
+prost-types.workspace = true
 reqwest.workspace = true
 
 # Tree-sitter for AST parsing
@@ -43,11 +48,14 @@ models = { path = "../../packages/models" }
 storage = { path = "../../packages/storage" }
 
 # ML/Embeddings
-ort = { version = "2.0.0-rc.9", features = ["ndarray", "copy-dylibs"] }
+ort = { version = "2.0.0-rc.9", features = ["ndarray", "copy-dylibs"], optional = true }
 tokenizers = "0.21.0"
 ndarray = "0.17.2"
 
 [dev-dependencies]
 tokio-test = "0.4"
 
+[build-dependencies]
+prost-build.workspace = true
+protoc-bin-vendored = "3.0"
 

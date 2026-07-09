@@ -1,10 +1,10 @@
-use anyhow::Result;
 use crate::http::ProxyRotator;
+use anyhow::Result;
 use reqwest::StatusCode;
 use serde_json::Value;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{warn, debug};
+use tracing::{debug, warn};
 
 const MAX_RETRIES: u32 = 3;
 const INITIAL_BACKOFF_MS: u64 = 500;
@@ -23,16 +23,16 @@ impl NpmFetcher {
         // Handle scoped packages: @foo/bar -> @foo%2fbar
         let encoded_name = package_name.replace("/", "%2f");
         let url = format!("https://registry.npmjs.org/{}", encoded_name);
-        
+
         let mut last_error: Option<anyhow::Error> = None;
-        
+
         for attempt in 0..MAX_RETRIES {
             if attempt > 0 {
                 let backoff = Duration::from_millis(INITIAL_BACKOFF_MS * 2u64.pow(attempt - 1));
                 debug!(package=%package_name, attempt=%attempt, backoff_ms=%backoff.as_millis(), "Retrying fetch");
                 tokio::time::sleep(backoff).await;
             }
-            
+
             let lease = match self.rotator.get_client() {
                 Ok(l) => l,
                 Err(e) => {
@@ -41,7 +41,9 @@ impl NpmFetcher {
                 }
             };
 
-            let resp = lease.client.get(&url)
+            let resp = lease
+                .client
+                .get(&url)
                 .header("Accept", "application/vnd.npm.install-v1+json")
                 .send()
                 .await;
@@ -68,7 +70,7 @@ impl NpmFetcher {
                         }
                         continue;
                     }
-                },
+                }
                 Err(e) => {
                     warn!(package=%package_name, attempt=%attempt, error=%e, "Network error");
                     last_error = Some(e.into());
@@ -76,7 +78,7 @@ impl NpmFetcher {
                 }
             }
         }
-        
+
         Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Failed after {} retries", MAX_RETRIES)))
     }
 }

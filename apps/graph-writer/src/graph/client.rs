@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
-use neo4rs::{Graph, ConfigBuilder};
+use neo4rs::{ConfigBuilder, Graph};
 use std::sync::Arc;
-use tracing::{info, warn, instrument};
+use tracing::{info, instrument, warn};
 
 use crate::config::MemgraphConfig;
 
@@ -19,11 +19,11 @@ impl MemgraphClient {
     pub async fn connect(config: &MemgraphConfig) -> Result<Self> {
         info!("Connecting to Memgraph...");
 
-        // Memgraph typically doesn't require authentication  
+        // Memgraph typically doesn't require authentication
         // but neo4rs requires non-empty user/pass
         let user = config.username.as_deref().unwrap_or("memgraph");
         let pass = config.password.as_deref().unwrap_or("memgraph");
-        
+
         // Use ConfigBuilder to set db to "memgraph" (not "neo4j")
         let graph_config = ConfigBuilder::default()
             .uri(&config.uri)
@@ -58,7 +58,7 @@ impl MemgraphClient {
             .run(query)
             .await
             .with_context(|| "Failed to execute Memgraph query")?;
-        
+
         Ok(())
     }
 
@@ -70,7 +70,8 @@ impl MemgraphClient {
             return Ok(());
         }
 
-        let mut txn = self.graph
+        let mut txn = self
+            .graph
             .start_txn()
             .await
             .context("Failed to start Memgraph transaction")?;
@@ -109,18 +110,25 @@ impl MemgraphClient {
 
         // Package unique constraint
         self.run(neo4rs::query(
-            "CREATE CONSTRAINT ON (p:Package) ASSERT p.id IS UNIQUE"
-        )).await.ok(); // Ignore if already exists
+            "CREATE CONSTRAINT ON (p:Package) ASSERT p.id IS UNIQUE",
+        ))
+        .await
+        .ok(); // Ignore if already exists
 
-        // Version unique constraint  
+        // Version unique constraint
         self.run(neo4rs::query(
-            "CREATE CONSTRAINT ON (v:Version) ASSERT v.id IS UNIQUE"
-        )).await.ok();
+            "CREATE CONSTRAINT ON (v:Version) ASSERT v.id IS UNIQUE",
+        ))
+        .await
+        .ok();
 
         // Indexes for query performance
         let indexes = [
             "CREATE INDEX ON :Package(ecosystem)",
             "CREATE INDEX ON :Package(name)",
+            "CREATE INDEX ON :Package(name_lc)",
+            "CREATE INDEX ON :Package(tenant_id)",
+            "CREATE INDEX ON :Version(tenant_id)",
             "CREATE INDEX ON :Version(package_id)",
             "CREATE INDEX ON :Version(version)",
             "CREATE INDEX ON :Version(yanked)",

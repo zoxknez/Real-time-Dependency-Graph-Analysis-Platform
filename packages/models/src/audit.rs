@@ -3,9 +3,9 @@
 //! Comprehensive audit logging for compliance and security monitoring.
 //! Supports structured logging, tamper detection, and compliance reporting.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -47,20 +47,20 @@ pub enum AuditEventType {
     VexAssessmentUpdated,
     SecurityScanInitiated,
     SecurityScanCompleted,
-    
+
     // Access events
     PackageAccessed,
     SbomGenerated,
     SbomExported,
     ReportGenerated,
-    
+
     // Data change events
     PackageCreated,
     PackageUpdated,
     PackageDeleted,
     DependencyAdded,
     DependencyRemoved,
-    
+
     // Configuration events
     PolicyCreated,
     PolicyUpdated,
@@ -68,12 +68,12 @@ pub enum AuditEventType {
     PolicyActivated,
     PolicyDeactivated,
     SettingChanged,
-    
+
     // Policy events
     PolicyEvaluated,
     PolicyViolation,
     PolicyException,
-    
+
     // Authentication events
     UserLogin,
     UserLogout,
@@ -82,19 +82,19 @@ pub enum AuditEventType {
     TokenRevoked,
     ApiKeyCreated,
     ApiKeyRevoked,
-    
+
     // Authorization events
     PermissionGranted,
     PermissionRevoked,
     AccessDenied,
-    
+
     // System events
     SystemStartup,
     SystemShutdown,
     ServiceHealthCheck,
     BackupCreated,
     BackupRestored,
-    
+
     // Compliance events
     ComplianceCheckRun,
     ComplianceViolation,
@@ -102,7 +102,7 @@ pub enum AuditEventType {
     LicenseScanCompleted,
     ScorecardAssessment,
     ProvenanceVerified,
-    
+
     // Custom events
     Custom(String),
 }
@@ -110,59 +110,59 @@ pub enum AuditEventType {
 impl AuditEventType {
     pub fn category(&self) -> AuditEventCategory {
         match self {
-            AuditEventType::VulnerabilityDetected |
-            AuditEventType::VulnerabilityResolved |
-            AuditEventType::VexAssessmentCreated |
-            AuditEventType::VexAssessmentUpdated |
-            AuditEventType::SecurityScanInitiated |
-            AuditEventType::SecurityScanCompleted => AuditEventCategory::Security,
+            AuditEventType::VulnerabilityDetected
+            | AuditEventType::VulnerabilityResolved
+            | AuditEventType::VexAssessmentCreated
+            | AuditEventType::VexAssessmentUpdated
+            | AuditEventType::SecurityScanInitiated
+            | AuditEventType::SecurityScanCompleted => AuditEventCategory::Security,
 
-            AuditEventType::PackageAccessed |
-            AuditEventType::SbomGenerated |
-            AuditEventType::SbomExported |
-            AuditEventType::ReportGenerated => AuditEventCategory::Access,
+            AuditEventType::PackageAccessed
+            | AuditEventType::SbomGenerated
+            | AuditEventType::SbomExported
+            | AuditEventType::ReportGenerated => AuditEventCategory::Access,
 
-            AuditEventType::PackageCreated |
-            AuditEventType::PackageUpdated |
-            AuditEventType::PackageDeleted |
-            AuditEventType::DependencyAdded |
-            AuditEventType::DependencyRemoved => AuditEventCategory::DataChange,
+            AuditEventType::PackageCreated
+            | AuditEventType::PackageUpdated
+            | AuditEventType::PackageDeleted
+            | AuditEventType::DependencyAdded
+            | AuditEventType::DependencyRemoved => AuditEventCategory::DataChange,
 
-            AuditEventType::PolicyCreated |
-            AuditEventType::PolicyUpdated |
-            AuditEventType::PolicyDeleted |
-            AuditEventType::PolicyActivated |
-            AuditEventType::PolicyDeactivated |
-            AuditEventType::SettingChanged => AuditEventCategory::Configuration,
+            AuditEventType::PolicyCreated
+            | AuditEventType::PolicyUpdated
+            | AuditEventType::PolicyDeleted
+            | AuditEventType::PolicyActivated
+            | AuditEventType::PolicyDeactivated
+            | AuditEventType::SettingChanged => AuditEventCategory::Configuration,
 
-            AuditEventType::PolicyEvaluated |
-            AuditEventType::PolicyViolation |
-            AuditEventType::PolicyException => AuditEventCategory::Policy,
+            AuditEventType::PolicyEvaluated
+            | AuditEventType::PolicyViolation
+            | AuditEventType::PolicyException => AuditEventCategory::Policy,
 
-            AuditEventType::UserLogin |
-            AuditEventType::UserLogout |
-            AuditEventType::UserLoginFailed |
-            AuditEventType::TokenIssued |
-            AuditEventType::TokenRevoked |
-            AuditEventType::ApiKeyCreated |
-            AuditEventType::ApiKeyRevoked => AuditEventCategory::Authentication,
+            AuditEventType::UserLogin
+            | AuditEventType::UserLogout
+            | AuditEventType::UserLoginFailed
+            | AuditEventType::TokenIssued
+            | AuditEventType::TokenRevoked
+            | AuditEventType::ApiKeyCreated
+            | AuditEventType::ApiKeyRevoked => AuditEventCategory::Authentication,
 
-            AuditEventType::PermissionGranted |
-            AuditEventType::PermissionRevoked |
-            AuditEventType::AccessDenied => AuditEventCategory::Authorization,
+            AuditEventType::PermissionGranted
+            | AuditEventType::PermissionRevoked
+            | AuditEventType::AccessDenied => AuditEventCategory::Authorization,
 
-            AuditEventType::SystemStartup |
-            AuditEventType::SystemShutdown |
-            AuditEventType::ServiceHealthCheck |
-            AuditEventType::BackupCreated |
-            AuditEventType::BackupRestored => AuditEventCategory::System,
+            AuditEventType::SystemStartup
+            | AuditEventType::SystemShutdown
+            | AuditEventType::ServiceHealthCheck
+            | AuditEventType::BackupCreated
+            | AuditEventType::BackupRestored => AuditEventCategory::System,
 
-            AuditEventType::ComplianceCheckRun |
-            AuditEventType::ComplianceViolation |
-            AuditEventType::ComplianceReportGenerated |
-            AuditEventType::LicenseScanCompleted |
-            AuditEventType::ScorecardAssessment |
-            AuditEventType::ProvenanceVerified => AuditEventCategory::Compliance,
+            AuditEventType::ComplianceCheckRun
+            | AuditEventType::ComplianceViolation
+            | AuditEventType::ComplianceReportGenerated
+            | AuditEventType::LicenseScanCompleted
+            | AuditEventType::ScorecardAssessment
+            | AuditEventType::ProvenanceVerified => AuditEventCategory::Compliance,
 
             AuditEventType::Custom(_) => AuditEventCategory::System,
         }
@@ -446,7 +446,7 @@ impl AuditEventBuilder {
     pub fn build(self) -> AuditEvent {
         let sequence = SEQUENCE_COUNTER.fetch_add(1, Ordering::SeqCst);
         let category = self.event_type.category();
-        
+
         AuditEvent {
             id: uuid::Uuid::new_v4().to_string(),
             sequence,
@@ -491,12 +491,12 @@ impl AuditLog {
     /// Record an audit event
     pub fn record(&self, event: AuditEvent) {
         let mut events = self.events.write().unwrap();
-        
+
         // Maintain max size
         while events.len() >= self.max_size {
             events.remove(0);
         }
-        
+
         events.push(event);
     }
 
@@ -556,9 +556,9 @@ impl AuditLog {
             .unwrap()
             .iter()
             .filter(|e| {
-                e.target.as_ref().map_or(false, |t| {
-                    t.target_type == target_type && t.id == target_id
-                })
+                e.target
+                    .as_ref()
+                    .map_or(false, |t| t.target_type == target_type && t.id == target_id)
             })
             .cloned()
             .collect()
@@ -577,7 +577,7 @@ impl AuditLog {
     /// Generate compliance report
     pub fn compliance_report(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> ComplianceReport {
         let events = self.by_time_range(start, end);
-        
+
         let mut by_category: HashMap<AuditEventCategory, usize> = HashMap::new();
         let mut by_severity: HashMap<AuditSeverity, usize> = HashMap::new();
         let mut violations = 0;
@@ -586,8 +586,11 @@ impl AuditLog {
         for event in &events {
             *by_category.entry(event.category).or_insert(0) += 1;
             *by_severity.entry(event.severity).or_insert(0) += 1;
-            
-            if matches!(event.event_type, AuditEventType::PolicyViolation | AuditEventType::ComplianceViolation) {
+
+            if matches!(
+                event.event_type,
+                AuditEventType::PolicyViolation | AuditEventType::ComplianceViolation
+            ) {
                 violations += 1;
             }
             if matches!(event.event_type, AuditEventType::PolicyEvaluated) {
@@ -674,7 +677,7 @@ mod tests {
         );
 
         assert_eq!(log.count(), 2);
-        
+
         let policy_events = log.by_category(AuditEventCategory::Policy);
         assert_eq!(policy_events.len(), 2);
     }
@@ -685,8 +688,7 @@ mod tests {
 
         for _ in 0..5 {
             log.record(
-                AuditEventBuilder::new(AuditEventType::PolicyEvaluated, "Policy evaluated")
-                    .build(),
+                AuditEventBuilder::new(AuditEventType::PolicyEvaluated, "Policy evaluated").build(),
             );
         }
         log.record(
@@ -697,9 +699,9 @@ mod tests {
 
         let start = Utc::now() - chrono::Duration::hours(1);
         let end = Utc::now() + chrono::Duration::hours(1);
-        
+
         let report = log.compliance_report(start, end);
-        
+
         assert_eq!(report.total_events, 6);
         assert_eq!(report.total_violations, 1);
         assert_eq!(report.total_policy_evaluations, 5);
@@ -733,7 +735,7 @@ mod tests {
         }
 
         assert_eq!(log.count(), 3);
-        
+
         let events = log.get_all();
         assert!(events[0].message.contains("2")); // First 2 events evicted
     }

@@ -18,7 +18,7 @@ mod server;
 use anyhow::{Context, Result};
 use tokio::sync::watch;
 use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::Config;
 use crate::consumer::EventConsumer;
@@ -29,16 +29,17 @@ use crate::graph::MemgraphClient;
 async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,graph_writer=debug".into()))
+        .with(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,graph_writer=debug".into()),
+        )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
     info!("📊 Starting Graph Writer Service");
 
     // Load configuration
-    let config = Config::from_env()
-        .context("Failed to load configuration")?;
-    
+    let config = Config::from_env().context("Failed to load configuration")?;
+
     info!(
         memgraph_uri = %config.memgraph.uri,
         kafka_brokers = %config.kafka.brokers,
@@ -57,20 +58,18 @@ async fn main() -> Result<()> {
         .context("Failed to connect to Memgraph")?;
 
     // Setup Memgraph schema (constraints + indexes)
-    memgraph.setup_schema()
+    memgraph
+        .setup_schema()
         .await
         .context("Failed to setup Memgraph schema")?;
 
     // Create DLQ publisher
-    let dlq = DlqPublisher::new(&config.kafka)
-        .context("Failed to create DLQ publisher")?;
+    let dlq = DlqPublisher::new(&config.kafka).context("Failed to create DLQ publisher")?;
 
     // Create event consumer
-    let consumer = EventConsumer::new(
-        config.kafka.clone(),
-        memgraph.clone(),
-        dlq,
-    ).await.context("Failed to create event consumer")?;
+    let consumer = EventConsumer::new(config.kafka.clone(), memgraph.clone(), dlq)
+        .await
+        .context("Failed to create event consumer")?;
 
     // Create shutdown channel
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -114,7 +113,8 @@ async fn main() -> Result<()> {
     let _ = tokio::time::timeout(
         shutdown_timeout,
         futures::future::join_all([consumer_handle, http_handle]),
-    ).await;
+    )
+    .await;
 
     info!("✅ Graph Writer Service shutdown complete");
     Ok(())

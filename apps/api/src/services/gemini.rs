@@ -8,7 +8,7 @@ pub struct GeminiService {
     client: Client,
     api_key: String,
     #[allow(dead_code)]
-    flash_model: String,    // e.g. "gemini-3-flash-preview"
+    flash_model: String, // e.g. "gemini-3-flash-preview"
     thinking_model: String, // e.g. "gemini-3-pro-preview"
 }
 
@@ -113,13 +113,15 @@ impl GeminiService {
     #[allow(dead_code)]
     #[instrument(skip(self, prompt), fields(model = %self.flash_model))]
     pub async fn generate_fast(&self, prompt: &str) -> Result<String> {
-        self.generate_internal(&self.flash_model, prompt, false).await
+        self.generate_internal(&self.flash_model, prompt, false)
+            .await
     }
 
     /// Complex reasoning using the Thinking model (High thinking level)
     #[instrument(skip(self, prompt), fields(model = %self.thinking_model))]
     pub async fn generate_thinking(&self, prompt: &str) -> Result<String> {
-        self.generate_internal(&self.thinking_model, prompt, true).await
+        self.generate_internal(&self.thinking_model, prompt, true)
+            .await
     }
 
     // Legacy method
@@ -144,16 +146,16 @@ impl GeminiService {
         // Flash: "minimal", "low", "medium", "high"
         // We stick to "high" for thinking_model and "low" for flash_model (as optimization)
         let thinking_level = if high_thinking { "high" } else { "low" };
-        
+
         // Always sending thinking_config for Gemini 3 models to be explicit
         let thinking_config = Some(ThinkingConfig {
-                thinking_level: Some(thinking_level.to_string()),
-                include_thoughts: Some(false), 
+            thinking_level: Some(thinking_level.to_string()),
+            include_thoughts: Some(false),
         });
 
         let request_body = GenerateContentRequest {
             contents: vec![Content {
-                parts: vec![Part { 
+                parts: vec![Part {
                     text: prompt.to_string(),
                     thought_signature: None,
                 }],
@@ -182,7 +184,12 @@ impl GeminiService {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
             error!("Gemini API error ({}) : {} - {}", model, status, text);
-            return Err(anyhow::anyhow!("Gemini API error ({}) : {} - {}", model, status, text));
+            return Err(anyhow::anyhow!(
+                "Gemini API error ({}) : {} - {}",
+                model,
+                status,
+                text
+            ));
         }
 
         let response_body: GenerateContentResponse = response
@@ -191,7 +198,11 @@ impl GeminiService {
             .context("Failed to parse Gemini API response")?;
 
         if let Some(err) = response_body.error {
-            return Err(anyhow::anyhow!("Gemini API error: {} - {}", err.code, err.message));
+            return Err(anyhow::anyhow!(
+                "Gemini API error: {} - {}",
+                err.code,
+                err.message
+            ));
         }
 
         let candidate = response_body
@@ -201,25 +212,28 @@ impl GeminiService {
             .context("No candidates returned from Gemini API")?;
 
         // Aggregate text parts
-        // In Gemini 3, we might get parts with thoughtSignature but no text. 
-        // We filter for text. 
+        // In Gemini 3, we might get parts with thoughtSignature but no text.
+        // We filter for text.
         let text = candidate
             .content
             .parts
             .iter()
             .filter_map(|p| {
-                if p.thought == Some(true) { 
-                    None 
-                } else { 
-                    p.text.as_deref() 
+                if p.thought == Some(true) {
+                    None
+                } else {
+                    p.text.as_deref()
                 }
             })
             .collect::<Vec<_>>()
             .join("");
 
         if text.trim().is_empty() {
-             if let Some(finish_reason) = &candidate.finish_reason {
-                return Err(anyhow::anyhow!("No text content. Finish reason: {}", finish_reason));
+            if let Some(finish_reason) = &candidate.finish_reason {
+                return Err(anyhow::anyhow!(
+                    "No text content. Finish reason: {}",
+                    finish_reason
+                ));
             }
             return Err(anyhow::anyhow!("Empty text in Gemini response"));
         }

@@ -1,6 +1,6 @@
-use sqlx::{PgPool, FromRow};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, PgPool};
 
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct PackageState {
@@ -43,7 +43,7 @@ impl NpmStateStore {
         E: sqlx::Executor<'a, Database = sqlx::Postgres>,
     {
         let versions_json = serde_json::to_value(versions)?;
-        
+
         sqlx::query(
             r#"
             INSERT INTO npm_package_state (package_name, versions_json, last_updated_at)

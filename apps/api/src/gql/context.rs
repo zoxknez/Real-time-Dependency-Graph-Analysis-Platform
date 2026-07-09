@@ -3,19 +3,21 @@
 #![allow(dead_code)]
 
 use std::sync::Arc;
-use tokio::sync::broadcast;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tokio::sync::broadcast;
 
 use async_graphql::dataloader::DataLoader;
 
 use crate::cache::CacheClient;
 use crate::config::GuardrailsConfig;
-use crate::graph::GraphClient;
 use crate::embeddings::EmbeddingGenerator;
-use crate::gql::loaders::{PackageLoader, PackageBatchLoader, VersionBatchLoader, DependenciesLoader};
-use crate::gql::types::{VersionEvent, BreakingChangeEvent, LiveStatsEvent, DependencyImpactEvent};
-use crate::services::gemini::GeminiService;
+use crate::gql::loaders::{
+    DependenciesLoader, PackageBatchLoader, PackageLoader, VersionBatchLoader,
+};
+use crate::gql::types::{BreakingChangeEvent, DependencyImpactEvent, LiveStatsEvent, VersionEvent};
+use crate::graph::GraphClient;
 use crate::services::CachedGraphService;
+use crate::services::gemini::GeminiService;
 
 use storage::qdrant::QdrantClient;
 
@@ -39,7 +41,9 @@ pub struct SubscriptionGuard {
 
 impl Drop for SubscriptionGuard {
     fn drop(&mut self) {
-        self.channels.active_subscriptions.fetch_sub(1, Ordering::Relaxed);
+        self.channels
+            .active_subscriptions
+            .fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -53,14 +57,14 @@ impl EventChannels {
             active_subscriptions: AtomicUsize::new(0),
         }
     }
-    
+
     pub fn track_subscription(self: &Arc<Self>) -> SubscriptionGuard {
         self.active_subscriptions.fetch_add(1, Ordering::Relaxed);
         SubscriptionGuard {
             channels: self.clone(),
         }
     }
-    
+
     pub fn subscription_count(&self) -> usize {
         self.active_subscriptions.load(Ordering::Relaxed)
     }
@@ -93,22 +97,20 @@ pub struct GqlContext {
     pub semantic_search: Option<SemanticSearchContext>,
     /// Gemini AI service (for thinking/generation)
     pub gemini: Option<Arc<GeminiService>>,
-    
+
     // ═══════════════════════════════════════════════════════════════
     // async-graphql DataLoaders for N+1 prevention
     // ═══════════════════════════════════════════════════════════════
-    
     /// DataLoader for batch loading packages by ID
     pub packages: DataLoader<PackageBatchLoader>,
     /// DataLoader for batch loading versions by ID
     pub versions: DataLoader<VersionBatchLoader>,
     /// DataLoader for batch loading package dependencies
     pub dependencies: DataLoader<DependenciesLoader>,
-    
+
     // ═══════════════════════════════════════════════════════════════
     // Cached Graph Service with Singleflight (cache stampede protection)
     // ═══════════════════════════════════════════════════════════════
-    
     /// Graph queries with caching and singleflight for stampede protection
     pub cached_graph: Option<Arc<CachedGraphService>>,
 }
@@ -122,27 +124,19 @@ impl GqlContext {
     ) -> Self {
         let package_loader = PackageLoader::new(graph.clone());
         let channels = EventChannels::new(1024);
-        
+
         // Create async-graphql DataLoaders with tenant_id = None (public tenant)
         // These will batch requests within a 10ms window (default)
-        let packages = DataLoader::new(
-            PackageBatchLoader::new(graph.clone(), None),
-            tokio::spawn,
-        )
-        .max_batch_size(100);
-        
-        let versions = DataLoader::new(
-            VersionBatchLoader::new(graph.clone(), None),
-            tokio::spawn,
-        )
-        .max_batch_size(100);
-        
-        let dependencies = DataLoader::new(
-            DependenciesLoader::new(graph.clone(), None),
-            tokio::spawn,
-        )
-        .max_batch_size(50);
-        
+        let packages = DataLoader::new(PackageBatchLoader::new(graph.clone(), None), tokio::spawn)
+            .max_batch_size(100);
+
+        let versions = DataLoader::new(VersionBatchLoader::new(graph.clone(), None), tokio::spawn)
+            .max_batch_size(100);
+
+        let dependencies =
+            DataLoader::new(DependenciesLoader::new(graph.clone(), None), tokio::spawn)
+                .max_batch_size(50);
+
         // Create CachedGraphService if cache is available
         let cache_arc = cache.map(Arc::new);
         let cached_graph = cache_arc.as_ref().map(|c| {
@@ -151,7 +145,7 @@ impl GqlContext {
                 c.clone(),
             ))
         });
-        
+
         Self {
             graph,
             cache: cache_arc,
@@ -167,7 +161,7 @@ impl GqlContext {
             cached_graph,
         }
     }
-    
+
     pub fn with_channels(
         graph: GraphClient,
         cache: Option<CacheClient>,
@@ -179,26 +173,18 @@ impl GqlContext {
         let package_loader = PackageLoader::new(graph.clone());
         // Create version_tx from channels for backwards compatibility
         let event_tx = channels.version_tx.clone();
-        
+
         // Create async-graphql DataLoaders with tenant_id = None (public tenant)
-        let packages = DataLoader::new(
-            PackageBatchLoader::new(graph.clone(), None),
-            tokio::spawn,
-        )
-        .max_batch_size(100);
-        
-        let versions = DataLoader::new(
-            VersionBatchLoader::new(graph.clone(), None),
-            tokio::spawn,
-        )
-        .max_batch_size(100);
-        
-        let dependencies = DataLoader::new(
-            DependenciesLoader::new(graph.clone(), None),
-            tokio::spawn,
-        )
-        .max_batch_size(50);
-        
+        let packages = DataLoader::new(PackageBatchLoader::new(graph.clone(), None), tokio::spawn)
+            .max_batch_size(100);
+
+        let versions = DataLoader::new(VersionBatchLoader::new(graph.clone(), None), tokio::spawn)
+            .max_batch_size(100);
+
+        let dependencies =
+            DataLoader::new(DependenciesLoader::new(graph.clone(), None), tokio::spawn)
+                .max_batch_size(50);
+
         // Create CachedGraphService if cache is available
         let cache_arc = cache.map(Arc::new);
         let cached_graph = cache_arc.as_ref().map(|c| {
@@ -207,7 +193,7 @@ impl GqlContext {
                 c.clone(),
             ))
         });
-        
+
         Self {
             graph,
             cache: cache_arc,
@@ -224,4 +210,3 @@ impl GqlContext {
         }
     }
 }
-

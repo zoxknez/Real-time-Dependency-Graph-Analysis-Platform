@@ -7,14 +7,14 @@
 
 use anyhow::{Context, Result};
 use governor::{
+    Quota, RateLimiter,
     clock::{Clock, QuantaClock},
     state::{InMemoryState, NotKeyed},
-    Quota, RateLimiter,
 };
 use metrics::{counter, histogram};
 use reqwest::Client;
-use std::num::NonZeroU32;
 use std::collections::HashMap;
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -118,7 +118,9 @@ impl EmbeddingGenerator {
                 .await?;
                 EmbeddingProvider::OpenAI(openai)
             }
-            "mock" | "test" | "local" => EmbeddingProvider::Mock(MockEmbedder::new(config.dimension)),
+            "mock" | "test" | "local" => {
+                EmbeddingProvider::Mock(MockEmbedder::new(config.dimension))
+            }
             other => {
                 return Err(anyhow::anyhow!(EmbeddingError::Config(format!(
                     "Unknown embedding provider: {other}"
@@ -164,19 +166,14 @@ impl EmbeddingGenerator {
         crate::metrics::record_cache_access("embedding", false);
 
         let embedding = match &self.provider {
-            EmbeddingProvider::OpenAI(openai) => openai
-                .embed(text)
-                .await
-                .map_err(|e| anyhow::anyhow!(e))?,
+            EmbeddingProvider::OpenAI(openai) => {
+                openai.embed(text).await.map_err(|e| anyhow::anyhow!(e))?
+            }
             EmbeddingProvider::Mock(mock) => mock.embed(text),
-            EmbeddingProvider::TEI(tei) => tei
-                .embed(text)
-                .await
-                .map_err(|e| anyhow::anyhow!(e))?,
-            EmbeddingProvider::Hybrid(hybrid) => hybrid
-                .embed(text)
-                .await
-                .map_err(|e| anyhow::anyhow!(e))?,
+            EmbeddingProvider::TEI(tei) => tei.embed(text).await.map_err(|e| anyhow::anyhow!(e))?,
+            EmbeddingProvider::Hybrid(hybrid) => {
+                hybrid.embed(text).await.map_err(|e| anyhow::anyhow!(e))?
+            }
         };
 
         if embedding.len() != self.dimension {
@@ -189,7 +186,11 @@ impl EmbeddingGenerator {
         {
             let mut cache = self.cache.write().await;
             if cache.len() >= self.max_cache_size {
-                let keys: Vec<_> = cache.keys().take(self.max_cache_size / 2).copied().collect();
+                let keys: Vec<_> = cache
+                    .keys()
+                    .take(self.max_cache_size / 2)
+                    .copied()
+                    .collect();
                 for key in keys {
                     cache.remove(&key);
                 }
@@ -304,7 +305,7 @@ fn add_token_features(embedding: &mut [f32], token: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{l2_normalize, MockEmbedder};
+    use super::{MockEmbedder, l2_normalize};
 
     #[test]
     fn mock_embedder_is_deterministic() {
@@ -417,8 +418,8 @@ impl OpenAIEmbedder {
                 match limiter.check() {
                     Ok(_) => {}
                     Err(not_until) => {
-                        let wait_time = not_until
-                            .wait_time_from(governor::clock::QuantaClock::default().now());
+                        let wait_time =
+                            not_until.wait_time_from(governor::clock::QuantaClock::default().now());
                         let delay = wait_time.max(Duration::from_secs(1));
                         counter!(
                             metric_names::EMBEDDINGS_RATE_LIMIT_DELAYS_TOTAL,
@@ -465,7 +466,10 @@ impl OpenAIEmbedder {
 
                         counter!(
                             metric_names::EMBEDDINGS_ERRORS_TOTAL,
-                            &[("provider", "openai".to_string()), ("code", err.code().to_string())]
+                            &[
+                                ("provider", "openai".to_string()),
+                                ("code", err.code().to_string())
+                            ]
                         )
                         .increment(1);
 
@@ -491,7 +495,10 @@ impl OpenAIEmbedder {
 
                     counter!(
                         metric_names::EMBEDDINGS_REQUESTS_TOTAL,
-                        &[("provider", "openai".to_string()), ("result", "ok".to_string())]
+                        &[
+                            ("provider", "openai".to_string()),
+                            ("result", "ok".to_string())
+                        ]
                     )
                     .increment(1);
 
@@ -515,7 +522,10 @@ impl OpenAIEmbedder {
 
                     counter!(
                         metric_names::EMBEDDINGS_ERRORS_TOTAL,
-                        &[("provider", "openai".to_string()), ("code", err.code().to_string())]
+                        &[
+                            ("provider", "openai".to_string()),
+                            ("code", err.code().to_string())
+                        ]
                     )
                     .increment(1);
 
@@ -547,10 +557,10 @@ impl OpenAIEmbedder {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// TEI (HuggingFace Text Embeddings Inference) embedder
-/// 
+///
 /// Connects to a local or remote TEI server for high-performance embeddings.
 /// TEI supports GPU acceleration and is ideal for self-hosted deployments.
-/// 
+///
 /// Docker: ghcr.io/huggingface/text-embeddings-inference:latest
 pub struct TEIEmbedder {
     client: Client,
@@ -624,7 +634,10 @@ impl TEIEmbedder {
 
                         counter!(
                             metric_names::EMBEDDINGS_ERRORS_TOTAL,
-                            &[("provider", "tei".to_string()), ("code", err.code().to_string())]
+                            &[
+                                ("provider", "tei".to_string()),
+                                ("code", err.code().to_string())
+                            ]
                         )
                         .increment(1);
 
@@ -649,7 +662,10 @@ impl TEIEmbedder {
 
                     counter!(
                         metric_names::EMBEDDINGS_REQUESTS_TOTAL,
-                        &[("provider", "tei".to_string()), ("result", "ok".to_string())]
+                        &[
+                            ("provider", "tei".to_string()),
+                            ("result", "ok".to_string())
+                        ]
                     )
                     .increment(1);
 
@@ -673,7 +689,10 @@ impl TEIEmbedder {
 
                     counter!(
                         metric_names::EMBEDDINGS_ERRORS_TOTAL,
-                        &[("provider", "tei".to_string()), ("code", err.code().to_string())]
+                        &[
+                            ("provider", "tei".to_string()),
+                            ("code", err.code().to_string())
+                        ]
                     )
                     .increment(1);
 
@@ -700,7 +719,12 @@ impl TEIEmbedder {
 
     /// Health check for TEI server
     pub async fn health_check(&self) -> bool {
-        match self.client.get(&format!("{}/health", self.url)).send().await {
+        match self
+            .client
+            .get(&format!("{}/health", self.url))
+            .send()
+            .await
+        {
             Ok(resp) => resp.status().is_success(),
             Err(_) => false,
         }
@@ -712,7 +736,7 @@ impl TEIEmbedder {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Hybrid embedding provider with automatic fallback
-/// 
+///
 /// Tries primary provider first, falls back to secondary on failure.
 /// Useful for:
 /// - TEI (primary) with OpenAI (fallback)
@@ -768,7 +792,7 @@ impl HybridEmbedder {
     ) -> Self {
         let primary_name = primary.name().to_string();
         let fallback_name = fallback.name().to_string();
-        
+
         info!(
             primary = %primary_name,
             fallback = %fallback_name,
@@ -788,7 +812,10 @@ impl HybridEmbedder {
             Ok(embedding) => {
                 counter!(
                     metric_names::EMBEDDINGS_REQUESTS_TOTAL,
-                    &[("provider", self.primary_name.clone()), ("result", "ok".to_string())]
+                    &[
+                        ("provider", self.primary_name.clone()),
+                        ("result", "ok".to_string())
+                    ]
                 )
                 .increment(1);
                 Ok(embedding)
@@ -801,7 +828,10 @@ impl HybridEmbedder {
                 );
                 counter!(
                     "embeddings_fallback_used_total",
-                    &[("primary", self.primary_name.clone()), ("fallback", self.fallback_name.clone())]
+                    &[
+                        ("primary", self.primary_name.clone()),
+                        ("fallback", self.fallback_name.clone())
+                    ]
                 )
                 .increment(1);
 
@@ -817,7 +847,7 @@ impl HybridEmbedder {
 
 impl EmbeddingGenerator {
     /// Create a new EmbeddingGenerator with TEI support
-    /// 
+    ///
     /// Provider precedence:
     /// 1. "tei" - Uses TEI server (requires TEI_URL env var)
     /// 2. "hybrid" - TEI primary with OpenAI fallback
@@ -825,20 +855,20 @@ impl EmbeddingGenerator {
     /// 4. "mock" - Deterministic mock embeddings
     pub async fn new_with_tei(config: &EmbeddingConfig, tei_url: Option<&str>) -> Result<Self> {
         let env_tei_url = std::env::var("TEI_URL").ok();
-        
+
         let provider = match config.provider.as_str() {
             "tei" => {
                 let url = tei_url
                     .or(env_tei_url.as_deref())
                     .unwrap_or("http://localhost:8090");
-                
+
                 let tei = TEIEmbedder::new(
                     url.to_string(),
                     Duration::from_secs(config.timeout_secs),
                     config.max_retries,
                     Duration::from_millis(config.retry_base_delay_ms),
                 )?;
-                
+
                 // Check if TEI is available
                 if tei.health_check().await {
                     info!(url = %url, "TEI server is healthy");
@@ -854,7 +884,7 @@ impl EmbeddingGenerator {
                 let url = tei_url
                     .or(env_tei_url.as_deref())
                     .unwrap_or("http://localhost:8090");
-                
+
                 let tei = TEIEmbedder::new(
                     url.to_string(),
                     Duration::from_secs(config.timeout_secs),
@@ -879,10 +909,7 @@ impl EmbeddingGenerator {
                 )
                 .await?;
 
-                let hybrid = HybridEmbedder::new(
-                    Box::new(tei),
-                    Box::new(openai),
-                );
+                let hybrid = HybridEmbedder::new(Box::new(tei), Box::new(openai));
 
                 EmbeddingProvider::Hybrid(hybrid)
             }

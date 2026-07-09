@@ -28,7 +28,8 @@ impl PypiStateStore {
 
     /// Initialize the state table
     pub async fn init(&self) -> Result<()> {
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS pypi_package_state (
                 package_name TEXT PRIMARY KEY,
                 versions_json JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -36,15 +37,18 @@ impl PypiStateStore {
                 last_serial BIGINT NOT NULL DEFAULT 0,
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
-        "#)
+        "#,
+        )
         .execute(&self.pool)
         .await?;
 
         // Index for efficient querying
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE INDEX IF NOT EXISTS idx_pypi_state_updated 
             ON pypi_package_state(updated_at)
-        "#)
+        "#,
+        )
         .execute(&self.pool)
         .await?;
 
@@ -56,7 +60,7 @@ impl PypiStateStore {
     pub async fn get_state(&self, package_name: &str) -> Result<Option<PypiPackageState>> {
         let state = sqlx::query_as::<_, PypiPackageState>(
             "SELECT package_name, versions_json, versions_hash, last_serial, updated_at 
-             FROM pypi_package_state WHERE package_name = $1"
+             FROM pypi_package_state WHERE package_name = $1",
         )
         .bind(package_name)
         .fetch_optional(&self.pool)
@@ -74,7 +78,8 @@ impl PypiStateStore {
         versions_hash: &str,
         last_serial: i64,
     ) -> Result<()> {
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             INSERT INTO pypi_package_state 
                 (package_name, versions_json, versions_hash, last_serial, updated_at)
             VALUES ($1, $2, $3, $4, NOW())
@@ -84,7 +89,8 @@ impl PypiStateStore {
                 versions_hash = EXCLUDED.versions_hash,
                 last_serial = EXCLUDED.last_serial,
                 updated_at = NOW()
-        "#)
+        "#,
+        )
         .bind(package_name)
         .bind(versions_json)
         .bind(versions_hash)
@@ -98,12 +104,10 @@ impl PypiStateStore {
     /// Mark package as deleted
     #[instrument(skip(self))]
     pub async fn mark_deleted(&self, package_name: &str) -> Result<()> {
-        sqlx::query(
-            "DELETE FROM pypi_package_state WHERE package_name = $1"
-        )
-        .bind(package_name)
-        .execute(&self.pool)
-        .await?;
+        sqlx::query("DELETE FROM pypi_package_state WHERE package_name = $1")
+            .bind(package_name)
+            .execute(&self.pool)
+            .await?;
 
         Ok(())
     }

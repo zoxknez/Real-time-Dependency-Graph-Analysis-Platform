@@ -1,11 +1,11 @@
 //! Security agent tool executor shared by GraphQL and SSE endpoints.
 
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::graph::{GraphClient, GraphQueries};
-use crate::services::{osv, package_metadata, scorecard};
 use crate::services::package_metadata::PackageMetadata;
+use crate::services::{osv, package_metadata, scorecard};
 use models::tenant::TenantContext;
 
 /// Execute a security agent tool call using real graph queries where available.
@@ -24,12 +24,8 @@ pub async fn execute_security_agent_tool(
             let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(20) as i32;
             let effective_limit = limit.min(max_results);
 
-            let query_stmt = GraphQueries::search_packages(
-                &tenant_id,
-                query,
-                ecosystem,
-                effective_limit,
-            );
+            let query_stmt =
+                GraphQueries::search_packages(&tenant_id, query, ecosystem, effective_limit);
             let rows = graph.query(query_stmt, tenant_ctx.as_ref()).await?;
             let packages: Vec<Value> = rows
                 .into_iter()
@@ -56,8 +52,14 @@ pub async fn execute_security_agent_tool(
         }
 
         "get_dependency_path" => {
-            let from = args.get("from_package").and_then(|v| v.as_str()).unwrap_or("");
-            let to = args.get("to_package").and_then(|v| v.as_str()).unwrap_or("");
+            let from = args
+                .get("from_package")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let to = args
+                .get("to_package")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let max_hops = args.get("max_hops").and_then(|v| v.as_i64()).unwrap_or(5) as i32;
 
             let query_stmt = GraphQueries::dependency_path(&tenant_id, from, to, max_hops);
@@ -81,12 +83,16 @@ pub async fn execute_security_agent_tool(
         }
 
         "get_impact_radius" => {
-            let package_id = args.get("package_id").and_then(|v| v.as_str()).unwrap_or("");
+            let package_id = args
+                .get("package_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let depth = args.get("depth").and_then(|v| v.as_i64()).unwrap_or(2) as i32;
             let limit = args.get("limit").and_then(|v| v.as_i64()).unwrap_or(50) as i32;
             let effective_limit = limit.min(max_results);
 
-            let query_stmt = GraphQueries::impact_radius(&tenant_id, package_id, depth, effective_limit);
+            let query_stmt =
+                GraphQueries::impact_radius(&tenant_id, package_id, depth, effective_limit);
             let rows = graph.query(query_stmt, tenant_ctx.as_ref()).await?;
 
             let impacted: Vec<Value> = rows
@@ -101,17 +107,51 @@ pub async fn execute_security_agent_tool(
                 })
                 .collect();
 
+            let summary_query = GraphQueries::impact_radius_summary(&tenant_id, package_id, depth);
+            let (total_impacted, direct_impacted, transitive_impacted) =
+                match graph.query_one(summary_query, tenant_ctx.as_ref()).await? {
+                    Some(row) => (
+                        row.get::<i64>("impacted_packages").unwrap_or(0),
+                        row.get::<i64>("direct_impacted_packages").unwrap_or(0),
+                        row.get::<i64>("transitive_impacted_packages").unwrap_or(0),
+                    ),
+                    None => (impacted.len() as i64, 0, 0),
+                };
+
+            let bucket_query =
+                GraphQueries::impact_radius_depth_buckets(&tenant_id, package_id, depth);
+            let depth_buckets: Vec<Value> = graph
+                .query(bucket_query, tenant_ctx.as_ref())
+                .await?
+                .into_iter()
+                .map(|row| {
+                    json!({
+                        "depth": row.get::<i64>("depth").unwrap_or(0),
+                        "package_count": row.get::<i64>("package_count").unwrap_or(0),
+                    })
+                })
+                .collect();
+
             Ok(json!({
                 "package_id": package_id,
                 "depth": depth,
-                "impacted_packages": impacted.len(),
+                "impacted_packages": total_impacted,
+                "direct_impacted_packages": direct_impacted,
+                "transitive_impacted_packages": transitive_impacted,
+                "depth_buckets": depth_buckets,
                 "top_impacted": impacted
             }))
         }
 
         "get_vulnerabilities" => {
-            let package_id = args.get("package_id").and_then(|v| v.as_str()).unwrap_or("");
-            let severity_filter = args.get("severity_filter").and_then(|v| v.as_str()).map(|s| s.to_ascii_lowercase());
+            let package_id = args
+                .get("package_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let severity_filter = args
+                .get("severity_filter")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_ascii_lowercase());
 
             let (eco_raw, name_raw, version_raw) = osv::parse_package_id(package_id);
             let ecosystem = if let Some(eco) = args.get("ecosystem").and_then(|v| v.as_str()) {
@@ -176,8 +216,14 @@ pub async fn execute_security_agent_tool(
         }
 
         "generate_sbom" => {
-            let package_id = args.get("package_id").and_then(|v| v.as_str()).unwrap_or("");
-            let format = args.get("format").and_then(|v| v.as_str()).unwrap_or("spdx");
+            let package_id = args
+                .get("package_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let format = args
+                .get("format")
+                .and_then(|v| v.as_str())
+                .unwrap_or("spdx");
             let query_stmt = GraphQueries::dependencies_direct(&tenant_id, package_id, max_results);
             let rows = graph.query(query_stmt, tenant_ctx.as_ref()).await?;
             let components: Vec<Value> = rows
@@ -202,8 +248,14 @@ pub async fn execute_security_agent_tool(
         }
 
         "evaluate_policy" => {
-            let package_id = args.get("package_id").and_then(|v| v.as_str()).unwrap_or("");
-            let policy = args.get("policy_name").and_then(|v| v.as_str()).unwrap_or("standard");
+            let package_id = args
+                .get("package_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let policy = args
+                .get("policy_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("standard");
             let (eco_raw, name_raw, version_raw) = osv::parse_package_id(package_id);
             let ecosystem = osv::ensure_ecosystem(eco_raw)?;
             let name = name_raw.unwrap_or_default();
@@ -264,7 +316,10 @@ pub async fn execute_security_agent_tool(
         }
 
         "get_scorecard" => {
-            let package_id = args.get("package_id").and_then(|v| v.as_str()).unwrap_or("");
+            let package_id = args
+                .get("package_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let (eco_raw, name_raw, _) = osv::parse_package_id(package_id);
             let ecosystem_raw = args
                 .get("ecosystem")
@@ -305,18 +360,19 @@ pub async fn execute_security_agent_tool(
                 }));
             };
 
-            let normalized_repo = match package_metadata::normalize_repository_for_scorecard(&repo_url) {
-                Ok(r) => r,
-                Err(e) => {
-                    return Ok(json!({
-                        "package_id": package_id,
-                        "package_name": name,
-                        "ecosystem": ecosystem,
-                        "repository_url": repo_url,
-                        "error": e.to_string()
-                    }));
-                }
-            };
+            let normalized_repo =
+                match package_metadata::normalize_repository_for_scorecard(&repo_url) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        return Ok(json!({
+                            "package_id": package_id,
+                            "package_name": name,
+                            "ecosystem": ecosystem,
+                            "repository_url": repo_url,
+                            "error": e.to_string()
+                        }));
+                    }
+                };
 
             let result = scorecard::fetch_scorecard(&normalized_repo).await?;
 
@@ -335,7 +391,10 @@ pub async fn execute_security_agent_tool(
         }
 
         "get_license_info" => {
-            let package_id = args.get("package_id").and_then(|v| v.as_str()).unwrap_or("");
+            let package_id = args
+                .get("package_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let (eco_raw, name_raw, _) = osv::parse_package_id(package_id);
             let ecosystem_raw = args
                 .get("ecosystem")
@@ -426,7 +485,10 @@ fn spdx_from_license(license: &str) -> Option<&str> {
     if trimmed.is_empty() {
         return None;
     }
-    if trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '+') {
+    if trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.' || c == '+')
+    {
         return Some(trimmed);
     }
     None

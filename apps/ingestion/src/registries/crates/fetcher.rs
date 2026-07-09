@@ -3,7 +3,7 @@
 //! Fetches crate index files from the crates.io sparse registry.
 //! Uses HTTP GET with ETag/Last-Modified for efficient polling.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use reqwest::{Client, StatusCode};
 use std::time::Duration;
 use tracing::{debug, instrument, warn};
@@ -23,10 +23,10 @@ pub struct CargoFetcher {
 pub struct FetchResult {
     /// Parsed index entries (all versions)
     pub entries: Vec<CrateIndexEntry>,
-    
+
     /// ETag for conditional requests
     pub etag: Option<String>,
-    
+
     /// Last-Modified for conditional requests
     pub last_modified: Option<String>,
 }
@@ -44,18 +44,16 @@ impl CargoFetcher {
     }
 
     /// Fetch a crate's index file from sparse registry
-    /// 
+    ///
     /// Returns None if crate doesn't exist (404)
     #[instrument(skip(self), fields(crate_name = %crate_name))]
-    pub async fn fetch_crate_index(
-        &self,
-        crate_name: &str,
-    ) -> Result<Option<FetchResult>> {
-        self.fetch_crate_index_conditional(crate_name, None, None).await
+    pub async fn fetch_crate_index(&self, crate_name: &str) -> Result<Option<FetchResult>> {
+        self.fetch_crate_index_conditional(crate_name, None, None)
+            .await
     }
 
     /// Fetch with conditional headers for efficient polling
-    /// 
+    ///
     /// Returns Ok(None) if:
     /// - Crate doesn't exist (404)
     /// - Not modified (304) when etag/last_modified match
@@ -128,15 +126,10 @@ impl CargoFetcher {
                     .and_then(|v| v.to_str().ok())
                     .and_then(|s| s.parse::<u64>().ok())
                     .unwrap_or(60);
-                    
-                Err(anyhow!(
-                    "Rate limited. Retry after {} seconds",
-                    retry_after
-                ))
+
+                Err(anyhow!("Rate limited. Retry after {} seconds", retry_after))
             }
-            status => {
-                Err(anyhow!("Unexpected status {}: {}", status, url))
-            }
+            status => Err(anyhow!("Unexpected status {}: {}", status, url)),
         }
     }
 
@@ -154,21 +147,13 @@ impl CargoFetcher {
             .context("Failed to fetch crate API")?;
 
         match response.status() {
-            StatusCode::OK => {
-                response
-                    .json()
-                    .await
-                    .context("Failed to parse crate API response")
-            }
-            StatusCode::NOT_FOUND => {
-                Err(anyhow!("Crate not found: {}", crate_name))
-            }
-            StatusCode::TOO_MANY_REQUESTS => {
-                Err(anyhow!("Rate limited by crates.io API"))
-            }
-            status => {
-                Err(anyhow!("API error {}", status))
-            }
+            StatusCode::OK => response
+                .json()
+                .await
+                .context("Failed to parse crate API response"),
+            StatusCode::NOT_FOUND => Err(anyhow!("Crate not found: {}", crate_name)),
+            StatusCode::TOO_MANY_REQUESTS => Err(anyhow!("Rate limited by crates.io API")),
+            status => Err(anyhow!("API error {}", status)),
         }
     }
 }

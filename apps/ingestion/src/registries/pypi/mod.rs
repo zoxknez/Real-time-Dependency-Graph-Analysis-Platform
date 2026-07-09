@@ -8,13 +8,13 @@
 //! - Simple API for yank detection (PEP 691)
 //! - Idempotent state management via PostgreSQL
 
-mod watcher;
-mod worker;
+mod diff;
 mod fetcher;
 mod state;
-mod diff;
+mod watcher;
+mod worker;
 
-pub use watcher::PypiWatcher;
-pub use worker::PypiWorker;
 pub use fetcher::PypiFetcher;
 pub use state::PypiStateStore;
+pub use watcher::PypiWatcher;
+pub use worker::PypiWorker;

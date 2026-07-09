@@ -5,9 +5,9 @@
 use anyhow::{Context, Result};
 use qdrant_client::Qdrant;
 use qdrant_client::qdrant::{
-    CreateCollectionBuilder, Distance, PointStruct, 
-    SearchPointsBuilder, UpsertPointsBuilder, VectorParamsBuilder,
-    DeletePointsBuilder, PointId, Value as QdrantValue,
+    Condition, CreateCollectionBuilder, DeletePointsBuilder, Distance, Filter, PointId,
+    PointStruct, SearchPointsBuilder, UpsertPointsBuilder, Value as QdrantValue,
+    VectorParamsBuilder,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -95,7 +95,7 @@ impl QdrantClient {
         info!("Connecting to Qdrant");
 
         let mut builder = Qdrant::from_url(&config.url);
-        
+
         if let Some(ref api_key) = config.api_key {
             builder = builder.api_key(api_key.clone());
         }
@@ -113,7 +113,7 @@ impl QdrantClient {
                 success_threshold: 2,
                 timeout_ms: 30_000,
                 half_open_requests: 5,
-            }
+            },
         ));
 
         let resilience_config = crate::resilience::ResilienceConfig {
@@ -152,7 +152,7 @@ impl QdrantClient {
             .create_field_index(self.config.collection.clone(), field_name, qdrant_client::qdrant::FieldType::Keyword, None, None)
             .await
             .context("Failed to create tenant_id index")?;
-            
+
         let field_name = "package_id";
         info!(field = %field_name, "Ensuring index exists");
         self.client
@@ -185,14 +185,12 @@ impl QdrantClient {
 
         if !exists {
             info!(collection = %self.config.collection, "Creating collection");
-            
+
             self.client
                 .create_collection(
-                    CreateCollectionBuilder::new(&self.config.collection)
-                        .vectors_config(VectorParamsBuilder::new(
-                            self.config.dimension,
-                            Distance::Cosine,
-                        )),
+                    CreateCollectionBuilder::new(&self.config.collection).vectors_config(
+                        VectorParamsBuilder::new(self.config.dimension, Distance::Cosine),
+                    ),
                 )
                 .await
                 .context("Failed to create collection")?;
@@ -213,11 +211,11 @@ impl QdrantClient {
     ) -> Result<()> {
         // Generate namespaced ID ensuring isolation
         let namespaced_id = self.generate_namespaced_id(tenant_id, id);
-        
+
         // Enrich payload
         payload.insert("tenant_id".to_string(), tenant_id.to_string().into());
         payload.insert("package_id".to_string(), id.to_string().into());
-        
+
         let point = PointStruct::new(namespaced_id, vector, payload);
         self.upsert_with_retry(vec![point]).await
     }
@@ -233,7 +231,8 @@ impl QdrantClient {
             .into_iter()
             .map(|mut p| {
                 let namespaced_id = self.generate_namespaced_id(tenant_id, &p.id);
-                p.payload.insert("tenant_id".to_string(), tenant_id.to_string().into());
+                p.payload
+                    .insert("tenant_id".to_string(), tenant_id.to_string().into());
                 p.payload.insert("package_id".to_string(), p.id.into());
                 PointStruct::new(namespaced_id, p.vector, p.payload)
             })
@@ -249,53 +248,65 @@ impl QdrantClient {
 
     /// Upsert with retry logic
     async fn upsert_with_retry(&self, points: Vec<PointStruct>) -> Result<()> {
-        crate::resilience::with_resilience(
-            "qdrant",
-            "upsert",
-            &self.resilience_config,
-            || async {
-                self.circuit_breaker.call::<_, _, anyhow::Error>(async {
+        crate::resilience::with_resilience("qdrant", "upsert", &self.resilience_config, || async {
+            self.circuit_breaker
+                .call::<_, _, anyhow::Error>(async {
                     self.client
-                        .upsert_points(UpsertPointsBuilder::new(&self.config.collection, points.clone()))
+                        .upsert_points(UpsertPointsBuilder::new(
+                            &self.config.collection,
+                            points.clone(),
+                        ))
                         .await
                         .context("Failed to upsert points")
-                }).await
-            }
-        ).await.map(|_| ())
+                })
+                .await
+        })
+        .await
+        .map(|_| ())
     }
 
-    /// Search for similar vectors
-    /// NOTE: Tenant filtering temporarily disabled due to qdrant-client API compatibility
-    /// TODO: Implement proper Filter construction or upgrade qdrant-client version
+    /// Search for similar vectors within a tenant namespace.
     #[instrument(skip(self, vector))]
-    pub async fn search(&self, _tenant_id: &str, vector: Vec<f32>, limit: u64) -> Result<Vec<SearchResult>> {
-        crate::resilience::with_resilience(
-            "qdrant",
-            "search",
-            &self.resilience_config,
-            || async {
-                self.circuit_breaker.call::<_, _, anyhow::Error>(async {
+    pub async fn search(
+        &self,
+        tenant_id: &str,
+        vector: Vec<f32>,
+        limit: u64,
+    ) -> Result<Vec<SearchResult>> {
+        crate::resilience::with_resilience("qdrant", "search", &self.resilience_config, || async {
+            self.circuit_breaker
+                .call::<_, _, anyhow::Error>(async {
+                    let filter =
+                        Filter::must([Condition::matches("tenant_id", tenant_id.to_string())]);
+
                     let response = self
                         .client
                         .search_points(
-                            SearchPointsBuilder::new(&self.config.collection, vector.clone(), limit)
-                                .with_payload(true),
+                            SearchPointsBuilder::new(
+                                &self.config.collection,
+                                vector.clone(),
+                                limit,
+                            )
+                            .with_payload(true)
+                            .filter(filter),
                         )
                         .await
                         .context("Failed to search points")?;
                     Ok(response)
-                }).await
-            }
-        ).await.map(|response| {
-             response
-            .result
-            .into_iter()
-            .map(|p| SearchResult {
-                id: extract_point_id(p.id),
-                score: p.score,
-                payload: p.payload,
-            })
-            .collect()
+                })
+                .await
+        })
+        .await
+        .map(|response| {
+            response
+                .result
+                .into_iter()
+                .map(|p| SearchResult {
+                    id: extract_point_id(p.id),
+                    score: p.score,
+                    payload: p.payload,
+                })
+                .collect()
         })
     }
 
@@ -314,12 +325,9 @@ impl QdrantClient {
         // Alternatively delete by filter: tenant_id == x AND package_id IN [ids]
         // But point_ids is efficient.
 
-        crate::resilience::with_resilience(
-            "qdrant",
-            "delete",
-            &self.resilience_config,
-            || async {
-                self.circuit_breaker.call::<_, _, anyhow::Error>(async {
+        crate::resilience::with_resilience("qdrant", "delete", &self.resilience_config, || async {
+            self.circuit_breaker
+                .call::<_, _, anyhow::Error>(async {
                     self.client
                         .delete_points(
                             DeletePointsBuilder::new(&self.config.collection)
@@ -328,9 +336,10 @@ impl QdrantClient {
                         .await
                         .context("Failed to delete points")?;
                     Ok(())
-                }).await
-            }
-        ).await
+                })
+                .await
+        })
+        .await
     }
 
     /// Generate namespaced ID (Hash of tenant_id + id)
@@ -365,12 +374,12 @@ impl QdrantClient {
 /// Extract point ID from PointId
 fn extract_point_id(id: Option<PointId>) -> String {
     match id {
-        Some(PointId { point_id_options: Some(pid) }) => {
-            match pid {
-                qdrant_client::qdrant::point_id::PointIdOptions::Uuid(u) => u,
-                qdrant_client::qdrant::point_id::PointIdOptions::Num(n) => n.to_string(),
-            }
-        }
+        Some(PointId {
+            point_id_options: Some(pid),
+        }) => match pid {
+            qdrant_client::qdrant::point_id::PointIdOptions::Uuid(u) => u,
+            qdrant_client::qdrant::point_id::PointIdOptions::Num(n) => n.to_string(),
+        },
         _ => String::new(),
     }
 }
@@ -432,8 +441,8 @@ mod tests {
 
     #[test]
     fn test_vector_point_builder() {
-        let point = VectorPoint::new("test-id", vec![0.1, 0.2, 0.3])
-            .with_payload("ecosystem", "cargo");
+        let point =
+            VectorPoint::new("test-id", vec![0.1, 0.2, 0.3]).with_payload("ecosystem", "cargo");
 
         assert_eq!(point.id, "test-id");
         assert_eq!(point.vector.len(), 3);

@@ -12,7 +12,7 @@
 
 use axum::{
     extract::Request,
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     middleware::Next,
     response::Response,
 };
@@ -20,7 +20,7 @@ use serde::Serialize;
 use sqlx::PgPool;
 use std::time::Instant;
 use tokio::sync::mpsc;
-use tracing::{debug, error, info, warn, Span};
+use tracing::{Span, debug, error, info, warn};
 use uuid::Uuid;
 
 /// Audit event types
@@ -144,7 +144,7 @@ impl AuditLogEntry {
     /// Log this entry
     pub fn log(&self) {
         let json = serde_json::to_string(self).unwrap_or_default();
-        
+
         match self.event_type {
             AuditEventType::AuthFailure
             | AuditEventType::AuthorizationDenied
@@ -180,7 +180,7 @@ impl AuditLogEntry {
 /// Audit logging middleware
 pub async fn audit_middleware(request: Request, next: Next) -> Response {
     let start = Instant::now();
-    
+
     // Generate or extract correlation ID
     let correlation_id = request
         .headers()
@@ -205,7 +205,7 @@ pub async fn audit_middleware(request: Request, next: Next) -> Response {
 
     // Execute request
     let response = next.run(request).await;
-    
+
     let duration = start.elapsed();
     let status = response.status();
 
@@ -227,10 +227,9 @@ pub async fn audit_middleware(request: Request, next: Next) -> Response {
     // Add correlation ID to response headers
     let mut response = response;
     if let Ok(value) = header::HeaderValue::from_str(&correlation_id) {
-        response.headers_mut().insert(
-            header::HeaderName::from_static("x-correlation-id"),
-            value,
-        );
+        response
+            .headers_mut()
+            .insert(header::HeaderName::from_static("x-correlation-id"), value);
     }
 
     response
@@ -271,14 +270,9 @@ pub fn log_security_event(
     user_id: Option<&str>,
     context: Option<serde_json::Value>,
 ) {
-    let entry = AuditLogEntry::new(
-        event_type,
-        correlation_id.to_string(),
-        "SECURITY",
-        "/",
-    )
-    .with_client_ip(client_ip.map(String::from))
-    .with_user_id(user_id.map(String::from));
+    let entry = AuditLogEntry::new(event_type, correlation_id.to_string(), "SECURITY", "/")
+        .with_client_ip(client_ip.map(String::from))
+        .with_user_id(user_id.map(String::from));
 
     let entry = if let Some(ctx) = context {
         entry.with_context(ctx)
@@ -361,7 +355,7 @@ mod tests {
 // ============================================================================
 
 /// Audit persistence service for storing logs in PostgreSQL
-/// 
+///
 /// Uses an async channel to batch writes and avoid blocking request handlers.
 #[derive(Clone)]
 pub struct AuditPersistence {
@@ -370,18 +364,28 @@ pub struct AuditPersistence {
 
 impl AuditPersistence {
     /// Create new audit persistence with background writer task
-    /// 
+    ///
     /// # Arguments
     /// * `pool` - PostgreSQL connection pool
     /// * `buffer_size` - Size of async channel buffer (default: 1000)
     /// * `batch_size` - Number of entries to batch before writing (default: 50)
     /// * `flush_interval_ms` - Max time before flushing partial batch (default: 1000)
-    pub fn new(pool: PgPool, buffer_size: usize, batch_size: usize, flush_interval_ms: u64) -> Self {
+    pub fn new(
+        pool: PgPool,
+        buffer_size: usize,
+        batch_size: usize,
+        flush_interval_ms: u64,
+    ) -> Self {
         let (sender, receiver) = mpsc::channel(buffer_size);
-        
+
         // Spawn background writer task
-        tokio::spawn(Self::writer_task(pool, receiver, batch_size, flush_interval_ms));
-        
+        tokio::spawn(Self::writer_task(
+            pool,
+            receiver,
+            batch_size,
+            flush_interval_ms,
+        ));
+
         Self { sender }
     }
 
@@ -391,7 +395,7 @@ impl AuditPersistence {
     }
 
     /// Queue an audit entry for persistence
-    /// 
+    ///
     /// This is non-blocking and will drop entries if the channel is full.
     pub fn queue(&self, entry: AuditLogEntry) {
         if let Err(e) = self.sender.try_send(entry) {
@@ -408,29 +412,28 @@ impl AuditPersistence {
         flush_interval_ms: u64,
     ) {
         let mut batch: Vec<AuditLogEntry> = Vec::with_capacity(batch_size);
-        let mut flush_interval = tokio::time::interval(
-            tokio::time::Duration::from_millis(flush_interval_ms)
-        );
+        let mut flush_interval =
+            tokio::time::interval(tokio::time::Duration::from_millis(flush_interval_ms));
 
         loop {
             tokio::select! {
                 // Receive new entry
                 Some(entry) = receiver.recv() => {
                     batch.push(entry);
-                    
+
                     // Flush if batch is full
                     if batch.len() >= batch_size {
                         Self::flush_batch(&pool, &mut batch).await;
                     }
                 }
-                
+
                 // Periodic flush for partial batches
                 _ = flush_interval.tick() => {
                     if !batch.is_empty() {
                         Self::flush_batch(&pool, &mut batch).await;
                     }
                 }
-                
+
                 // Channel closed
                 else => {
                     // Final flush on shutdown
@@ -459,7 +462,7 @@ impl AuditPersistence {
                 tenant_id, user_id, action, resource_type, resource_id,
                 metadata, ip_address, user_agent, request_id, 
                 duration_ms, status_code, created_at
-            ) VALUES "
+            ) VALUES ",
         );
 
         let mut values = Vec::new();
@@ -470,22 +473,33 @@ impl AuditPersistence {
             let offset = i * 12;
             query.push_str(&format!(
                 "(${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${}, ${})",
-                offset + 1, offset + 2, offset + 3, offset + 4, offset + 5, offset + 6,
-                offset + 7, offset + 8, offset + 9, offset + 10, offset + 11, offset + 12
+                offset + 1,
+                offset + 2,
+                offset + 3,
+                offset + 4,
+                offset + 5,
+                offset + 6,
+                offset + 7,
+                offset + 8,
+                offset + 9,
+                offset + 10,
+                offset + 11,
+                offset + 12
             ));
 
             // Extract tenant_id and user_id from context if available
-            let tenant_id: Option<Uuid> = entry.context
+            let tenant_id: Option<Uuid> = entry
+                .context
                 .as_ref()
                 .and_then(|c| c.get("tenant_id"))
                 .and_then(|v| v.as_str())
                 .and_then(|s| Uuid::parse_str(s).ok());
-            
-            let user_uuid: Option<Uuid> = entry.user_id
-                .as_ref()
-                .and_then(|s| Uuid::parse_str(s).ok());
 
-            let timestamp = chrono::DateTime::parse_from_rfc3339(&entry.timestamp).ok()
+            let user_uuid: Option<Uuid> =
+                entry.user_id.as_ref().and_then(|s| Uuid::parse_str(s).ok());
+
+            let timestamp = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
+                .ok()
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_else(chrono::Utc::now);
 
@@ -520,7 +534,7 @@ impl AuditPersistence {
                 .bind(v.8)    // request_id
                 .bind(v.9)    // duration_ms
                 .bind(v.10)   // status_code
-                .bind(v.11);  // created_at
+                .bind(v.11); // created_at
         }
 
         match sqlx_query.execute(pool).await {
@@ -553,7 +567,8 @@ impl AuditPersistence {
             AuditEventType::SubscriptionEnded => "subscription.ended",
             AuditEventType::InvalidInput => "validation.failed",
             AuditEventType::SecurityViolation => "security.violation",
-        }.to_string()
+        }
+        .to_string()
     }
 }
 

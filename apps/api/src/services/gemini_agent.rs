@@ -13,7 +13,7 @@
 use anyhow::{Context, Result};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use tracing::{debug, error, info, instrument, warn};
 
@@ -380,13 +380,9 @@ pub enum AgentAction {
         result: Option<Value>,
     },
     #[serde(rename = "text_response")]
-    TextResponse {
-        content: String,
-    },
+    TextResponse { content: String },
     #[serde(rename = "error")]
-    Error {
-        message: String,
-    },
+    Error { message: String },
 }
 
 /// Complete agent execution result
@@ -416,7 +412,7 @@ pub struct VulnerabilityFinding {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Autonomous Security Agent powered by Gemini 3
-/// 
+///
 /// This agent can autonomously:
 /// 1. Analyze dependency graphs
 /// 2. Identify vulnerabilities
@@ -440,13 +436,13 @@ impl GeminiSecurityAgent {
             max_steps: 10, // Prevent infinite loops
         }
     }
-    
+
     #[allow(dead_code)]
     pub fn with_model(mut self, model: &str) -> Self {
         self.model = model.to_string();
         self
     }
-    
+
     pub fn with_max_steps(mut self, max_steps: usize) -> Self {
         self.max_steps = max_steps;
         self
@@ -480,7 +476,8 @@ impl GeminiSecurityAgent {
         Fut: std::future::Future<Output = Result<Value>> + Send,
         Cb: Fn(AgentStep) + Send + Sync,
     {
-        self.execute_internal(task, tool_executor, Some(&on_step)).await
+        self.execute_internal(task, tool_executor, Some(&on_step))
+            .await
     }
 
     async fn execute_internal<F, Fut, Cb>(
@@ -495,12 +492,12 @@ impl GeminiSecurityAgent {
         Cb: Fn(AgentStep) + Send + Sync,
     {
         info!("Starting autonomous security analysis: {}", task);
-        
+
         let mut steps: Vec<AgentStep> = Vec::new();
         let mut conversation: Vec<AgentContent> = Vec::new();
         let mut packages_analyzed: Vec<String> = Vec::new();
         let mut vulnerabilities_found: Vec<VulnerabilityFinding> = Vec::new();
-        
+
         // System instruction for the Security Agent
         let system_instruction = AgentContent {
             role: Some("system".to_string()),
@@ -512,7 +509,7 @@ impl GeminiSecurityAgent {
                 thought: None,
             }],
         };
-        
+
         // Initial user message
         conversation.push(AgentContent {
             role: Some("user".to_string()),
@@ -524,46 +521,49 @@ impl GeminiSecurityAgent {
                 thought: None,
             }],
         });
-        
+
         let tools = vec![Tool {
             function_declarations: get_security_agent_tools(),
         }];
-        
+
         // Agent loop - continue until we get a final response or hit max steps
         for step_num in 1..=self.max_steps {
             info!("Agent step {}/{}", step_num, self.max_steps);
-            
-            let response = self.call_gemini(&conversation, &tools, Some(&system_instruction)).await?;
-            
+
+            let response = self
+                .call_gemini(&conversation, &tools, Some(&system_instruction))
+                .await?;
+
             // Process the response
-            let candidate = response.candidates
+            let candidate = response
+                .candidates
                 .as_ref()
                 .and_then(|c| c.first())
                 .context("No response from Gemini")?;
-            
+
             let mut function_calls: Vec<FunctionCall> = Vec::new();
             let mut text_response: Option<String> = None;
             let mut thought_summary: Option<String> = None;
             let mut thought_signature: Option<String> = None;
-            
+
             for part in &candidate.content.parts {
                 // Capture thought signature for continuity
                 if let Some(sig) = &part.thought_signature {
                     thought_signature = Some(sig.clone());
                 }
-                
+
                 // Capture thought summary
                 if part.thought == Some(true) {
                     if let Some(text) = &part.text {
                         thought_summary = Some(text.clone());
                     }
                 }
-                
+
                 // Check for function calls
                 if let Some(fc) = &part.function_call {
                     function_calls.push(fc.clone());
                 }
-                
+
                 // Check for text response (not thought)
                 if part.thought != Some(true) {
                     if let Some(text) = &part.text {
@@ -571,32 +571,34 @@ impl GeminiSecurityAgent {
                     }
                 }
             }
-            
+
             // Add model's response to conversation (preserve thought signatures!)
             conversation.push(candidate.content.clone());
-            
+
             // If we have function calls, execute them
             if !function_calls.is_empty() {
                 let mut function_responses: Vec<AgentPart> = Vec::new();
-                
+
                 for fc in &function_calls {
                     info!("Executing tool: {}({:?})", fc.name, fc.args);
-                    
+
                     // Track packages being analyzed
                     if let Some(pkg_id) = fc.args.get("package_id").and_then(|v| v.as_str()) {
                         if !packages_analyzed.contains(&pkg_id.to_string()) {
                             packages_analyzed.push(pkg_id.to_string());
                         }
                     }
-                    
+
                     // Execute the tool
                     let result = tool_executor(fc.name.clone(), fc.args.clone()).await;
-                    
+
                     let response_value = match result {
                         Ok(v) => {
                             // Extract vulnerabilities if this was a vuln check
                             if fc.name == "get_vulnerabilities" {
-                                if let Some(vulns) = v.get("vulnerabilities").and_then(|v| v.as_array()) {
+                                if let Some(vulns) =
+                                    v.get("vulnerabilities").and_then(|v| v.as_array())
+                                {
                                     for vuln in vulns {
                                         if let (Some(cve), Some(sev)) = (
                                             vuln.get("cve_id").and_then(|v| v.as_str()),
@@ -604,16 +606,20 @@ impl GeminiSecurityAgent {
                                         ) {
                                             vulnerabilities_found.push(VulnerabilityFinding {
                                                 cve_id: cve.to_string(),
-                                                package: fc.args.get("package_id")
+                                                package: fc
+                                                    .args
+                                                    .get("package_id")
                                                     .and_then(|v| v.as_str())
                                                     .unwrap_or("unknown")
                                                     .to_string(),
                                                 severity: sev.to_string(),
-                                                description: vuln.get("description")
+                                                description: vuln
+                                                    .get("description")
                                                     .and_then(|v| v.as_str())
                                                     .unwrap_or("")
                                                     .to_string(),
-                                                fix_version: vuln.get("fix_version")
+                                                fix_version: vuln
+                                                    .get("fix_version")
                                                     .and_then(|v| v.as_str())
                                                     .map(|s| s.to_string()),
                                             });
@@ -628,7 +634,7 @@ impl GeminiSecurityAgent {
                             json!({ "error": e.to_string() })
                         }
                     };
-                    
+
                     function_responses.push(AgentPart {
                         text: None,
                         function_call: None,
@@ -639,7 +645,7 @@ impl GeminiSecurityAgent {
                         thought_signature: None,
                         thought: None,
                     });
-                    
+
                     let step = AgentStep {
                         step_number: step_num,
                         action: AgentAction::FunctionCall {
@@ -655,7 +661,7 @@ impl GeminiSecurityAgent {
                     }
                     steps.push(step);
                 }
-                
+
                 // Add function responses to conversation
                 conversation.push(AgentContent {
                     role: Some("user".to_string()),
@@ -675,12 +681,13 @@ impl GeminiSecurityAgent {
                     cb(step.clone());
                 }
                 steps.push(step);
-                
+
                 // Extract recommendations from the response
                 let recommendations = self.extract_recommendations(&text);
-                
+
                 // Calculate total function calls before moving steps
-                let total_function_calls = steps.iter()
+                let total_function_calls = steps
+                    .iter()
                     .filter(|s| matches!(s.action, AgentAction::FunctionCall { .. }))
                     .count();
 
@@ -700,7 +707,7 @@ impl GeminiSecurityAgent {
                         None
                     }
                 };
-                
+
                 return Ok(AgentExecutionResult {
                     task: task.to_string(),
                     steps,
@@ -712,21 +719,22 @@ impl GeminiSecurityAgent {
                     structured_report,
                 });
             }
-            
+
             // Check finish reason
             if candidate.finish_reason.as_deref() == Some("STOP") && function_calls.is_empty() {
                 break;
             }
         }
-        
+
         // If we hit max steps, return what we have
         warn!("Agent reached max steps limit");
-        
+
         // Calculate total function calls before moving steps
-        let total_function_calls = steps.iter()
+        let total_function_calls = steps
+            .iter()
             .filter(|s| matches!(s.action, AgentAction::FunctionCall { .. }))
             .count();
-        
+
         Ok(AgentExecutionResult {
             task: task.to_string(),
             steps,
@@ -738,7 +746,7 @@ impl GeminiSecurityAgent {
             structured_report: None,
         })
     }
-    
+
     async fn call_gemini(
         &self,
         conversation: &[AgentContent],
@@ -749,7 +757,7 @@ impl GeminiSecurityAgent {
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
             self.model
         );
-        
+
         let request = AgentRequest {
             contents: conversation.to_vec(),
             tools: tools.to_vec(),
@@ -771,31 +779,38 @@ impl GeminiSecurityAgent {
             }),
             system_instruction: system_instruction.cloned(),
         };
-        
+
         debug!("Calling Gemini API: {}", url);
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(&url)
             .header("x-goog-api-key", &self.api_key)
             .json(&request)
             .send()
             .await
             .context("Failed to call Gemini API")?;
-        
+
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
             error!("Gemini API error: {} - {}", status, text);
             return Err(anyhow::anyhow!("Gemini API error: {} - {}", status, text));
         }
-        
-        let body: AgentResponse = response.json().await
+
+        let body: AgentResponse = response
+            .json()
+            .await
             .context("Failed to parse Gemini response")?;
-        
+
         if let Some(err) = body.error {
-            return Err(anyhow::anyhow!("Gemini error: {} - {}", err.code, err.message));
+            return Err(anyhow::anyhow!(
+                "Gemini error: {} - {}",
+                err.code,
+                err.message
+            ));
         }
-        
+
         Ok(body)
     }
 
@@ -880,7 +895,8 @@ impl GeminiSecurityAgent {
             system_instruction: None,
         };
 
-        let response = self.client
+        let response = self
+            .client
             .post(&url)
             .header("x-goog-api-key", &self.api_key)
             .json(&request)
@@ -891,17 +907,28 @@ impl GeminiSecurityAgent {
         if !response.status().is_success() {
             let status = response.status();
             let text = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!("Gemini structured report error: {} - {}", status, text));
+            return Err(anyhow::anyhow!(
+                "Gemini structured report error: {} - {}",
+                status,
+                text
+            ));
         }
 
-        let body: AgentResponse = response.json().await
+        let body: AgentResponse = response
+            .json()
+            .await
             .context("Failed to parse structured report response")?;
 
         if let Some(err) = body.error {
-            return Err(anyhow::anyhow!("Gemini structured report error: {} - {}", err.code, err.message));
+            return Err(anyhow::anyhow!(
+                "Gemini structured report error: {} - {}",
+                err.code,
+                err.message
+            ));
         }
 
-        let candidate = body.candidates
+        let candidate = body
+            .candidates
             .as_ref()
             .and_then(|c| c.first())
             .context("No structured report candidate")?;
@@ -915,29 +942,36 @@ impl GeminiSecurityAgent {
         }
 
         let json_text = json_text.context("Structured report missing text")?;
-        let report: Value = serde_json::from_str(&json_text)
-            .context("Failed to parse structured report JSON")?;
+        let report: Value =
+            serde_json::from_str(&json_text).context("Failed to parse structured report JSON")?;
         Ok(report)
     }
-    
+
     fn extract_recommendations(&self, text: &str) -> Vec<String> {
         let mut recommendations = Vec::new();
-        
+
         // Simple extraction - look for recommendation patterns
         for line in text.lines() {
             let line = line.trim();
             if line.starts_with("- ") || line.starts_with("* ") || line.starts_with("• ") {
-                if line.to_lowercase().contains("upgrade") ||
-                   line.to_lowercase().contains("update") ||
-                   line.to_lowercase().contains("replace") ||
-                   line.to_lowercase().contains("remove") ||
-                   line.to_lowercase().contains("consider") ||
-                   line.to_lowercase().contains("recommend") {
+                if line.to_lowercase().contains("upgrade")
+                    || line.to_lowercase().contains("update")
+                    || line.to_lowercase().contains("replace")
+                    || line.to_lowercase().contains("remove")
+                    || line.to_lowercase().contains("consider")
+                    || line.to_lowercase().contains("recommend")
+                {
                     recommendations.push(line[2..].trim().to_string());
                 }
             }
             // Numbered recommendations
-            if line.len() > 2 && line.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+            if line.len() > 2
+                && line
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
+            {
                 if let Some(rest) = line.get(2..) {
                     if rest.starts_with(". ") || rest.starts_with(") ") {
                         recommendations.push(rest[2..].trim().to_string());
@@ -945,7 +979,7 @@ impl GeminiSecurityAgent {
                 }
             }
         }
-        
+
         recommendations
     }
 }
@@ -1016,7 +1050,7 @@ You are thorough, accurate, and focused on providing actionable security insight
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_get_security_agent_tools() {
         let tools = get_security_agent_tools();
@@ -1024,7 +1058,7 @@ mod tests {
         assert_eq!(tools[0].name, "search_packages");
         assert_eq!(tools[1].name, "get_vulnerabilities");
     }
-    
+
     #[test]
     fn test_function_declaration_serialization() {
         let tools = get_security_agent_tools();

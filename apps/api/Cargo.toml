@@ -18,6 +18,8 @@ uuid.workspace = true
 config.workspace = true
 dotenvy.workspace = true
 reqwest.workspace = true
+prost.workspace = true
+prost-types.workspace = true
 
 # Web framework
 axum.workspace = true
@@ -63,4 +65,8 @@ metrics-exporter-prometheus.workspace = true
 
 # PostgreSQL for audit logging
 sqlx = { workspace = true, features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
+
+[build-dependencies]
+prost-build.workspace = true
+protoc-bin-vendored = "3.0"
 

@@ -9,13 +9,11 @@
 //! - Referrer-Policy
 //! - Permissions-Policy
 
-use axum::{
-    http::{header::HeaderName, HeaderValue, Request, Response},
-};
-use std::task::{Context, Poll};
-use tower::{Layer, Service};
+use axum::http::{HeaderValue, Request, Response, header::HeaderName};
 use std::future::Future;
 use std::pin::Pin;
+use std::task::{Context, Poll};
+use tower::{Layer, Service};
 
 /// Security headers configuration
 #[derive(Debug, Clone)]
@@ -61,9 +59,11 @@ impl SecurityHeadersLayer {
     pub fn new(config: SecurityHeadersConfig) -> Self {
         Self { config }
     }
-    
+
     pub fn default_headers() -> Self {
-        Self { config: SecurityHeadersConfig::default() }
+        Self {
+            config: SecurityHeadersConfig::default(),
+        }
     }
 }
 
@@ -116,10 +116,7 @@ where
 
             // X-Frame-Options
             if let Ok(value) = HeaderValue::from_str(&config.frame_options) {
-                headers.insert(
-                    HeaderName::from_static("x-frame-options"),
-                    value,
-                );
+                headers.insert(HeaderName::from_static("x-frame-options"), value);
             }
 
             // X-XSS-Protection
@@ -130,44 +127,35 @@ where
 
             // Referrer-Policy
             if let Ok(value) = HeaderValue::from_str(&config.referrer_policy) {
-                headers.insert(
-                    HeaderName::from_static("referrer-policy"),
-                    value,
-                );
+                headers.insert(HeaderName::from_static("referrer-policy"), value);
             }
 
             // Strict-Transport-Security (HSTS)
             if config.hsts_enabled {
                 let hsts_value = if config.hsts_include_subdomains {
-                    format!("max-age={}; includeSubDomains; preload", config.hsts_max_age)
+                    format!(
+                        "max-age={}; includeSubDomains; preload",
+                        config.hsts_max_age
+                    )
                 } else {
                     format!("max-age={}", config.hsts_max_age)
                 };
                 if let Ok(value) = HeaderValue::from_str(&hsts_value) {
-                    headers.insert(
-                        HeaderName::from_static("strict-transport-security"),
-                        value,
-                    );
+                    headers.insert(HeaderName::from_static("strict-transport-security"), value);
                 }
             }
 
             // Content-Security-Policy
             if let Some(ref csp) = config.csp {
                 if let Ok(value) = HeaderValue::from_str(csp) {
-                    headers.insert(
-                        HeaderName::from_static("content-security-policy"),
-                        value,
-                    );
+                    headers.insert(HeaderName::from_static("content-security-policy"), value);
                 }
             }
 
             // Permissions-Policy
             if let Some(ref policy) = config.permissions_policy {
                 if let Ok(value) = HeaderValue::from_str(policy) {
-                    headers.insert(
-                        HeaderName::from_static("permissions-policy"),
-                        value,
-                    );
+                    headers.insert(HeaderName::from_static("permissions-policy"), value);
                 }
             }
 

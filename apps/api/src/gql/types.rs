@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use async_graphql::{Enum, InputObject, SimpleObject, ID};
+use async_graphql::{Enum, ID, InputObject, SimpleObject};
 use serde::{Deserialize, Serialize};
 
 // ═══════════════════════════════════════════════════════════════
@@ -135,10 +135,23 @@ pub struct ImpactRadiusResult {
     pub max_depth: i32,
     /// Total number of impacted packages
     pub impacted_packages: i32,
+    /// Direct packages that depend on the vulnerable package
+    pub direct_impacted_packages: i32,
+    /// Packages impacted only through transitive dependency paths
+    pub transitive_impacted_packages: i32,
     /// Total number of impacted versions (approximate)
     pub impacted_versions: i32,
+    /// Impacted package counts grouped by shortest dependency depth
+    pub depth_buckets: Vec<ImpactDepthBucket>,
     /// Top impacted packages by proximity
     pub top_impacted: Vec<ImpactNode>,
+}
+
+/// Count of impacted packages at a specific dependency depth
+#[derive(SimpleObject, Clone, Debug)]
+pub struct ImpactDepthBucket {
+    pub depth: i32,
+    pub package_count: i32,
 }
 
 /// A package impacted by a vulnerability

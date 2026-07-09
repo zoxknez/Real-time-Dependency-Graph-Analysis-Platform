@@ -140,7 +140,10 @@ pub async fn get_vulnerability(id: &str) -> Result<Option<OsvVulnerability>> {
     if response.status().as_u16() == 404 {
         return Ok(None);
     }
-    let vuln = response.error_for_status()?.json::<OsvVulnerability>().await?;
+    let vuln = response
+        .error_for_status()?
+        .json::<OsvVulnerability>()
+        .await?;
     Ok(Some(vuln))
 }
 
@@ -161,7 +164,11 @@ pub fn parse_package_id(package_id: &str) -> (Option<String>, Option<String>, Op
     if parts.len() >= 2 {
         let ecosystem = Some(parts[0].to_string());
         let name = Some(parts[1].to_string());
-        let version = if parts.len() >= 3 { Some(parts[2].to_string()) } else { None };
+        let version = if parts.len() >= 3 {
+            Some(parts[2].to_string())
+        } else {
+            None
+        };
         return (ecosystem, name, version);
     }
     if let Some((eco, rest)) = package_id.split_once(':') {
@@ -173,7 +180,11 @@ pub fn parse_package_id(package_id: &str) -> (Option<String>, Option<String>, Op
 pub fn summarize_severity(vuln: &OsvVulnerability) -> String {
     if let Some(affected) = vuln.affected.as_ref() {
         for item in affected {
-            if let Some(sev) = item.ecosystem_specific.as_ref().and_then(|s| s.severity.as_ref()) {
+            if let Some(sev) = item
+                .ecosystem_specific
+                .as_ref()
+                .and_then(|s| s.severity.as_ref())
+            {
                 return sev.to_ascii_lowercase();
             }
         }

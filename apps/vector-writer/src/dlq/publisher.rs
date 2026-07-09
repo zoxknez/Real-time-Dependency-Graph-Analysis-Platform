@@ -94,9 +94,8 @@ impl DlqPublisher {
             deadlettered_at: now.to_rfc3339(),
         };
 
-        let payload = serde_json::to_vec(&dlq_event)
-            .context("Failed to serialize DLQ event")?;
-        
+        let payload = serde_json::to_vec(&dlq_event).context("Failed to serialize DLQ event")?;
+
         let partition_key = format!("{}:{}", package_id, version);
 
         let record = FutureRecord::to(&self.topic)
@@ -119,11 +118,11 @@ impl DlqPublisher {
             .send(record, Timeout::After(Duration::from_secs(30)))
             .await
         {
-            Ok((partition, offset)) => {
+            Ok(delivery) => {
                 warn!(
                     event_id = %event_id,
-                    partition,
-                    offset,
+                    partition = delivery.partition,
+                    offset = delivery.offset,
                     "Event sent to DLQ"
                 );
                 metrics::counter!("vector_writer_dlq_published_total").increment(1);

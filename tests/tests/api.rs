@@ -2,35 +2,26 @@
 //!
 //! Tests the API service with real database backends
 
-use e2e_tests::{
-    containers::start_memgraph,
-    helpers::{init_test_tracing, unique_test_id},
-};
+use e2e_tests::helpers::init_test_tracing;
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::Duration;
-
-/// Start API server for testing (returns base URL)
-async fn start_test_api_server(memgraph_url: &str, redis_url: Option<&str>) -> String {
-    // For now, tests expect API to be running externally
-    // In future, we could spawn the API process here
-    std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8000".to_string())
-}
 
 /// Test health endpoint
 #[tokio::test]
 async fn test_health_endpoint() {
     init_test_tracing();
-    
+
     let client = Client::new();
-    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
-    
+    let api_url =
+        std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
+
     let response = client
         .get(format!("{}/health", api_url))
         .timeout(Duration::from_secs(5))
         .send()
         .await;
-    
+
     match response {
         Ok(resp) => {
             assert!(resp.status().is_success());
@@ -47,16 +38,17 @@ async fn test_health_endpoint() {
 #[tokio::test]
 async fn test_ready_endpoint() {
     init_test_tracing();
-    
+
     let client = Client::new();
-    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
-    
+    let api_url =
+        std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
+
     let response = client
         .get(format!("{}/ready", api_url))
         .timeout(Duration::from_secs(5))
         .send()
         .await;
-    
+
     match response {
         Ok(resp) => {
             let body: Value = resp.json().await.unwrap();
@@ -74,10 +66,11 @@ async fn test_ready_endpoint() {
 #[tokio::test]
 async fn test_graphql_introspection() {
     init_test_tracing();
-    
+
     let client = Client::new();
-    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
-    
+    let api_url =
+        std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+
     let query = json!({
         "query": r#"
             query IntrospectionQuery {
@@ -89,19 +82,19 @@ async fn test_graphql_introspection() {
             }
         "#
     });
-    
+
     let response = client
         .post(format!("{}/graphql", api_url))
         .json(&query)
         .timeout(Duration::from_secs(10))
         .send()
         .await;
-    
+
     match response {
         Ok(resp) => {
             assert!(resp.status().is_success());
             let body: Value = resp.json().await.unwrap();
-            
+
             // Should have query type
             let schema = &body["data"]["__schema"];
             assert_eq!(schema["queryType"]["name"], "QueryRoot");
@@ -117,10 +110,11 @@ async fn test_graphql_introspection() {
 #[tokio::test]
 async fn test_graphql_graph_stats() {
     init_test_tracing();
-    
+
     let client = Client::new();
-    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
-    
+    let api_url =
+        std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+
     let query = json!({
         "query": r#"
             query {
@@ -132,19 +126,19 @@ async fn test_graphql_graph_stats() {
             }
         "#
     });
-    
+
     let response = client
         .post(format!("{}/graphql", api_url))
         .json(&query)
         .timeout(Duration::from_secs(10))
         .send()
         .await;
-    
+
     match response {
         Ok(resp) => {
             assert!(resp.status().is_success());
             let body: Value = resp.json().await.unwrap();
-            
+
             // Should have stats (even if zero)
             let stats = &body["data"]["graphStats"];
             assert!(stats["totalPackages"].is_number());
@@ -160,10 +154,11 @@ async fn test_graphql_graph_stats() {
 #[tokio::test]
 async fn test_graphql_package_query() {
     init_test_tracing();
-    
+
     let client = Client::new();
-    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
-    
+    let api_url =
+        std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+
     let query = json!({
         "query": r#"
             query GetPackage($id: ID!) {
@@ -178,19 +173,19 @@ async fn test_graphql_package_query() {
             "id": "npm:lodash"
         }
     });
-    
+
     let response = client
         .post(format!("{}/graphql", api_url))
         .json(&query)
         .timeout(Duration::from_secs(10))
         .send()
         .await;
-    
+
     match response {
         Ok(resp) => {
             assert!(resp.status().is_success());
             let body: Value = resp.json().await.unwrap();
-            
+
             // Package may or may not exist, but query should succeed
             assert!(body["data"].is_object());
             assert!(!body.get("errors").map(|e| e.is_array()).unwrap_or(false));
@@ -205,10 +200,11 @@ async fn test_graphql_package_query() {
 #[tokio::test]
 async fn test_graphql_reverse_dependents() {
     init_test_tracing();
-    
+
     let client = Client::new();
-    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
-    
+    let api_url =
+        std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+
     let query = json!({
         "query": r#"
             query ReverseDeps($packageId: ID!, $maxDepth: Int, $first: Int) {
@@ -235,19 +231,19 @@ async fn test_graphql_reverse_dependents() {
             "first": 10
         }
     });
-    
+
     let response = client
         .post(format!("{}/graphql", api_url))
         .json(&query)
         .timeout(Duration::from_secs(10))
         .send()
         .await;
-    
+
     match response {
         Ok(resp) => {
             assert!(resp.status().is_success());
             let body: Value = resp.json().await.unwrap();
-            
+
             // Query should succeed (may return empty results)
             let data = &body["data"]["reverseDependents"];
             assert!(data["edges"].is_array());
@@ -263,10 +259,11 @@ async fn test_graphql_reverse_dependents() {
 #[tokio::test]
 async fn test_graphql_impact_radius() {
     init_test_tracing();
-    
+
     let client = Client::new();
-    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
-    
+    let api_url =
+        std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+
     let query = json!({
         "query": r#"
             query ImpactRadius($packageId: ID!, $maxDepth: Int, $limit: Int) {
@@ -291,19 +288,19 @@ async fn test_graphql_impact_radius() {
             "limit": 100
         }
     });
-    
+
     let response = client
         .post(format!("{}/graphql", api_url))
         .json(&query)
         .timeout(Duration::from_secs(10))
         .send()
         .await;
-    
+
     match response {
         Ok(resp) => {
             assert!(resp.status().is_success());
             let body: Value = resp.json().await.unwrap();
-            
+
             let data = &body["data"]["impactRadius"];
             assert!(data["impactedPackages"].is_number());
         }
@@ -317,10 +314,11 @@ async fn test_graphql_impact_radius() {
 #[tokio::test]
 async fn test_query_complexity_limit() {
     init_test_tracing();
-    
+
     let client = Client::new();
-    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
-    
+    let api_url =
+        std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+
     // Very deep query that should exceed complexity limits
     let query = json!({
         "query": r#"
@@ -343,14 +341,14 @@ async fn test_query_complexity_limit() {
             }
         "#
     });
-    
+
     let response = client
         .post(format!("{}/graphql", api_url))
         .json(&query)
         .timeout(Duration::from_secs(10))
         .send()
         .await;
-    
+
     match response {
         Ok(resp) => {
             let body: Value = resp.json().await.unwrap();
@@ -367,27 +365,28 @@ async fn test_query_complexity_limit() {
 #[tokio::test]
 async fn test_rate_limit_headers() {
     init_test_tracing();
-    
+
     let client = Client::new();
-    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
-    
+    let api_url =
+        std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+
     let query = json!({
         "query": "{ graphStats { totalPackages } }"
     });
-    
+
     let response = client
         .post(format!("{}/graphql", api_url))
         .json(&query)
         .timeout(Duration::from_secs(5))
         .send()
         .await;
-    
+
     match response {
         Ok(resp) => {
             // Check for rate limit headers
             let headers = resp.headers();
             tracing::info!("Response headers: {:?}", headers);
-            
+
             // These headers might be present depending on configuration
             if let Some(limit) = headers.get("X-RateLimit-Limit") {
                 tracing::info!("Rate limit: {:?}", limit);
@@ -406,27 +405,28 @@ async fn test_rate_limit_headers() {
 #[tokio::test]
 async fn test_security_headers() {
     init_test_tracing();
-    
+
     let client = Client::new();
-    let api_url = std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
-    
+    let api_url =
+        std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8080".to_string());
+
     let response = client
         .get(format!("{}/health", api_url))
         .timeout(Duration::from_secs(5))
         .send()
         .await;
-    
+
     match response {
         Ok(resp) => {
             let headers = resp.headers();
-            
+
             // Check for security headers
             assert!(
-                headers.get("X-Content-Type-Options").is_some() ||
-                headers.get("x-content-type-options").is_some(),
+                headers.get("X-Content-Type-Options").is_some()
+                    || headers.get("x-content-type-options").is_some(),
                 "Should have X-Content-Type-Options header"
             );
-            
+
             tracing::info!("Security headers present: {:?}", headers);
         }
         Err(e) => {

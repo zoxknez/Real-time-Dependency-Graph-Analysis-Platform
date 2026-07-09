@@ -1,7 +1,7 @@
 //! Configuration module
 
-use serde::Deserialize;
 use anyhow::Result;
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct AppConfig {
@@ -42,14 +42,45 @@ pub struct RegistryConfig {
 impl AppConfig {
     pub fn load() -> Result<Self> {
         dotenvy::dotenv().ok();
-        
-        let config = config::Config::builder()
+
+        let defaults = AppConfig::default();
+        let mut builder = config::Config::builder()
+            .set_default("kafka.brokers", defaults.kafka.brokers)?
+            .set_default("kafka.topic", defaults.kafka.topic)?
+            .set_default("database.url", defaults.database.url)?
+            .set_default(
+                "database.max_connections",
+                defaults.database.max_connections as i64,
+            )?
+            .set_default("crawler.user_agent", defaults.crawler.user_agent)?
+            .set_default("crawler.timeout_secs", defaults.crawler.timeout_secs as i64)?
+            .set_default("crawler.max_retries", defaults.crawler.max_retries as i64)?
+            .set_default("crawler.proxy_urls", defaults.crawler.proxy_urls)?
+            .set_default("registries.npm_enabled", defaults.registries.npm_enabled)?
+            .set_default("registries.pypi_enabled", defaults.registries.pypi_enabled)?
+            .set_default(
+                "registries.cargo_enabled",
+                defaults.registries.cargo_enabled,
+            )?
+            .set_default(
+                "registries.poll_interval_secs",
+                defaults.registries.poll_interval_secs as i64,
+            )?
             .add_source(config::File::with_name("config/ingestion").required(false))
-            .add_source(config::Environment::with_prefix("INGESTION").separator("__"))
-            // Default overrides via env vars directly (e.g. DATABASE_URL)
-            // .set_override("database.url", std::env::var("DATABASE_URL").ok())?
-            .build()?;
-        
+            .add_source(config::Environment::with_prefix("INGESTION").separator("__"));
+
+        if let Ok(value) = std::env::var("DATABASE_URL") {
+            builder = builder.set_override("database.url", value)?;
+        }
+        if let Ok(value) = std::env::var("KAFKA_BROKERS") {
+            builder = builder.set_override("kafka.brokers", value)?;
+        }
+        if let Ok(value) = std::env::var("KAFKA_TOPIC") {
+            builder = builder.set_override("kafka.topic", value)?;
+        }
+
+        let config = builder.build()?;
+
         Ok(config.try_deserialize()?)
     }
 }

@@ -3,11 +3,7 @@
 //! Provides distributed tracing infrastructure for all services.
 //! Supports exporting traces to Jaeger, OTLP, or other backends.
 
-use tracing_subscriber::{
-    layer::SubscriberExt,
-    util::SubscriberInitExt,
-    EnvFilter,
-};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Configuration for tracing setup
 #[derive(Debug, Clone)]
@@ -43,19 +39,20 @@ impl TracingConfig {
             ..Default::default()
         }
     }
-    
+
     pub fn with_endpoint(mut self, endpoint: &str) -> Self {
         self.otlp_endpoint = Some(endpoint.to_string());
         self
     }
-    
+
     pub fn with_sample_rate(mut self, rate: f64) -> Self {
         self.sample_rate = rate.clamp(0.0, 1.0);
         self
     }
-    
+
     pub fn with_attribute(mut self, key: &str, value: &str) -> Self {
-        self.resource_attributes.push((key.to_string(), value.to_string()));
+        self.resource_attributes
+            .push((key.to_string(), value.to_string()));
         self
     }
 }
@@ -64,16 +61,15 @@ impl TracingConfig {
 /// Returns a guard that must be kept alive for the duration of the program
 pub fn init_tracing(config: TracingConfig) -> TracingGuard {
     // Set up the base env filter
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
-    
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
     // Create the fmt layer for console output
     let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(true)
         .with_thread_ids(true)
         .with_file(true)
         .with_line_number(true);
-    
+
     // Build the subscriber with console output only
     // OpenTelemetry OTLP integration would require additional setup
     // that depends on the specific OTLP version and backend
@@ -81,7 +77,7 @@ pub fn init_tracing(config: TracingConfig) -> TracingGuard {
         .with(filter)
         .with(fmt_layer)
         .init();
-    
+
     if config.otlp_endpoint.is_some() {
         tracing::info!(
             service = %config.service_name,
@@ -94,7 +90,7 @@ pub fn init_tracing(config: TracingConfig) -> TracingGuard {
             "Console-only tracing initialized"
         );
     }
-    
+
     TracingGuard { _private: () }
 }
 
@@ -123,32 +119,35 @@ macro_rules! span {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_tracing_config_default() {
         let config = TracingConfig::default();
         assert_eq!(config.service_name, "unknown");
         assert_eq!(config.sample_rate, 1.0);
     }
-    
+
     #[test]
     fn test_tracing_config_builder() {
         let config = TracingConfig::new("test-service")
             .with_endpoint("http://localhost:4317")
             .with_sample_rate(0.5)
             .with_attribute("env", "test");
-        
+
         assert_eq!(config.service_name, "test-service");
-        assert_eq!(config.otlp_endpoint, Some("http://localhost:4317".to_string()));
+        assert_eq!(
+            config.otlp_endpoint,
+            Some("http://localhost:4317".to_string())
+        );
         assert_eq!(config.sample_rate, 0.5);
         assert_eq!(config.resource_attributes.len(), 1);
     }
-    
+
     #[test]
     fn test_sample_rate_clamping() {
         let config = TracingConfig::new("test").with_sample_rate(1.5);
         assert_eq!(config.sample_rate, 1.0);
-        
+
         let config = TracingConfig::new("test").with_sample_rate(-0.5);
         assert_eq!(config.sample_rate, 0.0);
     }

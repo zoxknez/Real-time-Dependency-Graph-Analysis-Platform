@@ -1,8 +1,8 @@
 use anyhow::Result;
 use rdkafka::config::ClientConfig;
 use rdkafka::consumer::{Consumer, StreamConsumer};
-use tracing::info;
 use std::sync::Arc;
+use tracing::info;
 
 pub struct EventConsumer {
     consumer: Arc<StreamConsumer>, // Arc for thread safety if needed

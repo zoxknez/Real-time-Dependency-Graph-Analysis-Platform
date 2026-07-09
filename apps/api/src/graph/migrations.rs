@@ -5,8 +5,8 @@
 //! - Backfills name_lc (lowercase name) for performance
 
 use crate::graph::GraphClient;
-use tracing::{info, warn, error, instrument};
 use anyhow::Result;
+use tracing::{error, info, instrument, warn};
 
 /// Run all migrations
 #[instrument(skip(client))]
@@ -27,12 +27,12 @@ pub async fn run_migrations(client: &GraphClient) {
 /// Ensure necessary indexes exist
 async fn ensure_indexes(client: &GraphClient) -> Result<()> {
     info!("Ensuring indexes...");
-    
+
     // Create index on Package(name_lc) for fast case-insensitive search
-    match client.query(
-        neo4rs::query("CREATE INDEX ON :Package(name_lc)"), 
-        None
-    ).await {
+    match client
+        .query(neo4rs::query("CREATE INDEX ON :Package(name_lc)"), None)
+        .await
+    {
         Ok(_) => info!("Index on :Package(name_lc) created/verified"),
         Err(e) => warn!("Index creation note (may already exist): {}", e),
     };
@@ -44,9 +44,9 @@ async fn ensure_indexes(client: &GraphClient) -> Result<()> {
 async fn backfill_name_lc(client: &GraphClient) -> Result<()> {
     // Check if we need to backfill
     let count_query = neo4rs::query(
-        "MATCH (p:Package) WHERE p.name_lc IS NULL AND p.deleted_at IS NULL RETURN count(p) as count"
+        "MATCH (p:Package) WHERE p.name_lc IS NULL AND p.deleted_at IS NULL RETURN count(p) as count",
     );
-    
+
     // client.query_one returns Result<Option<Row>>
     let mut needed = 0;
     if let Some(row) = client.query_one(count_query, None).await? {
@@ -69,14 +69,14 @@ async fn backfill_name_lc(client: &GraphClient) -> Result<()> {
             WITH p LIMIT 1000
             SET p.name_lc = toLower(p.name)
             RETURN count(p) as updated
-            "#
+            "#,
         );
 
         let rows = client.query(update_query, None).await?;
         let mut updated = 0;
-        
+
         if let Some(row) = rows.first() {
-             updated = row.get::<i64>("updated").unwrap_or(0);
+            updated = row.get::<i64>("updated").unwrap_or(0);
         }
 
         if updated == 0 {

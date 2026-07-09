@@ -11,7 +11,13 @@ const SCORECARD_API_BASE: &str = "https://api.securityscorecards.dev";
 pub async fn fetch_scorecard(target: &str) -> Result<ScorecardResult> {
     let client = Client::new();
     let url = format!("{}/projects/{}", SCORECARD_API_BASE, target);
-    let data: Value = client.get(url).send().await?.error_for_status()?.json().await?;
+    let data: Value = client
+        .get(url)
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
 
     let aggregate_score = data.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
     let scorecard_version = data
@@ -20,19 +26,51 @@ pub async fn fetch_scorecard(target: &str) -> Result<ScorecardResult> {
         .and_then(|v| v.as_str())
         .unwrap_or("unknown")
         .to_string();
-    let generated_at = data.get("date").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-    let commit_sha = data.get("repo").and_then(|v| v.get("commit")).and_then(|v| v.as_str()).map(|s| s.to_string());
+    let generated_at = data
+        .get("date")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let commit_sha = data
+        .get("repo")
+        .and_then(|v| v.get("commit"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
-    let checks_data = data.get("checks").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let checks_data = data
+        .get("checks")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
     let mut checks: Vec<ScorecardCheck> = Vec::new();
 
     for check in checks_data {
-        let name = check.get("name").and_then(|v| v.as_str()).unwrap_or("Unknown");
-        let score = check.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0).round() as i32;
-        let reason = check.get("reason").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let documentation_url = check.get("documentation").and_then(|v| v.as_str()).map(|s| s.to_string());
-        let details = check.get("details").and_then(|v| v.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        let name = check
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown");
+        let score = check
+            .get("score")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0)
+            .round() as i32;
+        let reason = check
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let documentation_url = check
+            .get("documentation")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let details = check
+            .get("details")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_else(Vec::new);
 
         let check_type = map_check_type(name).unwrap_or(ScorecardCheckType::Vulnerabilities);
@@ -71,8 +109,12 @@ pub async fn fetch_scorecard(target: &str) -> Result<ScorecardResult> {
         .cloned()
         .collect();
 
-    let failed_checks: Vec<ScorecardCheck> = checks.iter().filter(|c| c.score < 5).cloned().collect();
-    let critical_findings_count = failed_checks.iter().filter(|c| matches!(c.risk_level, RiskLevel::Critical)).count() as i32;
+    let failed_checks: Vec<ScorecardCheck> =
+        checks.iter().filter(|c| c.score < 5).cloned().collect();
+    let critical_findings_count = failed_checks
+        .iter()
+        .filter(|c| matches!(c.risk_level, RiskLevel::Critical))
+        .count() as i32;
 
     Ok(ScorecardResult {
         target: target.to_string(),

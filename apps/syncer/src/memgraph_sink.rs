@@ -1,7 +1,7 @@
 //! Memgraph sink - Cypher query generator and executor
 
 use anyhow::Result;
-use neo4rs::{Graph, Query};
+use neo4rs::{ConfigBuilder, Graph, Query};
 use tracing::{debug, info};
 
 /// Memgraph connection wrapper
@@ -13,12 +13,26 @@ impl MemgraphSink {
     /// Connect to Memgraph
     pub async fn new(uri: &str, user: &str, password: &str) -> Result<Self> {
         info!(uri = %uri, "Connecting to Memgraph");
-        
-        let graph = Graph::new(uri, user, password).await?;
-        
+
+        let user = if user.is_empty() { "memgraph" } else { user };
+        let password = if password.is_empty() {
+            "memgraph"
+        } else {
+            password
+        };
+        let config = ConfigBuilder::default()
+            .uri(uri)
+            .user(user)
+            .password(password)
+            .db("memgraph")
+            .fetch_size(500)
+            .build()?;
+
+        let graph = Graph::connect(config).await?;
+
         Ok(Self { graph })
     }
-    
+
     /// Create necessary indexes
     pub async fn create_indexes(&self) -> Result<()> {
         let indexes = [
@@ -27,17 +41,17 @@ impl MemgraphSink {
             "CREATE INDEX ON :Package(ecosystem)",
             "CREATE INDEX ON :Version(version)",
         ];
-        
+
         for index in indexes {
             if let Err(e) = self.graph.run(Query::new(index.to_string())).await {
                 debug!(index = %index, error = %e, "Index may already exist");
             }
         }
-        
+
         info!("Created Memgraph indexes");
         Ok(())
     }
-    
+
     /// Upsert a package node
     pub async fn upsert_package(
         &self,
@@ -52,19 +66,19 @@ impl MemgraphSink {
                  p.ecosystem = $ecosystem,
                  p.description = $description,
                  p.updated_at = timestamp()"
-            .to_string()
+                .to_string(),
         )
         .param("id", id)
         .param("name", name)
         .param("ecosystem", ecosystem)
         .param("description", description.unwrap_or(""));
-        
+
         self.graph.run(query).await?;
         debug!(id = %id, "Upserted package");
-        
+
         Ok(())
     }
-    
+
     /// Create DEPENDS_ON relationship
     pub async fn create_dependency(
         &self,
@@ -79,19 +93,19 @@ impl MemgraphSink {
              MERGE (from)-[r:DEPENDS_ON]->(to)
              SET r.version_constraint = $version_constraint,
                  r.dep_type = $dep_type"
-            .to_string()
+                .to_string(),
         )
         .param("from_id", from_id)
         .param("to_id", to_id)
         .param("version_constraint", version_constraint)
         .param("dep_type", dep_type);
-        
+
         self.graph.run(query).await?;
         debug!(from = %from_id, to = %to_id, "Created dependency edge");
-        
+
         Ok(())
     }
-    
+
     /// Get all dependents of a package (inverse dependencies)
     #[allow(dead_code)]
     pub async fn get_dependents(&self, package_id: &str, depth: u32) -> Result<Vec<String>> {
@@ -101,16 +115,16 @@ impl MemgraphSink {
             depth
         ))
         .param("id", package_id);
-        
+
         let mut result = self.graph.execute(query).await?;
         let mut dependents = vec![];
-        
+
         while let Some(row) = result.next().await? {
             if let Ok(id) = row.get::<String>("dependent_id") {
                 dependents.push(id);
             }
         }
-        
+
         Ok(dependents)
     }
 }

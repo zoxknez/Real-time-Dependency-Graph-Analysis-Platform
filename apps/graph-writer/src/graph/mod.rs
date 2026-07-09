@@ -6,4 +6,4 @@ mod queries;
 pub use batch::{BatchBuilder, BatchStats};
 pub use client::MemgraphClient;
 #[allow(unused_imports)]
-pub use queries::GraphQueries;
+pub use queries::{DEFAULT_TENANT_ID, GraphQueries};

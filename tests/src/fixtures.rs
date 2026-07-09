@@ -34,7 +34,7 @@ impl TestPackage {
             dependencies: vec![],
         }
     }
-    
+
     /// Create a sample NPM package with dependencies
     pub fn npm_express() -> Self {
         Self {
@@ -57,7 +57,7 @@ impl TestPackage {
             ],
         }
     }
-    
+
     /// Create a sample Cargo package
     pub fn cargo_serde() -> Self {
         Self {
@@ -66,16 +66,14 @@ impl TestPackage {
             ecosystem: "cargo".to_string(),
             version: "1.0.197".to_string(),
             description: Some("A generic serialization/deserialization framework".to_string()),
-            dependencies: vec![
-                TestDependency {
-                    name: "serde_derive".to_string(),
-                    version_constraint: "1.0".to_string(),
-                    dep_type: "optional".to_string(),
-                },
-            ],
+            dependencies: vec![TestDependency {
+                name: "serde_derive".to_string(),
+                version_constraint: "1.0".to_string(),
+                dep_type: "optional".to_string(),
+            }],
         }
     }
-    
+
     /// Create a sample PyPI package
     pub fn pypi_requests() -> Self {
         Self {
@@ -98,12 +96,12 @@ impl TestPackage {
             ],
         }
     }
-    
+
     /// Generate a random test package
     pub fn random(ecosystem: &str) -> Self {
         let id = Uuid::new_v4().to_string();
         let name = format!("test-package-{}", &id[..8]);
-        
+
         Self {
             id: format!("{}/{}/1.0.0", ecosystem, name),
             name,
@@ -144,7 +142,7 @@ impl TestKafkaEvent {
             }),
         }
     }
-    
+
     /// Create a package yanked event
     pub fn package_yanked(ecosystem: &str, name: &str, version: &str) -> Self {
         Self {
@@ -177,7 +175,7 @@ impl GraphQLQueries {
         }
         "#
     }
-    
+
     pub fn reverse_dependents() -> &'static str {
         r#"
         query ReverseDependents($packageId: ID!, $depth: Int) {
@@ -194,7 +192,7 @@ impl GraphQLQueries {
         }
         "#
     }
-    
+
     pub fn search_packages() -> &'static str {
         r#"
         query SearchPackages($query: String!, $ecosystem: String, $limit: Int) {
@@ -208,7 +206,7 @@ impl GraphQLQueries {
         }
         "#
     }
-    
+
     pub fn impact_radius() -> &'static str {
         r#"
         query ImpactRadius($packageId: ID!, $maxDepth: Int) {
@@ -229,21 +227,21 @@ impl GraphQLQueries {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_npm_lodash_fixture() {
         let pkg = TestPackage::npm_lodash();
         assert_eq!(pkg.name, "lodash");
         assert_eq!(pkg.ecosystem, "npm");
     }
-    
+
     #[test]
     fn test_random_package() {
         let pkg = TestPackage::random("npm");
         assert!(pkg.name.starts_with("test-package-"));
         assert_eq!(pkg.ecosystem, "npm");
     }
-    
+
     #[test]
     fn test_kafka_event_creation() {
         let pkg = TestPackage::npm_express();

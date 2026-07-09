@@ -100,7 +100,7 @@ impl LicenseExpr {
     pub fn parse(expr: &str) -> Result<Self, LicenseParseError> {
         LicenseExprParser::new(expr).parse()
     }
-    
+
     /// Get all license identifiers in this expression
     pub fn all_licenses(&self) -> Vec<&str> {
         match self {
@@ -113,12 +113,15 @@ impl LicenseExpr {
             }
         }
     }
-    
+
     /// Get all license identifiers as owned strings
     pub fn all_license_ids(&self) -> Vec<String> {
-        self.all_licenses().into_iter().map(|s| s.to_string()).collect()
+        self.all_licenses()
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect()
     }
-    
+
     /// Check if this expression is satisfied by a set of allowed licenses
     pub fn is_satisfied_by(&self, allowed: &HashSet<String>) -> bool {
         match self {
@@ -132,7 +135,7 @@ impl LicenseExpr {
             }
         }
     }
-    
+
     /// Find a satisfying choice for OR expressions
     pub fn find_satisfying_choice(&self, allowed: &HashSet<String>) -> Option<Vec<String>> {
         match self {
@@ -190,38 +193,41 @@ struct LicenseExprParser<'a> {
 
 impl<'a> LicenseExprParser<'a> {
     fn new(input: &'a str) -> Self {
-        Self { input: input.trim(), pos: 0 }
+        Self {
+            input: input.trim(),
+            pos: 0,
+        }
     }
-    
+
     fn parse(&mut self) -> Result<LicenseExpr, LicenseParseError> {
         self.parse_or()
     }
-    
+
     fn parse_or(&mut self) -> Result<LicenseExpr, LicenseParseError> {
         let mut left = self.parse_and()?;
-        
+
         while self.match_keyword("OR") {
             let right = self.parse_and()?;
             left = LicenseExpr::Or(Box::new(left), Box::new(right));
         }
-        
+
         Ok(left)
     }
-    
+
     fn parse_and(&mut self) -> Result<LicenseExpr, LicenseParseError> {
         let mut left = self.parse_with()?;
-        
+
         while self.match_keyword("AND") {
             let right = self.parse_with()?;
             left = LicenseExpr::And(Box::new(left), Box::new(right));
         }
-        
+
         Ok(left)
     }
-    
+
     fn parse_with(&mut self) -> Result<LicenseExpr, LicenseParseError> {
         let expr = self.parse_primary()?;
-        
+
         if self.match_keyword("WITH") {
             let exception = self.parse_identifier()?;
             if let LicenseExpr::Simple(license) = expr {
@@ -230,13 +236,13 @@ impl<'a> LicenseExprParser<'a> {
                 return Err(LicenseParseError::InvalidWithClause);
             }
         }
-        
+
         Ok(expr)
     }
-    
+
     fn parse_primary(&mut self) -> Result<LicenseExpr, LicenseParseError> {
         self.skip_whitespace();
-        
+
         if self.match_char('(') {
             let expr = self.parse_or()?;
             if !self.match_char(')') {
@@ -248,10 +254,10 @@ impl<'a> LicenseExprParser<'a> {
             Ok(LicenseExpr::Simple(id))
         }
     }
-    
+
     fn parse_identifier(&mut self) -> Result<String, LicenseParseError> {
         self.skip_whitespace();
-        
+
         let start = self.pos;
         while self.pos < self.input.len() {
             let c = self.input[self.pos..].chars().next().unwrap();
@@ -261,14 +267,14 @@ impl<'a> LicenseExprParser<'a> {
                 break;
             }
         }
-        
+
         if self.pos == start {
             return Err(LicenseParseError::ExpectedIdentifier);
         }
-        
+
         Ok(self.input[start..self.pos].to_string())
     }
-    
+
     fn skip_whitespace(&mut self) {
         while self.pos < self.input.len() {
             let c = self.input[self.pos..].chars().next().unwrap();
@@ -279,21 +285,26 @@ impl<'a> LicenseExprParser<'a> {
             }
         }
     }
-    
+
     fn match_keyword(&mut self, keyword: &str) -> bool {
         self.skip_whitespace();
         if self.input[self.pos..].starts_with(keyword) {
             let after = self.pos + keyword.len();
             // Make sure it's not part of a longer identifier
-            if after >= self.input.len() || 
-               !self.input[after..].chars().next().unwrap().is_alphanumeric() {
+            if after >= self.input.len()
+                || !self.input[after..]
+                    .chars()
+                    .next()
+                    .unwrap()
+                    .is_alphanumeric()
+            {
                 self.pos = after;
                 return true;
             }
         }
         false
     }
-    
+
     fn match_char(&mut self, c: char) -> bool {
         self.skip_whitespace();
         if self.input[self.pos..].starts_with(c) {
@@ -363,10 +374,9 @@ impl Default for LicensePolicy {
             description: None,
             allowed: HashSet::new(),
             denied: HashSet::new(),
-            allowed_categories: [
-                LicenseCategory::Permissive,
-                LicenseCategory::PublicDomain,
-            ].into_iter().collect(),
+            allowed_categories: [LicenseCategory::Permissive, LicenseCategory::PublicDomain]
+                .into_iter()
+                .collect(),
             denied_categories: HashSet::new(),
             allow_copyleft: true,
             allow_network_copyleft: false,
@@ -382,16 +392,15 @@ impl LicensePolicy {
         Self {
             name: "permissive-only".to_string(),
             description: Some("Only allow permissive and public domain licenses".to_string()),
-            allowed_categories: [
-                LicenseCategory::Permissive,
-                LicenseCategory::PublicDomain,
-            ].into_iter().collect(),
+            allowed_categories: [LicenseCategory::Permissive, LicenseCategory::PublicDomain]
+                .into_iter()
+                .collect(),
             allow_copyleft: false,
             allow_network_copyleft: false,
             ..Default::default()
         }
     }
-    
+
     /// Create an enterprise-friendly policy
     pub fn enterprise() -> Self {
         let mut denied = HashSet::new();
@@ -401,7 +410,7 @@ impl LicensePolicy {
         denied.insert("GPL-3.0-or-later".to_string());
         denied.insert("SSPL-1.0".to_string());
         denied.insert("Commons-Clause".to_string());
-        
+
         Self {
             name: "enterprise".to_string(),
             description: Some("Enterprise-friendly license policy".to_string()),
@@ -472,16 +481,12 @@ impl LicensePolicyValidator {
             license_db: LicenseDatabase::default(),
         }
     }
-    
+
     /// Validate a license expression against a policy
-    pub fn validate(
-        &self,
-        license_expr: &str,
-        policy: &LicensePolicy,
-    ) -> PolicyValidationResult {
+    pub fn validate(&self, license_expr: &str, policy: &LicensePolicy) -> PolicyValidationResult {
         let mut violations = Vec::new();
         let mut warnings = Vec::new();
-        
+
         // Parse the license expression
         let parsed = match LicenseExpr::parse(license_expr) {
             Ok(expr) => expr,
@@ -501,10 +506,10 @@ impl LicensePolicyValidator {
                 };
             }
         };
-        
+
         // Get all licenses in the expression
         let license_ids = parsed.all_license_ids();
-        
+
         for license_id in &license_ids {
             // Check if explicitly denied
             if policy.denied.contains(license_id) {
@@ -516,14 +521,14 @@ impl LicensePolicyValidator {
                 });
                 continue;
             }
-            
+
             // Look up license info
             if let Some(info) = self.license_db.get(license_id) {
                 // Check deprecated
                 if info.deprecated {
                     warnings.push(format!("License '{}' is deprecated", license_id));
                 }
-                
+
                 // Check category
                 if policy.denied_categories.contains(&info.category) {
                     violations.push(LicenseViolation {
@@ -536,20 +541,19 @@ impl LicensePolicyValidator {
                         severity: ViolationSeverity::Error,
                     });
                 }
-                
+
                 // Check copyleft
-                if !policy.allow_copyleft && matches!(info.copyleft, CopyleftType::Strong | CopyleftType::Weak) {
+                if !policy.allow_copyleft
+                    && matches!(info.copyleft, CopyleftType::Strong | CopyleftType::Weak)
+                {
                     violations.push(LicenseViolation {
                         violation_type: ViolationType::CopyleftNotAllowed,
                         license_id: license_id.clone(),
-                        reason: format!(
-                            "Copyleft license '{}' not allowed by policy",
-                            license_id
-                        ),
+                        reason: format!("Copyleft license '{}' not allowed by policy", license_id),
                         severity: ViolationSeverity::Error,
                     });
                 }
-                
+
                 // Check network copyleft
                 if !policy.allow_network_copyleft && info.copyleft == CopyleftType::Network {
                     violations.push(LicenseViolation {
@@ -562,7 +566,7 @@ impl LicensePolicyValidator {
                         severity: ViolationSeverity::Error,
                     });
                 }
-                
+
                 // Check OSI approved
                 if policy.require_osi_approved && !info.osi_approved {
                     violations.push(LicenseViolation {
@@ -580,10 +584,13 @@ impl LicensePolicyValidator {
                     severity: ViolationSeverity::Error,
                 });
             } else {
-                warnings.push(format!("Unknown license '{}' - manual review recommended", license_id));
+                warnings.push(format!(
+                    "Unknown license '{}' - manual review recommended",
+                    license_id
+                ));
             }
         }
-        
+
         PolicyValidationResult {
             compliant: violations.is_empty(),
             policy_name: policy.name.clone(),
@@ -623,15 +630,15 @@ impl LicenseDatabase {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     pub fn get(&self, id: &str) -> Option<&LicenseInfo> {
         self.licenses.get(id)
     }
-    
+
     pub fn all(&self) -> impl Iterator<Item = &LicenseInfo> {
         self.licenses.values()
     }
-    
+
     fn load_common_licenses(&mut self) {
         // Permissive licenses
         self.add_license(LicenseInfo {
@@ -644,7 +651,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/MIT.html".to_string(),
             deprecated: false,
         });
-        
+
         self.add_license(LicenseInfo {
             id: "Apache-2.0".to_string(),
             name: "Apache License 2.0".to_string(),
@@ -655,7 +662,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/Apache-2.0.html".to_string(),
             deprecated: false,
         });
-        
+
         self.add_license(LicenseInfo {
             id: "BSD-2-Clause".to_string(),
             name: "BSD 2-Clause \"Simplified\" License".to_string(),
@@ -666,7 +673,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/BSD-2-Clause.html".to_string(),
             deprecated: false,
         });
-        
+
         self.add_license(LicenseInfo {
             id: "BSD-3-Clause".to_string(),
             name: "BSD 3-Clause \"New\" or \"Revised\" License".to_string(),
@@ -677,7 +684,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/BSD-3-Clause.html".to_string(),
             deprecated: false,
         });
-        
+
         self.add_license(LicenseInfo {
             id: "ISC".to_string(),
             name: "ISC License".to_string(),
@@ -688,7 +695,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/ISC.html".to_string(),
             deprecated: false,
         });
-        
+
         self.add_license(LicenseInfo {
             id: "Unlicense".to_string(),
             name: "The Unlicense".to_string(),
@@ -699,7 +706,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/Unlicense.html".to_string(),
             deprecated: false,
         });
-        
+
         self.add_license(LicenseInfo {
             id: "CC0-1.0".to_string(),
             name: "Creative Commons Zero v1.0 Universal".to_string(),
@@ -710,7 +717,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/CC0-1.0.html".to_string(),
             deprecated: false,
         });
-        
+
         // Weak copyleft licenses
         self.add_license(LicenseInfo {
             id: "LGPL-2.1-only".to_string(),
@@ -722,7 +729,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/LGPL-2.1-only.html".to_string(),
             deprecated: false,
         });
-        
+
         self.add_license(LicenseInfo {
             id: "LGPL-3.0-only".to_string(),
             name: "GNU Lesser General Public License v3.0 only".to_string(),
@@ -733,7 +740,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/LGPL-3.0-only.html".to_string(),
             deprecated: false,
         });
-        
+
         self.add_license(LicenseInfo {
             id: "MPL-2.0".to_string(),
             name: "Mozilla Public License 2.0".to_string(),
@@ -744,7 +751,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/MPL-2.0.html".to_string(),
             deprecated: false,
         });
-        
+
         self.add_license(LicenseInfo {
             id: "EPL-2.0".to_string(),
             name: "Eclipse Public License 2.0".to_string(),
@@ -755,7 +762,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/EPL-2.0.html".to_string(),
             deprecated: false,
         });
-        
+
         // Strong copyleft licenses
         self.add_license(LicenseInfo {
             id: "GPL-2.0-only".to_string(),
@@ -767,7 +774,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/GPL-2.0-only.html".to_string(),
             deprecated: false,
         });
-        
+
         self.add_license(LicenseInfo {
             id: "GPL-3.0-only".to_string(),
             name: "GNU General Public License v3.0 only".to_string(),
@@ -778,7 +785,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/GPL-3.0-only.html".to_string(),
             deprecated: false,
         });
-        
+
         // Network copyleft
         self.add_license(LicenseInfo {
             id: "AGPL-3.0-only".to_string(),
@@ -790,7 +797,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/AGPL-3.0-only.html".to_string(),
             deprecated: false,
         });
-        
+
         // Source-available / Proprietary
         self.add_license(LicenseInfo {
             id: "SSPL-1.0".to_string(),
@@ -802,7 +809,7 @@ impl LicenseDatabase {
             reference: "https://spdx.org/licenses/SSPL-1.0.html".to_string(),
             deprecated: false,
         });
-        
+
         self.add_license(LicenseInfo {
             id: "BSL-1.0".to_string(),
             name: "Business Source License 1.1".to_string(),
@@ -814,7 +821,7 @@ impl LicenseDatabase {
             deprecated: false,
         });
     }
-    
+
     fn add_license(&mut self, info: LicenseInfo) {
         self.licenses.insert(info.id.clone(), info);
     }
@@ -823,83 +830,86 @@ impl LicenseDatabase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_parse_simple() {
         let expr = LicenseExpr::parse("MIT").unwrap();
         assert_eq!(expr, LicenseExpr::Simple("MIT".to_string()));
     }
-    
+
     #[test]
     fn test_parse_with_exception() {
         let expr = LicenseExpr::parse("GPL-2.0-only WITH Classpath-exception-2.0").unwrap();
-        assert_eq!(expr, LicenseExpr::WithException {
-            license: "GPL-2.0-only".to_string(),
-            exception: "Classpath-exception-2.0".to_string(),
-        });
+        assert_eq!(
+            expr,
+            LicenseExpr::WithException {
+                license: "GPL-2.0-only".to_string(),
+                exception: "Classpath-exception-2.0".to_string(),
+            }
+        );
     }
-    
+
     #[test]
     fn test_parse_or() {
         let expr = LicenseExpr::parse("MIT OR Apache-2.0").unwrap();
         assert!(matches!(expr, LicenseExpr::Or(_, _)));
-        
+
         let licenses = expr.all_licenses();
         assert!(licenses.contains(&"MIT"));
         assert!(licenses.contains(&"Apache-2.0"));
     }
-    
+
     #[test]
     fn test_parse_and() {
         let expr = LicenseExpr::parse("MIT AND Apache-2.0").unwrap();
         assert!(matches!(expr, LicenseExpr::And(_, _)));
     }
-    
+
     #[test]
     fn test_parse_complex() {
         let expr = LicenseExpr::parse("(MIT OR Apache-2.0) AND BSD-3-Clause").unwrap();
         let licenses = expr.all_licenses();
         assert_eq!(licenses.len(), 3);
     }
-    
+
     #[test]
     fn test_is_satisfied_by() {
         let expr = LicenseExpr::parse("MIT OR Apache-2.0").unwrap();
-        
+
         let mut allowed: HashSet<String> = HashSet::new();
         allowed.insert("MIT".to_string());
-        
+
         assert!(expr.is_satisfied_by(&allowed));
-        
+
         allowed.clear();
         allowed.insert("GPL-3.0-only".to_string());
-        
+
         assert!(!expr.is_satisfied_by(&allowed));
     }
-    
+
     #[test]
     fn test_policy_validation() {
         let validator = LicensePolicyValidator::new();
         let policy = LicensePolicy::permissive_only();
-        
+
         // MIT should pass
         let result = validator.validate("MIT", &policy);
         assert!(result.compliant);
-        
+
         // GPL should fail
         let result = validator.validate("GPL-3.0-only", &policy);
         assert!(!result.compliant);
     }
-    
+
     #[test]
     fn test_enterprise_policy() {
         let validator = LicensePolicyValidator::new();
         let policy = LicensePolicy::enterprise();
-        
+
         // MIT should pass
         let result = validator.validate("MIT", &policy);
         assert!(result.compliant);
-        
+
         // AGPL should fail
         let result = validator.validate("AGPL-3.0-only", &policy);
         assert!(!result.compliant);

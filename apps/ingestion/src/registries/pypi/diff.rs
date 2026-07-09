@@ -18,8 +18,8 @@ pub struct PypiDiff {
 
 impl PypiDiff {
     pub fn is_empty(&self) -> bool {
-        self.added.is_empty() 
-            && self.removed.is_empty() 
+        self.added.is_empty()
+            && self.removed.is_empty()
             && self.yanked.is_empty()
             && self.unyanked.is_empty()
     }
@@ -27,15 +27,9 @@ impl PypiDiff {
 
 /// Calculate diff between old and new version states
 pub fn calculate_diff(old: &[VersionInfo], new: &[VersionInfo]) -> PypiDiff {
-    let old_map: HashMap<&str, bool> = old
-        .iter()
-        .map(|v| (v.version.as_str(), v.yanked))
-        .collect();
-    
-    let new_map: HashMap<&str, bool> = new
-        .iter()
-        .map(|v| (v.version.as_str(), v.yanked))
-        .collect();
+    let old_map: HashMap<&str, bool> = old.iter().map(|v| (v.version.as_str(), v.yanked)).collect();
+
+    let new_map: HashMap<&str, bool> = new.iter().map(|v| (v.version.as_str(), v.yanked)).collect();
 
     let old_versions: HashSet<&str> = old_map.keys().copied().collect();
     let new_versions: HashSet<&str> = new_map.keys().copied().collect();
@@ -73,9 +67,7 @@ mod tests {
 
     #[test]
     fn test_diff_added_versions() {
-        let old = vec![
-            VersionInfo::new("1.0.0".to_string(), false),
-        ];
+        let old = vec![VersionInfo::new("1.0.0".to_string(), false)];
         let new = vec![
             VersionInfo::new("1.0.0".to_string(), false),
             VersionInfo::new("1.1.0".to_string(), false),
@@ -89,12 +81,8 @@ mod tests {
 
     #[test]
     fn test_diff_yanked() {
-        let old = vec![
-            VersionInfo::new("1.0.0".to_string(), false),
-        ];
-        let new = vec![
-            VersionInfo::new("1.0.0".to_string(), true),
-        ];
+        let old = vec![VersionInfo::new("1.0.0".to_string(), false)];
+        let new = vec![VersionInfo::new("1.0.0".to_string(), true)];
 
         let diff = calculate_diff(&old, &new);
         assert!(diff.added.is_empty());
@@ -103,12 +91,8 @@ mod tests {
 
     #[test]
     fn test_diff_unyanked() {
-        let old = vec![
-            VersionInfo::new("1.0.0".to_string(), true),
-        ];
-        let new = vec![
-            VersionInfo::new("1.0.0".to_string(), false),
-        ];
+        let old = vec![VersionInfo::new("1.0.0".to_string(), true)];
+        let new = vec![VersionInfo::new("1.0.0".to_string(), false)];
 
         let diff = calculate_diff(&old, &new);
         assert_eq!(diff.unyanked, vec!["1.0.0"]);

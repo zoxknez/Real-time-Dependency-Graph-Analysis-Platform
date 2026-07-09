@@ -3,23 +3,25 @@
 //! Custom container definitions for services not available in testcontainers-modules
 
 use testcontainers::{
-    core::{WaitFor, IntoContainerPort},
-    runners::AsyncRunner,
     ContainerAsync, GenericImage, ImageExt,
+    core::{IntoContainerPort, WaitFor},
+    runners::AsyncRunner,
 };
 
 /// Create and start a Memgraph container
 pub async fn start_memgraph() -> anyhow::Result<(ContainerAsync<GenericImage>, String)> {
     let container = GenericImage::new("memgraph/memgraph-platform", "2.19.0")
-        .with_wait_for(WaitFor::message_on_stderr("Bolt server is fully up and running"))
+        .with_wait_for(WaitFor::message_on_stderr(
+            "Bolt server is fully up and running",
+        ))
         .with_exposed_port(7687.tcp())
         .with_exposed_port(7444.tcp())
         .start()
         .await?;
-    
+
     let port = container.get_host_port_ipv4(7687).await?;
     let url = format!("bolt://localhost:{}", port);
-    
+
     Ok((container, url))
 }
 
@@ -31,10 +33,10 @@ pub async fn start_qdrant() -> anyhow::Result<(ContainerAsync<GenericImage>, Str
         .with_exposed_port(6334.tcp())
         .start()
         .await?;
-    
+
     let port = container.get_host_port_ipv4(6334).await?;
     let url = format!("http://localhost:{}", port);
-    
+
     Ok((container, url))
 }
 
@@ -49,20 +51,26 @@ pub async fn start_redpanda() -> anyhow::Result<(ContainerAsync<GenericImage>, S
         .with_cmd(vec![
             "redpanda".to_string(),
             "start".to_string(),
-            "--smp".to_string(), "1".to_string(),
-            "--memory".to_string(), "512M".to_string(),
-            "--reserve-memory".to_string(), "0M".to_string(),
+            "--smp".to_string(),
+            "1".to_string(),
+            "--memory".to_string(),
+            "512M".to_string(),
+            "--reserve-memory".to_string(),
+            "0M".to_string(),
             "--overprovisioned".to_string(),
-            "--node-id".to_string(), "0".to_string(),
-            "--kafka-addr".to_string(), "PLAINTEXT://0.0.0.0:9092".to_string(),
-            "--advertise-kafka-addr".to_string(), "PLAINTEXT://localhost:9092".to_string(),
+            "--node-id".to_string(),
+            "0".to_string(),
+            "--kafka-addr".to_string(),
+            "PLAINTEXT://0.0.0.0:9092".to_string(),
+            "--advertise-kafka-addr".to_string(),
+            "PLAINTEXT://localhost:9092".to_string(),
         ])
         .start()
         .await?;
-    
+
     let port = container.get_host_port_ipv4(9092).await?;
     let url = format!("localhost:{}", port);
-    
+
     Ok((container, url))
 }
 
@@ -74,10 +82,10 @@ pub async fn start_risingwave() -> anyhow::Result<(ContainerAsync<GenericImage>,
         .with_exposed_port(5505.tcp())
         .start()
         .await?;
-    
+
     let port = container.get_host_port_ipv4(4566).await?;
     let url = format!("postgres://root@localhost:{}/dev", port);
-    
+
     Ok((container, url))
 }
 
@@ -98,15 +106,15 @@ impl TestInfrastructure {
     /// Start all containers and return connection strings
     pub async fn start() -> anyhow::Result<Self> {
         use tracing::info;
-        
+
         info!("Starting test infrastructure...");
-        
+
         // Start containers
         let (memgraph, memgraph_url) = start_memgraph().await?;
         let (qdrant, qdrant_url) = start_qdrant().await?;
         let (redpanda, kafka_url) = start_redpanda().await?;
         let (risingwave, risingwave_url) = start_risingwave().await?;
-        
+
         let infra = Self {
             memgraph_url: memgraph_url.clone(),
             qdrant_url: qdrant_url.clone(),
@@ -117,7 +125,7 @@ impl TestInfrastructure {
             _redpanda: redpanda,
             _risingwave: risingwave,
         };
-        
+
         info!(
             memgraph = %infra.memgraph_url,
             qdrant = %infra.qdrant_url,
@@ -125,7 +133,7 @@ impl TestInfrastructure {
             risingwave = %infra.risingwave_url,
             "Test infrastructure started"
         );
-        
+
         Ok(infra)
     }
 }

@@ -48,7 +48,7 @@ impl ValidationConfig {
         let mut blocked = HashSet::new();
         // Block debug fields if any
         blocked.insert("__debug".to_string());
-        
+
         Self {
             max_body_size: 512 * 1024, // 512KB
             max_depth: 10,
@@ -150,8 +150,9 @@ impl InputValidator {
         }
 
         // Parse the query
-        let document = parse_query(&request.query)
-            .map_err(|e| ValidationError::InvalidQuery { message: e.to_string() })?;
+        let document = parse_query(&request.query).map_err(|e| ValidationError::InvalidQuery {
+            message: e.to_string(),
+        })?;
 
         // Check introspection
         if !self.config.allow_introspection && self.has_introspection(&document) {
@@ -222,7 +223,7 @@ impl InputValidator {
     /// Calculate maximum query depth
     fn calculate_depth(&self, doc: &ExecutableDocument) -> usize {
         let mut max_depth = 0;
-        
+
         for def in doc.operations.iter() {
             let depth = self.selection_set_depth(&def.1.node.selection_set.node, 0);
             max_depth = max_depth.max(depth);
@@ -241,10 +242,8 @@ impl InputValidator {
         for selection in &selection_set.items {
             match &selection.node {
                 async_graphql::parser::types::Selection::Field(field) => {
-                    let nested_depth = self.selection_set_depth(
-                        &field.node.selection_set.node,
-                        current + 1,
-                    );
+                    let nested_depth =
+                        self.selection_set_depth(&field.node.selection_set.node, current + 1);
                     max = max.max(nested_depth);
                 }
                 async_graphql::parser::types::Selection::FragmentSpread(_) => {
@@ -252,10 +251,8 @@ impl InputValidator {
                     max = max.max(current + 1);
                 }
                 async_graphql::parser::types::Selection::InlineFragment(fragment) => {
-                    let nested_depth = self.selection_set_depth(
-                        &fragment.node.selection_set.node,
-                        current + 1,
-                    );
+                    let nested_depth =
+                        self.selection_set_depth(&fragment.node.selection_set.node, current + 1);
                     max = max.max(nested_depth);
                 }
             }
@@ -324,7 +321,9 @@ impl InputValidator {
                 if self.config.blocked_fields.contains(name) {
                     return Some(name.to_string());
                 }
-                if let Some(blocked) = self.find_blocked_in_selection(&field.node.selection_set.node) {
+                if let Some(blocked) =
+                    self.find_blocked_in_selection(&field.node.selection_set.node)
+                {
                     return Some(blocked);
                 }
             }
@@ -336,7 +335,11 @@ impl InputValidator {
     fn detect_dangerous_patterns(&self, query: &str) -> Option<String> {
         let dangerous_patterns = [
             // Batch attack patterns
-            ("query{", query.matches("query{").count() > 10, "multiple queries"),
+            (
+                "query{",
+                query.matches("query{").count() > 10,
+                "multiple queries",
+            ),
             // Directive abuse
             ("@", query.matches('@').count() > 50, "directive abuse"),
         ];
@@ -369,7 +372,7 @@ impl InputValidator {
 pub fn validate_package_id(id: &str) -> Result<(), ValidationError> {
     // Format: ecosystem:name
     let parts: Vec<&str> = id.splitn(2, ':').collect();
-    
+
     if parts.len() != 2 {
         return Err(ValidationError::InvalidIdFormat {
             id: id.to_string(),
@@ -379,7 +382,7 @@ pub fn validate_package_id(id: &str) -> Result<(), ValidationError> {
 
     let ecosystem = parts[0].to_lowercase();
     let valid_ecosystems = ["npm", "pypi", "cargo", "maven", "nuget", "go"];
-    
+
     if !valid_ecosystems.contains(&ecosystem.as_str()) {
         return Err(ValidationError::InvalidIdFormat {
             id: id.to_string(),

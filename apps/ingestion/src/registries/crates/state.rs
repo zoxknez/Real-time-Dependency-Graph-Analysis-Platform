@@ -79,18 +79,24 @@ impl CargoStateStore {
     /// Get current state for a crate
     #[instrument(skip(self))]
     pub async fn get_state(&self, crate_name: &str) -> Result<Option<CargoPackageState>> {
-        let row: Option<(String, serde_json::Value, String, Option<String>, Option<String>, DateTime<Utc>)> = 
-            sqlx::query_as(
-                r#"
+        let row: Option<(
+            String,
+            serde_json::Value,
+            String,
+            Option<String>,
+            Option<String>,
+            DateTime<Utc>,
+        )> = sqlx::query_as(
+            r#"
                 SELECT crate_name, versions_json, versions_hash, etag, last_modified, last_updated
                 FROM cargo_package_state
                 WHERE crate_name = $1
-                "#
-            )
-            .bind(crate_name)
-            .fetch_optional(&self.pool)
-            .await
-            .context("Failed to fetch cargo state")?;
+                "#,
+        )
+        .bind(crate_name)
+        .fetch_optional(&self.pool)
+        .await
+        .context("Failed to fetch cargo state")?;
 
         match row {
             Some((name, versions_json, hash, etag, last_mod, updated)) => {
@@ -167,13 +173,13 @@ impl CargoStateStore {
 /// Calculate SHA256 hash of version states for change detection
 fn calculate_versions_hash(versions: &[VersionState]) -> String {
     let mut hasher = Sha256::new();
-    
+
     for v in versions {
         hasher.update(v.version.as_bytes());
         hasher.update(if v.yanked { b"1" } else { b"0" });
         hasher.update(v.cksum.as_bytes());
     }
-    
+
     format!("{:x}", hasher.finalize())
 }
 

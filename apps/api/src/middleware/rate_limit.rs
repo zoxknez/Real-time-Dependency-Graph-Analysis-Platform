@@ -3,17 +3,17 @@
 #![allow(dead_code)]
 
 use axum::{
+    Json,
     body::Body,
     extract::State,
     http::{Request, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
-    Json,
 };
 use governor::{
+    Quota, RateLimiter,
     clock::{Clock, QuantaClock},
     state::{InMemoryState, NotKeyed},
-    Quota, RateLimiter,
 };
 use serde::Serialize;
 use std::num::NonZeroU32;
@@ -26,10 +26,9 @@ pub type ApiRateLimiter = Arc<RateLimiter<NotKeyed, InMemoryState, QuantaClock>>
 /// Create a new rate limiter with requests per minute
 pub fn create_rate_limiter(requests_per_minute: u32) -> ApiRateLimiter {
     let quota = Quota::per_minute(
-        NonZeroU32::new(requests_per_minute)
-            .expect("requests_per_minute must be > 0")
+        NonZeroU32::new(requests_per_minute).expect("requests_per_minute must be > 0"),
     );
-    
+
     Arc::new(RateLimiter::direct(quota))
 }
 
@@ -42,7 +41,7 @@ pub struct RateLimitError {
 }
 
 /// Rate limiting middleware
-/// 
+///
 /// Usage:
 /// ```ignore
 /// let rate_limiter = create_rate_limiter(100);
@@ -67,11 +66,8 @@ pub async fn rate_limit_middleware(
             // Rate limited
             let wait_time = not_until.wait_time_from(governor::clock::QuantaClock::default().now());
             let retry_after = wait_time.as_secs().max(1);
-            
-            warn!(
-                retry_after_secs = retry_after,
-                "Rate limit exceeded"
-            );
+
+            warn!(retry_after_secs = retry_after, "Rate limit exceeded");
 
             let error_response = RateLimitError {
                 error: "RATE_LIMIT_EXCEEDED",
@@ -99,7 +95,7 @@ mod tests {
     #[test]
     fn test_create_rate_limiter() {
         let limiter = create_rate_limiter(100);
-        
+
         // First request should succeed
         assert!(limiter.check().is_ok());
     }

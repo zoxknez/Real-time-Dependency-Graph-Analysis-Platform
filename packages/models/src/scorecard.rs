@@ -85,7 +85,7 @@ impl ScorecardCheck {
             Self::Webhooks,
         ]
     }
-    
+
     /// Get check name as string
     pub fn name(&self) -> &'static str {
         match self {
@@ -110,7 +110,7 @@ impl ScorecardCheck {
             Self::Webhooks => "Webhooks",
         }
     }
-    
+
     /// Get risk category for this check
     pub fn risk_category(&self) -> RiskCategory {
         match self {
@@ -121,7 +121,7 @@ impl ScorecardCheck {
             | Self::Contributors
             | Self::DangerousWorkflow
             | Self::Maintained => RiskCategory::SourceRisk,
-            
+
             // Build Risk checks
             Self::CiTests
             | Self::DependencyUpdateTool
@@ -131,7 +131,7 @@ impl ScorecardCheck {
             | Self::Sast
             | Self::SignedReleases
             | Self::TokenPermissions => RiskCategory::BuildRisk,
-            
+
             // Holistic Security checks
             Self::CiiBestPractices
             | Self::License
@@ -140,32 +140,50 @@ impl ScorecardCheck {
             | Self::Webhooks => RiskCategory::HolisticSecurity,
         }
     }
-    
+
     /// Get description for this check
     pub fn description(&self) -> &'static str {
         match self {
-            Self::BinaryArtifacts => "Determines if the project has generated executable artifacts in the source repository",
-            Self::BranchProtection => "Determines if the default and release branches are protected",
+            Self::BinaryArtifacts => {
+                "Determines if the project has generated executable artifacts in the source repository"
+            }
+            Self::BranchProtection => {
+                "Determines if the default and release branches are protected"
+            }
             Self::CiTests => "Determines if the project runs tests before pull requests are merged",
             Self::CiiBestPractices => "Determines if the project has a CII Best Practices Badge",
-            Self::CodeReview => "Determines if the project requires code review before code is merged",
-            Self::Contributors => "Determines if the project has a set of contributors from at least two different organizations",
-            Self::DangerousWorkflow => "Determines if the project's GitHub Action workflows avoid dangerous patterns",
+            Self::CodeReview => {
+                "Determines if the project requires code review before code is merged"
+            }
+            Self::Contributors => {
+                "Determines if the project has a set of contributors from at least two different organizations"
+            }
+            Self::DangerousWorkflow => {
+                "Determines if the project's GitHub Action workflows avoid dangerous patterns"
+            }
             Self::DependencyUpdateTool => "Determines if the project uses a dependency update tool",
             Self::Fuzzing => "Determines if the project uses fuzzing",
             Self::License => "Determines if the project has defined a license",
             Self::Maintained => "Determines if the project is actively maintained",
             Self::Packaging => "Determines if the project is published as a package",
-            Self::PinnedDependencies => "Determines if the project has declared and pinned its dependencies",
+            Self::PinnedDependencies => {
+                "Determines if the project has declared and pinned its dependencies"
+            }
             Self::Sast => "Determines if the project uses static code analysis",
             Self::SecurityPolicy => "Determines if the project has published a security policy",
-            Self::SignedReleases => "Determines if the project cryptographically signs release artifacts",
-            Self::TokenPermissions => "Determines if the project's workflows follow the principle of least privilege",
-            Self::Vulnerabilities => "Determines if the project has open, known unfixed vulnerabilities",
+            Self::SignedReleases => {
+                "Determines if the project cryptographically signs release artifacts"
+            }
+            Self::TokenPermissions => {
+                "Determines if the project's workflows follow the principle of least privilege"
+            }
+            Self::Vulnerabilities => {
+                "Determines if the project has open, known unfixed vulnerabilities"
+            }
             Self::Webhooks => "Determines if the project has secure webhooks",
         }
     }
-    
+
     /// Get the risk weight for this check (used in aggregate scoring)
     pub fn weight(&self) -> f32 {
         match self {
@@ -173,14 +191,14 @@ impl ScorecardCheck {
             Self::Vulnerabilities => 10.0,
             Self::DangerousWorkflow => 10.0,
             Self::BinaryArtifacts => 10.0,
-            
+
             // High importance checks (weight 7.5)
             Self::BranchProtection => 7.5,
             Self::CodeReview => 7.5,
             Self::TokenPermissions => 7.5,
             Self::PinnedDependencies => 7.5,
             Self::Maintained => 7.5,
-            
+
             // Medium importance checks (weight 5)
             Self::Sast => 5.0,
             Self::SecurityPolicy => 5.0,
@@ -188,7 +206,7 @@ impl ScorecardCheck {
             Self::DependencyUpdateTool => 5.0,
             Self::CiTests => 5.0,
             Self::License => 5.0,
-            
+
             // Lower importance checks (weight 2.5)
             Self::Fuzzing => 2.5,
             Self::CiiBestPractices => 2.5,
@@ -252,7 +270,7 @@ impl CheckResult {
             _ => RiskLevel::Unknown,
         }
     }
-    
+
     /// Check if this result passes (score >= 5)
     pub fn passes(&self) -> bool {
         self.score >= 5
@@ -279,7 +297,7 @@ impl RiskLevel {
             Self::Unknown => "unknown",
         }
     }
-    
+
     /// Numeric value for ordering
     pub fn value(&self) -> i32 {
         match self {
@@ -318,20 +336,21 @@ impl ScorecardResult {
         if self.checks.is_empty() {
             return 0.0;
         }
-        
+
         let total_weight: f32 = self.checks.iter().map(|c| c.check.weight()).sum();
-        let weighted_sum: f32 = self.checks
+        let weighted_sum: f32 = self
+            .checks
             .iter()
             .map(|c| c.score as f32 * c.check.weight())
             .sum();
-        
+
         if total_weight > 0.0 {
             weighted_sum / total_weight
         } else {
             0.0
         }
     }
-    
+
     /// Get checks by category
     pub fn checks_by_category(&self) -> HashMap<RiskCategory, Vec<&CheckResult>> {
         let mut result = HashMap::new();
@@ -343,12 +362,12 @@ impl ScorecardResult {
         }
         result
     }
-    
+
     /// Get failed checks (score < 5)
     pub fn failed_checks(&self) -> Vec<&CheckResult> {
         self.checks.iter().filter(|c| !c.passes()).collect()
     }
-    
+
     /// Get critical/high risk checks
     pub fn critical_findings(&self) -> Vec<&CheckResult> {
         self.checks
@@ -356,7 +375,7 @@ impl ScorecardResult {
             .filter(|c| matches!(c.risk_level(), RiskLevel::Critical | RiskLevel::High))
             .collect()
     }
-    
+
     /// Get overall risk level
     pub fn overall_risk_level(&self) -> RiskLevel {
         match self.aggregate_score {
@@ -391,66 +410,66 @@ impl ScorecardAnalyzer {
             version: version.to_string(),
         }
     }
-    
+
     /// Analyze a repository and return scorecard results
     /// This is a framework - actual implementation would call git/API
     pub fn analyze_repo(&self, repo: &RepoMetadata) -> ScorecardResult {
         let mut checks = Vec::new();
-        
+
         // Binary Artifacts check
         checks.push(self.check_binary_artifacts(repo));
-        
+
         // Branch Protection check
         checks.push(self.check_branch_protection(repo));
-        
+
         // CI Tests check
         checks.push(self.check_ci_tests(repo));
-        
+
         // CII Best Practices check
         checks.push(self.check_cii_best_practices(repo));
-        
+
         // Code Review check
         checks.push(self.check_code_review(repo));
-        
+
         // Contributors check
         checks.push(self.check_contributors(repo));
-        
+
         // Dangerous Workflow check
         checks.push(self.check_dangerous_workflow(repo));
-        
+
         // Dependency Update Tool check
         checks.push(self.check_dependency_update_tool(repo));
-        
+
         // Fuzzing check
         checks.push(self.check_fuzzing(repo));
-        
+
         // License check
         checks.push(self.check_license(repo));
-        
+
         // Maintained check
         checks.push(self.check_maintained(repo));
-        
+
         // Packaging check
         checks.push(self.check_packaging(repo));
-        
+
         // Pinned Dependencies check
         checks.push(self.check_pinned_dependencies(repo));
-        
+
         // SAST check
         checks.push(self.check_sast(repo));
-        
+
         // Security Policy check
         checks.push(self.check_security_policy(repo));
-        
+
         // Signed Releases check
         checks.push(self.check_signed_releases(repo));
-        
+
         // Token Permissions check
         checks.push(self.check_token_permissions(repo));
-        
+
         // Vulnerabilities check
         checks.push(self.check_vulnerabilities(repo));
-        
+
         let mut result = ScorecardResult {
             target: repo.url.clone(),
             target_type: "repository".to_string(),
@@ -460,11 +479,11 @@ impl ScorecardAnalyzer {
             scorecard_version: self.version.clone(),
             commit_sha: repo.commit_sha.clone(),
         };
-        
+
         result.aggregate_score = result.calculate_aggregate();
         result
     }
-    
+
     fn check_binary_artifacts(&self, repo: &RepoMetadata) -> CheckResult {
         let score = if repo.has_binary_artifacts { 0 } else { 10 };
         CheckResult {
@@ -476,32 +495,46 @@ impl ScorecardAnalyzer {
                 "binaries present in source repository".to_string()
             },
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#binary-artifacts".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#binary-artifacts"
+                    .to_string(),
+            ),
         }
     }
-    
+
     fn check_branch_protection(&self, repo: &RepoMetadata) -> CheckResult {
         let score = match &repo.branch_protection {
             Some(bp) => {
                 let mut s = 0;
-                if bp.require_pull_request { s += 3; }
-                if bp.require_review { s += 3; }
-                if bp.require_status_checks { s += 2; }
-                if bp.enforce_admins { s += 2; }
+                if bp.require_pull_request {
+                    s += 3;
+                }
+                if bp.require_review {
+                    s += 3;
+                }
+                if bp.require_status_checks {
+                    s += 2;
+                }
+                if bp.enforce_admins {
+                    s += 2;
+                }
                 s.min(10)
             }
             None => 0,
         };
-        
+
         CheckResult {
             check: ScorecardCheck::BranchProtection,
             score,
             reason: format!("branch protection score: {}/10", score),
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#branch-protection".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#branch-protection"
+                    .to_string(),
+            ),
         }
     }
-    
+
     fn check_ci_tests(&self, repo: &RepoMetadata) -> CheckResult {
         let score = if repo.has_ci_tests { 10 } else { 0 };
         CheckResult {
@@ -513,10 +546,12 @@ impl ScorecardAnalyzer {
                 "no CI tests found".to_string()
             },
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#ci-tests".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#ci-tests".to_string(),
+            ),
         }
     }
-    
+
     fn check_cii_best_practices(&self, repo: &RepoMetadata) -> CheckResult {
         let score = match repo.cii_badge_level.as_deref() {
             Some("gold") => 10,
@@ -525,7 +560,7 @@ impl ScorecardAnalyzer {
             Some("in_progress") => 2,
             _ => 0,
         };
-        
+
         CheckResult {
             check: ScorecardCheck::CiiBestPractices,
             score,
@@ -534,10 +569,13 @@ impl ScorecardAnalyzer {
                 None => "No CII badge found".to_string(),
             },
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#cii-best-practices".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#cii-best-practices"
+                    .to_string(),
+            ),
         }
     }
-    
+
     fn check_code_review(&self, repo: &RepoMetadata) -> CheckResult {
         let score = if repo.requires_code_review { 10 } else { 0 };
         CheckResult {
@@ -549,10 +587,13 @@ impl ScorecardAnalyzer {
                 "code review not required".to_string()
             },
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#code-review".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#code-review"
+                    .to_string(),
+            ),
         }
     }
-    
+
     fn check_contributors(&self, repo: &RepoMetadata) -> CheckResult {
         let score = match repo.contributor_orgs {
             n if n >= 3 => 10,
@@ -560,16 +601,19 @@ impl ScorecardAnalyzer {
             1 => 3,
             _ => 0,
         };
-        
+
         CheckResult {
             check: ScorecardCheck::Contributors,
             score,
             reason: format!("{} contributing organization(s)", repo.contributor_orgs),
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#contributors".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#contributors"
+                    .to_string(),
+            ),
         }
     }
-    
+
     fn check_dangerous_workflow(&self, repo: &RepoMetadata) -> CheckResult {
         let score = if repo.has_dangerous_workflow { 0 } else { 10 };
         CheckResult {
@@ -581,12 +625,19 @@ impl ScorecardAnalyzer {
                 "dangerous workflow patterns detected".to_string()
             },
             details: repo.dangerous_workflow_details.clone(),
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#dangerous-workflow".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#dangerous-workflow"
+                    .to_string(),
+            ),
         }
     }
-    
+
     fn check_dependency_update_tool(&self, repo: &RepoMetadata) -> CheckResult {
-        let score = if repo.has_dependabot || repo.has_renovate { 10 } else { 0 };
+        let score = if repo.has_dependabot || repo.has_renovate {
+            10
+        } else {
+            0
+        };
         let reason = if repo.has_dependabot {
             "Dependabot detected".to_string()
         } else if repo.has_renovate {
@@ -594,16 +645,19 @@ impl ScorecardAnalyzer {
         } else {
             "no dependency update tool found".to_string()
         };
-        
+
         CheckResult {
             check: ScorecardCheck::DependencyUpdateTool,
             score,
             reason,
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#dependency-update-tool".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#dependency-update-tool"
+                    .to_string(),
+            ),
         }
     }
-    
+
     fn check_fuzzing(&self, repo: &RepoMetadata) -> CheckResult {
         let score = if repo.has_fuzzing { 10 } else { 0 };
         CheckResult {
@@ -615,10 +669,12 @@ impl ScorecardAnalyzer {
                 "no fuzzing detected".to_string()
             },
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#fuzzing".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#fuzzing".to_string(),
+            ),
         }
     }
-    
+
     fn check_license(&self, repo: &RepoMetadata) -> CheckResult {
         let score = if repo.license.is_some() { 10 } else { 0 };
         CheckResult {
@@ -629,10 +685,12 @@ impl ScorecardAnalyzer {
                 None => "no license file found".to_string(),
             },
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#license".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#license".to_string(),
+            ),
         }
     }
-    
+
     fn check_maintained(&self, repo: &RepoMetadata) -> CheckResult {
         let score = match repo.days_since_last_commit {
             Some(d) if d <= 30 => 10,
@@ -642,7 +700,7 @@ impl ScorecardAnalyzer {
             Some(_) => 0,
             None => 0,
         };
-        
+
         CheckResult {
             check: ScorecardCheck::Maintained,
             score,
@@ -651,10 +709,12 @@ impl ScorecardAnalyzer {
                 None => "unable to determine last commit".to_string(),
             },
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#maintained".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#maintained".to_string(),
+            ),
         }
     }
-    
+
     fn check_packaging(&self, repo: &RepoMetadata) -> CheckResult {
         let score = if repo.publishes_package { 10 } else { 0 };
         CheckResult {
@@ -666,28 +726,42 @@ impl ScorecardAnalyzer {
                 "project does not publish packages".to_string()
             },
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#packaging".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#packaging".to_string(),
+            ),
         }
     }
-    
+
     fn check_pinned_dependencies(&self, repo: &RepoMetadata) -> CheckResult {
         let score = ((repo.pinned_dependencies_ratio * 10.0) as i32).min(10);
         CheckResult {
             check: ScorecardCheck::PinnedDependencies,
             score,
-            reason: format!("{:.0}% of dependencies are pinned", repo.pinned_dependencies_ratio * 100.0),
+            reason: format!(
+                "{:.0}% of dependencies are pinned",
+                repo.pinned_dependencies_ratio * 100.0
+            ),
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#pinned-dependencies".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#pinned-dependencies"
+                    .to_string(),
+            ),
         }
     }
-    
+
     fn check_sast(&self, repo: &RepoMetadata) -> CheckResult {
         let score = if repo.has_sast { 10 } else { 0 };
         let mut details = vec![];
-        if repo.has_codeql { details.push("CodeQL detected".to_string()); }
-        if repo.has_sonarqube { details.push("SonarQube detected".to_string()); }
-        if repo.has_semgrep { details.push("Semgrep detected".to_string()); }
-        
+        if repo.has_codeql {
+            details.push("CodeQL detected".to_string());
+        }
+        if repo.has_sonarqube {
+            details.push("SonarQube detected".to_string());
+        }
+        if repo.has_semgrep {
+            details.push("Semgrep detected".to_string());
+        }
+
         CheckResult {
             check: ScorecardCheck::Sast,
             score,
@@ -697,10 +771,12 @@ impl ScorecardAnalyzer {
                 "no SAST tools detected".to_string()
             },
             details,
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#sast".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#sast".to_string(),
+            ),
         }
     }
-    
+
     fn check_security_policy(&self, repo: &RepoMetadata) -> CheckResult {
         let score = if repo.has_security_policy { 10 } else { 0 };
         CheckResult {
@@ -712,23 +788,36 @@ impl ScorecardAnalyzer {
                 "no security policy file found".to_string()
             },
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#security-policy".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#security-policy"
+                    .to_string(),
+            ),
         }
     }
-    
+
     fn check_signed_releases(&self, repo: &RepoMetadata) -> CheckResult {
         let score = ((repo.signed_releases_ratio * 10.0) as i32).min(10);
         CheckResult {
             check: ScorecardCheck::SignedReleases,
             score,
-            reason: format!("{:.0}% of releases are signed", repo.signed_releases_ratio * 100.0),
+            reason: format!(
+                "{:.0}% of releases are signed",
+                repo.signed_releases_ratio * 100.0
+            ),
             details: vec![],
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#signed-releases".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#signed-releases"
+                    .to_string(),
+            ),
         }
     }
-    
+
     fn check_token_permissions(&self, repo: &RepoMetadata) -> CheckResult {
-        let score = if repo.has_least_privilege_tokens { 10 } else { 0 };
+        let score = if repo.has_least_privilege_tokens {
+            10
+        } else {
+            0
+        };
         CheckResult {
             check: ScorecardCheck::TokenPermissions,
             score,
@@ -738,10 +827,13 @@ impl ScorecardAnalyzer {
                 "token permissions are too broad".to_string()
             },
             details: repo.token_permission_issues.clone(),
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#token-permissions".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#token-permissions"
+                    .to_string(),
+            ),
         }
     }
-    
+
     fn check_vulnerabilities(&self, repo: &RepoMetadata) -> CheckResult {
         let score = match repo.known_vulnerabilities {
             0 => 10,
@@ -750,13 +842,16 @@ impl ScorecardAnalyzer {
             6..=10 => 3,
             _ => 0,
         };
-        
+
         CheckResult {
             check: ScorecardCheck::Vulnerabilities,
             score,
             reason: format!("{} known vulnerabilities", repo.known_vulnerabilities),
             details: repo.vulnerability_ids.clone(),
-            documentation_url: Some("https://github.com/ossf/scorecard/blob/main/docs/checks.md#vulnerabilities".to_string()),
+            documentation_url: Some(
+                "https://github.com/ossf/scorecard/blob/main/docs/checks.md#vulnerabilities"
+                    .to_string(),
+            ),
         }
     }
 }
@@ -804,13 +899,13 @@ pub struct BranchProtection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_scorecard_check_all() {
         let checks = ScorecardCheck::all();
         assert_eq!(checks.len(), 19);
     }
-    
+
     #[test]
     fn test_check_result_risk_level() {
         let check = CheckResult {
@@ -821,7 +916,7 @@ mod tests {
             documentation_url: None,
         };
         assert_eq!(check.risk_level(), RiskLevel::Critical);
-        
+
         let check = CheckResult {
             check: ScorecardCheck::License,
             score: 10,
@@ -831,7 +926,7 @@ mod tests {
         };
         assert_eq!(check.risk_level(), RiskLevel::Low);
     }
-    
+
     #[test]
     fn test_aggregate_score() {
         let result = ScorecardResult {
@@ -858,12 +953,12 @@ mod tests {
             scorecard_version: "4.13".to_string(),
             commit_sha: None,
         };
-        
+
         // (10*10 + 0*5) / (10+5) = 100/15 = 6.67
         let aggregate = result.calculate_aggregate();
         assert!((aggregate - 6.67).abs() < 0.1);
     }
-    
+
     #[test]
     fn test_analyzer_basic() {
         let analyzer = ScorecardAnalyzer::default();
@@ -874,7 +969,7 @@ mod tests {
             has_security_policy: true,
             ..Default::default()
         };
-        
+
         let result = analyzer.analyze_repo(&repo);
         assert!(!result.checks.is_empty());
         assert!(result.aggregate_score >= 0.0);

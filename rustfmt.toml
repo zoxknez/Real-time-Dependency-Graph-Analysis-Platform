@@ -1,7 +1,6 @@
-# ═══════════════════════════════════════════════════════════════
-# Rustfmt Configuration
-# ═══════════════════════════════════════════════════════════════
-# Documentation: https://rust-lang.github.io/rustfmt/
+# Rustfmt configuration.
+# Keep this file stable-compatible so `cargo fmt --check` is quiet on the
+# default toolchain used by local development and CI.
 
 edition = "2024"
 max_width = 100
@@ -9,30 +8,10 @@ tab_spaces = 4
 newline_style = "Auto"
 use_small_heuristics = "Default"
 
-# Imports
-imports_granularity = "Module"
-group_imports = "StdExternalCrate"
 reorder_imports = true
 reorder_modules = true
 
-# Comments
-normalize_comments = false
-wrap_comments = false
-format_code_in_doc_comments = true
-doc_comment_code_block_width = 80
-
-# Functions
 fn_params_layout = "Tall"
-fn_single_line = false
-where_single_line = false
 
-# Structs/Enums
-struct_field_align_threshold = 0
-enum_discrim_align_threshold = 0
-
-# Misc
 use_field_init_shorthand = true
 use_try_shorthand = true
-format_strings = false
-format_macro_matchers = false
-format_macro_bodies = true

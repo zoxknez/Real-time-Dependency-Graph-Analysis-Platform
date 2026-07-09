@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use tracing::{debug, warn};
 use uuid::Uuid;
 
@@ -112,9 +112,11 @@ pub struct CachedGraphService {
     config: CacheConfig,
     /// In-flight requests for singleflight pattern
     /// Key: cache_key, Value: broadcast channel
-    in_flight: Arc<RwLock<HashMap<String, broadcast::Sender<Result<Arc<Vec<ReverseDep>>, String>>>>>,
+    in_flight:
+        Arc<RwLock<HashMap<String, broadcast::Sender<Result<Arc<Vec<ReverseDep>>, String>>>>>,
     /// In-flight for package queries
-    in_flight_packages: Arc<RwLock<HashMap<String, broadcast::Sender<Result<Arc<Option<PackageData>>, String>>>>>,
+    in_flight_packages:
+        Arc<RwLock<HashMap<String, broadcast::Sender<Result<Arc<Option<PackageData>>, String>>>>>,
 }
 
 /// Reverse dependency data
@@ -160,14 +162,8 @@ impl CachedGraphService {
     /// Schema version - increment when cache format changes
     const CACHE_VERSION: u32 = 1;
 
-    fn cache_key_reverse_deps(
-        package_id: &str,
-        max_depth: i32,
-        tenant_id: Option<Uuid>,
-    ) -> String {
-        let tenant_prefix = tenant_id
-            .map(|t| format!("t:{}:", t))
-            .unwrap_or_default();
+    fn cache_key_reverse_deps(package_id: &str, max_depth: i32, tenant_id: Option<Uuid>) -> String {
+        let tenant_prefix = tenant_id.map(|t| format!("t:{}:", t)).unwrap_or_default();
         format!(
             "{}v{}:rdeps:{}:d{}",
             tenant_prefix,
@@ -178,10 +174,13 @@ impl CachedGraphService {
     }
 
     fn cache_key_package(package_id: &str, tenant_id: Option<Uuid>) -> String {
-        let tenant_prefix = tenant_id
-            .map(|t| format!("t:{}:", t))
-            .unwrap_or_default();
-        format!("{}v{}:pkg:{}", tenant_prefix, Self::CACHE_VERSION, package_id)
+        let tenant_prefix = tenant_id.map(|t| format!("t:{}:", t)).unwrap_or_default();
+        format!(
+            "{}v{}:pkg:{}",
+            tenant_prefix,
+            Self::CACHE_VERSION,
+            package_id
+        )
     }
 
     // =========================================================================
@@ -426,10 +425,8 @@ impl CachedGraphService {
                 };
 
                 // Cache positive result
-                let entry = CachedEntry::new(
-                    CacheResult::Found(pkg.clone()),
-                    self.config.expire_after,
-                );
+                let entry =
+                    CachedEntry::new(CacheResult::Found(pkg.clone()), self.config.expire_after);
                 self.set_cached(&cache_key, &entry).await?;
 
                 Ok(Some(pkg))
@@ -468,7 +465,11 @@ impl CachedGraphService {
     // =========================================================================
 
     /// Invalidate cache for a package (e.g., after update)
-    pub async fn invalidate_package(&self, package_id: &str, tenant_id: Option<Uuid>) -> Result<()> {
+    pub async fn invalidate_package(
+        &self,
+        package_id: &str,
+        tenant_id: Option<Uuid>,
+    ) -> Result<()> {
         let key = Self::cache_key_package(package_id, tenant_id);
         self.cache.delete(&key).await?;
 
@@ -505,15 +506,17 @@ mod tests {
         assert!(!key.contains("t:"));
 
         let tenant_id = Uuid::new_v4();
-        let key_with_tenant =
-            CachedGraphService::cache_key_package("npm:lodash", Some(tenant_id));
+        let key_with_tenant = CachedGraphService::cache_key_package("npm:lodash", Some(tenant_id));
         assert!(key_with_tenant.starts_with("t:"));
         assert!(key_with_tenant.contains(&tenant_id.to_string()));
     }
 
     #[test]
     fn test_cached_entry_freshness() {
-        let entry = CachedEntry::new(CacheResult::Found("test".to_string()), Duration::from_secs(60));
+        let entry = CachedEntry::new(
+            CacheResult::Found("test".to_string()),
+            Duration::from_secs(60),
+        );
 
         // Just created - should be fresh
         assert!(entry.is_fresh(Duration::from_secs(10)));

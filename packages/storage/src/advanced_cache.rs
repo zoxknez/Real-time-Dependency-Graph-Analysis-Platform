@@ -12,8 +12,8 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
+use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
@@ -71,10 +71,10 @@ pub struct AdvancedCache {
 impl AdvancedCache {
     /// Create a new advanced cache
     pub fn new(redis: ConnectionManager, config: CacheConfig) -> Self {
-        let local_cache = Arc::new(RwLock::new(
-            lru::LruCache::new(std::num::NonZeroUsize::new(config.max_size).unwrap())
-        ));
-        
+        let local_cache = Arc::new(RwLock::new(lru::LruCache::new(
+            std::num::NonZeroUsize::new(config.max_size).unwrap(),
+        )));
+
         Self {
             redis,
             config,
@@ -139,10 +139,10 @@ impl AdvancedCache {
 
         if let Some(data) = data {
             debug!(key = %key, "L2 cache hit");
-            
+
             // Populate L1 cache
             self.put_local(cache_key, data.clone()).await;
-            
+
             let decompressed = self.decompress(&data)?;
             Ok(Some(serde_json::from_slice(&decompressed)?))
         } else {
@@ -165,10 +165,10 @@ impl AdvancedCache {
 
         // Update L2 cache (Redis)
         let mut conn = self.redis.clone();
-        let ttl_secs = ttl.unwrap_or(self.config.default_ttl).as_secs() as usize;
-        
-        conn.set_ex(&cache_key, compressed, ttl_secs).await?;
-        
+        let ttl_secs = ttl.unwrap_or(self.config.default_ttl).as_secs();
+
+        let _: () = conn.set_ex(&cache_key, compressed, ttl_secs).await?;
+
         debug!(key = %key, ttl_secs = ttl_secs, "Cache set");
         Ok(())
     }
@@ -185,8 +185,8 @@ impl AdvancedCache {
 
         // Remove from L2 cache
         let mut conn = self.redis.clone();
-        conn.del(&cache_key).await?;
-        
+        let _: usize = conn.del(&cache_key).await?;
+
         debug!(key = %key, "Cache deleted");
         Ok(())
     }
@@ -195,20 +195,30 @@ impl AdvancedCache {
     pub async fn delete_pattern(&self, pattern: &str) -> Result<usize> {
         let search_pattern = self.build_key(pattern);
         let mut conn = self.redis.clone();
-        
+
         // Use SCAN for safe pattern deletion
-        let keys: Vec<String> = redis::cmd("SCAN")
-            .arg(0)
-            .arg("MATCH")
-            .arg(&search_pattern)
-            .arg("COUNT")
-            .arg(100)
-            .query_async(&mut conn)
-            .await?;
+        let mut cursor = 0u64;
+        let mut keys = Vec::new();
+        loop {
+            let (next_cursor, mut batch): (u64, Vec<String>) = redis::cmd("SCAN")
+                .arg(cursor)
+                .arg("MATCH")
+                .arg(&search_pattern)
+                .arg("COUNT")
+                .arg(100)
+                .query_async(&mut conn)
+                .await?;
+
+            keys.append(&mut batch);
+            if next_cursor == 0 {
+                break;
+            }
+            cursor = next_cursor;
+        }
 
         if !keys.is_empty() {
             let count = keys.len();
-            conn.del(&keys).await?;
+            let _: usize = conn.del(&keys).await?;
             debug!(pattern = %pattern, count = count, "Cache pattern deleted");
             Ok(count)
         } else {
@@ -246,20 +256,20 @@ impl AdvancedCache {
     pub async fn refresh(&self, key: &str, ttl: Duration) -> Result<bool> {
         let cache_key = self.build_key(key);
         let mut conn = self.redis.clone();
-        
-        let result: bool = conn.expire(&cache_key, ttl.as_secs() as usize).await?;
-        
+
+        let result: bool = conn.expire(&cache_key, ttl.as_secs() as i64).await?;
+
         if result {
             debug!(key = %key, ttl_secs = ttl.as_secs(), "Cache refreshed");
         }
-        
+
         Ok(result)
     }
 
     /// Get cache statistics
     pub async fn stats(&self) -> Result<CacheStats> {
         let mut conn = self.redis.clone();
-        
+
         let info: String = redis::cmd("INFO")
             .arg("stats")
             .query_async(&mut conn)
@@ -268,12 +278,20 @@ impl AdvancedCache {
         // Parse Redis INFO output
         let mut hits = 0u64;
         let mut misses = 0u64;
-        
+
         for line in info.lines() {
             if line.starts_with("keyspace_hits:") {
-                hits = line.split(':').nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+                hits = line
+                    .split(':')
+                    .nth(1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
             } else if line.starts_with("keyspace_misses:") {
-                misses = line.split(':').nth(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+                misses = line
+                    .split(':')
+                    .nth(1)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
             }
         }
 
@@ -330,8 +348,8 @@ pub struct CacheStats {
 /// Trait for cacheable data sources
 #[async_trait]
 pub trait Cacheable {
-    type Key;
-    type Value: Serialize + for<'de> Deserialize<'de>;
+    type Key: Sync;
+    type Value: Serialize + for<'de> Deserialize<'de> + Send + Sync;
 
     /// Get cache key for this item
     fn cache_key(&self, key: &Self::Key) -> String;
@@ -345,18 +363,12 @@ pub trait Cacheable {
     async fn fetch(&self, key: &Self::Key) -> Result<Self::Value>;
 
     /// Get with caching
-    async fn get_cached(
-        &self,
-        cache: &AdvancedCache,
-        key: &Self::Key,
-    ) -> Result<Self::Value> {
+    async fn get_cached(&self, cache: &AdvancedCache, key: &Self::Key) -> Result<Self::Value> {
         let cache_key = self.cache_key(key);
-        
-        cache.get_or_compute(
-            &cache_key,
-            || self.fetch(key),
-            Some(self.cache_ttl()),
-        ).await
+
+        cache
+            .get_or_compute(&cache_key, || self.fetch(key), Some(self.cache_ttl()))
+            .await
     }
 
     /// Invalidate cache for this item
@@ -385,7 +397,7 @@ mod tests {
                 strategy,
                 ..Default::default()
             };
-            
+
             // Verify strategy is set correctly
             assert_eq!(config.strategy, strategy);
         }
@@ -394,8 +406,8 @@ mod tests {
     #[test]
     fn test_cache_key_building() {
         let redis = redis::Client::open("redis://localhost").unwrap();
-        let conn = redis.get_tokio_connection_manager();
-        
+        let _conn = redis.get_connection_manager();
+
         // This would need async runtime in real test
         // Just testing the logic here
     }

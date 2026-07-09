@@ -8,12 +8,12 @@
 //! - Transaction support
 
 use anyhow::{Context, Result};
-use neo4rs::{query, Graph, Query};
+use models::tenant::TenantContext;
+use neo4rs::{Graph, Query, query};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{error, info, instrument};
-use models::tenant::TenantContext;
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -106,15 +106,18 @@ impl MemgraphClient {
     pub async fn new(config: MemgraphConfig) -> Result<Self> {
         info!("Connecting to Memgraph");
 
-        let mut graph_config = neo4rs::ConfigBuilder::new()
+        // Memgraph accepts these placeholder credentials when auth is disabled,
+        // while neo4rs still requires non-empty user/password fields.
+        let user = config.username.as_deref().unwrap_or("memgraph");
+        let pass = config.password.as_deref().unwrap_or("memgraph");
+
+        let graph_config = neo4rs::ConfigBuilder::new()
             .uri(&config.uri)
+            .user(user)
+            .password(pass)
             .db("memgraph")
             .fetch_size(500)
             .max_connections(config.max_connections);
-
-        if let (Some(user), Some(pass)) = (&config.username, &config.password) {
-            graph_config = graph_config.user(user).password(pass);
-        }
 
         let graph = Graph::connect(graph_config.build()?)
             .await
@@ -130,7 +133,7 @@ impl MemgraphClient {
                 success_threshold: 2,
                 timeout_ms: 30_000,
                 half_open_requests: 5,
-            }
+            },
         ));
 
         let resilience_config = crate::resilience::ResilienceConfig {
@@ -158,7 +161,11 @@ impl MemgraphClient {
 
     /// Execute a query with retry logic and circuit breaker
     #[instrument(skip(self, query, tenant_ctx), fields(query_text))]
-    pub async fn execute(&self, mut query: Query, tenant_ctx: Option<&TenantContext>) -> Result<Vec<neo4rs::Row>> {
+    pub async fn execute(
+        &self,
+        mut query: Query,
+        tenant_ctx: Option<&TenantContext>,
+    ) -> Result<Vec<neo4rs::Row>> {
         if let Some(ctx) = tenant_ctx {
             query = query.param("tenant_id", ctx.tenant_id.to_string());
         }
@@ -168,11 +175,12 @@ impl MemgraphClient {
             "execute",
             &self.resilience_config,
             || async {
-                self.circuit_breaker.call::<_, _, anyhow::Error>(async {
-                    self.execute_once(query.clone()).await
-                }).await
-            }
-        ).await
+                self.circuit_breaker
+                    .call::<_, _, anyhow::Error>(async { self.execute_once(query.clone()).await })
+                    .await
+            },
+        )
+        .await
     }
 
     /// Execute query once without retry
@@ -198,29 +206,26 @@ impl MemgraphClient {
             query = query.param("tenant_id", ctx.tenant_id.to_string());
         }
 
-        crate::resilience::with_resilience(
-            "memgraph",
-            "run",
-            &self.resilience_config,
-            || async {
-                self.circuit_breaker.call::<_, _, anyhow::Error>(async {
-                    self.run_once(query.clone()).await
-                }).await
-            }
-        ).await
+        crate::resilience::with_resilience("memgraph", "run", &self.resilience_config, || async {
+            self.circuit_breaker
+                .call::<_, _, anyhow::Error>(async { self.run_once(query.clone()).await })
+                .await
+        })
+        .await
     }
 
     async fn run_once(&self, query: Query) -> Result<()> {
-        self.graph
-            .run(query)
-            .await
-            .context("Failed to run query")?;
+        self.graph.run(query).await.context("Failed to run query")?;
         Ok(())
     }
 
     /// Execute multiple queries in a transaction
     #[instrument(skip(self, queries, tenant_ctx))]
-    pub async fn transaction(&self, mut queries: Vec<Query>, tenant_ctx: Option<&TenantContext>) -> Result<()> {
+    pub async fn transaction(
+        &self,
+        mut queries: Vec<Query>,
+        tenant_ctx: Option<&TenantContext>,
+    ) -> Result<()> {
         // Inject tenant ID into all queries if context is present
         if let Some(ctx) = tenant_ctx {
             let tenant_id = ctx.tenant_id.to_string();
@@ -230,21 +235,24 @@ impl MemgraphClient {
             }
         }
 
-         // Transactions are harder to wrap with simple retry because they are stateful.
-         // For now, we wrap the whole transaction block with CB, but handling retry needs care.
-         // If we retry, we rerun the whole txn block.
+        // Transactions are harder to wrap with simple retry because they are stateful.
+        // For now, we wrap the whole transaction block with CB, but handling retry needs care.
+        // If we retry, we rerun the whole txn block.
         crate::resilience::with_resilience(
             "memgraph",
             "transaction",
             &self.resilience_config,
             || async {
-                self.circuit_breaker.call::<_, _, anyhow::Error>(async {
-                    self.transaction_once(queries.clone()).await
-                }).await
-            }
-        ).await
+                self.circuit_breaker
+                    .call::<_, _, anyhow::Error>(async {
+                        self.transaction_once(queries.clone()).await
+                    })
+                    .await
+            },
+        )
+        .await
     }
-    
+
     async fn transaction_once(&self, queries: Vec<Query>) -> Result<()> {
         let mut txn = self
             .graph
@@ -326,14 +334,12 @@ impl MemgraphClient {
     }
 
     /// Get memory usage statistics
-    /// 
+    ///
     /// Uses Memgraph's internal memory tracking to detect OOM risk.
     #[instrument(skip(self))]
     pub async fn get_memory_stats(&self) -> Result<MemoryStats> {
         // Use SHOW STORAGE INFO which returns memory information
-        let rows = self
-            .execute(query("SHOW STORAGE INFO"), None)
-            .await?;
+        let rows = self.execute(query("SHOW STORAGE INFO"), None).await?;
 
         let mut stats = MemoryStats::default();
 
@@ -358,7 +364,8 @@ impl MemgraphClient {
 
         // Calculate percentage if limit is set
         if stats.memory_limit_bytes > 0 {
-            stats.usage_percent = (stats.memory_used_bytes as f64 / stats.memory_limit_bytes as f64) * 100.0;
+            stats.usage_percent =
+                (stats.memory_used_bytes as f64 / stats.memory_limit_bytes as f64) * 100.0;
             stats.under_pressure = stats.usage_percent > 80.0;
             stats.critical = stats.usage_percent > 95.0;
         }
@@ -405,12 +412,12 @@ pub struct MemoryStats {
 /// Parse Memgraph byte strings like "1.5 GB", "512 MB", "1024 KB" to bytes
 fn parse_memgraph_bytes(value: &str) -> u64 {
     let value = value.trim();
-    
+
     // Try to parse as raw number first
     if let Ok(n) = value.parse::<u64>() {
         return n;
     }
-    
+
     // Parse "X.Y UNIT" format
     let parts: Vec<&str> = value.split_whitespace().collect();
     if parts.len() >= 2 {
@@ -426,7 +433,7 @@ fn parse_memgraph_bytes(value: &str) -> u64 {
             return (num * multiplier as f64) as u64;
         }
     }
-    
+
     0
 }
 
@@ -465,7 +472,12 @@ impl QueryBuilder {
     }
 
     /// Create a dependency edge
-    pub fn create_dependency(tenant_id: &str, from_version_id: &str, to_package_id: &str, version_req: &str) -> Query {
+    pub fn create_dependency(
+        tenant_id: &str,
+        from_version_id: &str,
+        to_package_id: &str,
+        version_req: &str,
+    ) -> Query {
         query(
             r#"
             MATCH (from:Version {id: $from_id, tenant_id: $tenant_id})
