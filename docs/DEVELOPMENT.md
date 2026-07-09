@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - **Rust** 1.85+ with `rustup`
-- **Node.js** 20+ with `pnpm`
+- **Node.js** 20+ with `npm`
 - **Docker** & Docker Compose
 - **Protocol Buffers** compiler (`protoc`)
 
@@ -17,9 +17,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 nvm install 20
 nvm use 20
 
-# pnpm
-corepack enable
-corepack prepare pnpm@latest --activate
+# npm
+npm --version
 
 # Protocol Buffers (macOS)
 brew install protobuf
@@ -96,8 +95,8 @@ cargo run -p graph-writer
 
 ```bash
 cd apps/frontend
-pnpm install
-pnpm dev
+npm install
+npm run dev
 ```
 
 Access the application at `http://localhost:3000`
@@ -225,7 +224,15 @@ cargo test -p api -- --nocapture
 
 # Integration tests (requires Docker)
 cargo test --test '*' -- --test-threads=1
+
+# Frontend lint/build/E2E
+cd apps/frontend
+npm run lint
+npm run build
+npm run test:e2e
 ```
+
+Frontend E2E starts an isolated Next.js dev server on `http://127.0.0.1:3100` by default. Set `PLAYWRIGHT_BASE_URL` to test a Docker or deployed frontend instead.
 
 ### Code Quality
 

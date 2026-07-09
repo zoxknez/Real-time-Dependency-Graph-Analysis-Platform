@@ -16,12 +16,12 @@ services:
       dockerfile: deploy/docker/Dockerfile.api
     container_name: idp-api
     ports:
-      - "8000:8080"
+      - "127.0.0.1:${IDP_API_PORT:-8002}:8080"
     environment:
       # Server
       - API_HOST=0.0.0.0
       - API_PORT=8080
-      - RUST_LOG=info,api=debug
+      - RUST_LOG=info
       
       # Memgraph
       - MEMGRAPH_URI=bolt://memgraph:7687
@@ -33,6 +33,9 @@ services:
       # Kafka
       - KAFKA_BROKERS=redpanda:9092
       - KAFKA_TOPIC=domain.package.events.v1
+
+      # PostgreSQL (audit)
+      - DATABASE_URL=postgres://${POSTGRES_USER:-idp}:${POSTGRES_PASSWORD:-idp_secret}@postgres:5432/${POSTGRES_DB:-inverse_deps}
 
       # Semantic search (Qdrant + embeddings)
       - QDRANT_ENABLED=true
@@ -57,10 +60,14 @@ services:
     depends_on:
       memgraph:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
       qdrant:
         condition: service_healthy
     healthcheck:
@@ -89,17 +96,17 @@ services:
       context: .
       dockerfile: deploy/docker/Dockerfile.frontend
       args:
-        - NEXT_PUBLIC_GRAPHQL_ENDPOINT=${PUBLIC_GRAPHQL_ENDPOINT:-http://localhost:8000/graphql}
-        - NEXT_PUBLIC_WS_ENDPOINT=${PUBLIC_WS_ENDPOINT:-ws://localhost:8000/graphql/ws}
-        - NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=${PUBLIC_AGENT_STREAM_ENDPOINT:-http://localhost:8000/agent/stream}
+        - NEXT_PUBLIC_GRAPHQL_ENDPOINT=${PUBLIC_GRAPHQL_ENDPOINT:-http://localhost:8002/graphql}
+        - NEXT_PUBLIC_WS_ENDPOINT=${PUBLIC_WS_ENDPOINT:-ws://localhost:8002/graphql/ws}
+        - NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=${PUBLIC_AGENT_STREAM_ENDPOINT:-http://localhost:8002/agent/stream}
         - NEXT_PUBLIC_SEARCH_MODE=${PUBLIC_SEARCH_MODE:-semantic}
     container_name: idp-frontend
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${IDP_FRONTEND_PORT:-3003}:3000"
     environment:
-      - NEXT_PUBLIC_GRAPHQL_ENDPOINT=${PUBLIC_GRAPHQL_ENDPOINT:-http://localhost:8000/graphql}
-      - NEXT_PUBLIC_WS_ENDPOINT=${PUBLIC_WS_ENDPOINT:-ws://localhost:8000/graphql/ws}
-      - NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=${PUBLIC_AGENT_STREAM_ENDPOINT:-http://localhost:8000/agent/stream}
+      - NEXT_PUBLIC_GRAPHQL_ENDPOINT=${PUBLIC_GRAPHQL_ENDPOINT:-http://localhost:8002/graphql}
+      - NEXT_PUBLIC_WS_ENDPOINT=${PUBLIC_WS_ENDPOINT:-ws://localhost:8002/graphql/ws}
+      - NEXT_PUBLIC_AGENT_STREAM_ENDPOINT=${PUBLIC_AGENT_STREAM_ENDPOINT:-http://localhost:8002/agent/stream}
       - NEXT_PUBLIC_SEARCH_MODE=${PUBLIC_SEARCH_MODE:-semantic}
       - NODE_ENV=production
     depends_on:
@@ -134,14 +141,14 @@ services:
       dockerfile: deploy/docker/Dockerfile.ingestion
     container_name: idp-ingestion
     environment:
-      - RUST_LOG=info,ingestion=debug
+      - RUST_LOG=info
       
       # Kafka
       - KAFKA_BROKERS=redpanda:9092
       - KAFKA_TOPIC=domain.package.events.v1
       
       # PostgreSQL (outbox)
-      - DATABASE_URL=postgres://idp:idp_secret@postgres:5432/inverse_deps
+      - DATABASE_URL=postgres://${POSTGRES_USER:-idp}:${POSTGRES_PASSWORD:-idp_secret}@postgres:5432/${POSTGRES_DB:-inverse_deps}
       
       # Registry crawl intervals (seconds)
       - NPM_CRAWL_INTERVAL=300
@@ -155,6 +162,8 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9001/health/ready"]
       interval: 15s
@@ -163,7 +172,7 @@ services:
     logging: *logging_defaults
     networks:
       - default
-    restart: unless-stopped
+    restart: on-failure:5
     init: true
     security_opt:
       - no-new-privileges:true
@@ -182,7 +191,7 @@ services:
       dockerfile: deploy/docker/Dockerfile.analysis
     container_name: idp-analysis
     environment:
-      - RUST_LOG=info,analysis=debug
+      - RUST_LOG=info
       
       # Kafka
       - ANALYSIS__KAFKA__BROKERS=redpanda:9092
@@ -193,13 +202,22 @@ services:
       # Workers
       - ANALYSIS__WORKERS__COUNT=4
       - ANALYSIS__WORKERS__PARSE_TIMEOUT_SECS=30
+
+      # Package analysis safety limits
+      - ANALYSIS__PARSER__MAX_FILE_SIZE=1048576
+      - ANALYSIS__PARSER__MAX_FILES_PER_PACKAGE=1000
+      - ANALYSIS__PARSER__MAX_TARBALL_SIZE_BYTES=67108864
+      - ANALYSIS__PARSER__MAX_UNPACKED_SIZE_BYTES=209715200
+      - ANALYSIS__PARSER__SNAPSHOT_MAX_BYTES=5242880
+      - ANALYSIS__PARSER__SNAPSHOT_VERSIONS_PER_PACKAGE=20
+      - ANALYSIS__PARSER__SNAPSHOT_TOTAL_MAX_BYTES=268435456
       
       # Health/metrics
       - ANALYSIS__SERVICE__METRICS_ENABLED=true
       - ANALYSIS__SERVICE__METRICS_PORT=9091
       
       # Embeddings
-      - ANALYSIS__EMBEDDING__PROVIDER=local
+      - ANALYSIS__EMBEDDING__PROVIDER=mock
       - ANALYSIS__EMBEDDING__MODEL_PATH=/models/minilm
       
       # Tracing
@@ -209,6 +227,8 @@ services:
     depends_on:
       redpanda:
         condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/health/ready"]
       interval: 15s
@@ -217,7 +237,7 @@ services:
     logging: *logging_defaults
     networks:
       - default
-    restart: unless-stopped
+    restart: on-failure:5
     init: true
     security_opt:
       - no-new-privileges:true
@@ -229,8 +249,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2'
-          memory: 2G
+          cpus: "${IDP_ANALYSIS_CPUS:-1}"
+          memory: ${IDP_ANALYSIS_MEMORY_LIMIT:-768M}
 
   # ═══════════════════════════════════════════════════════════════
   # GRAPH WRITER - Memgraph Writer
@@ -241,7 +261,7 @@ services:
       dockerfile: deploy/docker/Dockerfile.graph-writer
     container_name: idp-graph-writer
     environment:
-      - RUST_LOG=info,graph_writer=debug
+      - RUST_LOG=info
       
       # Kafka
       - GRAPH_WRITER__KAFKA__BROKERS=redpanda:9092
@@ -258,6 +278,8 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health/ready"]
       interval: 15s
@@ -266,7 +288,7 @@ services:
     logging: *logging_defaults
     networks:
       - default
-    restart: unless-stopped
+    restart: on-failure:5
     init: true
     security_opt:
       - no-new-privileges:true
@@ -285,7 +307,7 @@ services:
       dockerfile: deploy/docker/Dockerfile.vector-writer
     container_name: idp-vector-writer
     environment:
-      - RUST_LOG=info,vector_writer=debug
+      - RUST_LOG=info
       
       # Kafka
       - KAFKA_BROKERS=redpanda:9092
@@ -308,6 +330,8 @@ services:
         condition: service_healthy
       redpanda:
         condition: service_healthy
+      redpanda-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9092/health/ready"]
       interval: 15s
@@ -316,7 +340,7 @@ services:
     logging: *logging_defaults
     networks:
       - default
-    restart: unless-stopped
+    restart: on-failure:5
     init: true
     security_opt:
       - no-new-privileges:true
@@ -335,7 +359,7 @@ services:
       dockerfile: deploy/docker/Dockerfile.syncer
     container_name: idp-syncer
     environment:
-      - RUST_LOG=info,syncer=debug
+      - RUST_LOG=info,sqlx::query=error
       
       # RisingWave
       - RISINGWAVE_URL=postgres://root@risingwave:4566/dev
@@ -367,7 +391,7 @@ services:
     logging: *logging_defaults
     networks:
       - default
-    restart: unless-stopped
+    restart: on-failure:5
     init: true
     security_opt:
       - no-new-privileges:true

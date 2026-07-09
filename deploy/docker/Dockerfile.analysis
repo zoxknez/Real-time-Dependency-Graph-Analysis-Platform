@@ -1,31 +1,41 @@
+# syntax=docker/dockerfile:1.7
+
 # Multi-stage build for Analysis Service
 # Based on Rust best practices: https://docs.docker.com/language/rust/build-images/
 
-# ═══════════════════════════════════════════════════════════════
 # Stage 1: Builder
-# ═══════════════════════════════════════════════════════════════
-FROM rust:1.85-bookworm as builder
+FROM rust:1.92-slim-bookworm AS builder
 
-# Install protobuf compiler
+ENV DEBIAN_FRONTEND=noninteractive \
+    CARGO_HTTP_TIMEOUT=600 \
+    CARGO_NET_RETRY=10
+
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    cmake \
     protobuf-compiler \
     libprotobuf-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy manifests
+# Copy manifests and source
 COPY Cargo.toml Cargo.lock ./
 COPY packages/ packages/
-COPY apps/analysis/ apps/analysis/
+COPY apps/ apps/
 COPY proto/ proto/
+COPY tests/ tests/
 
-# Build dependencies (cached layer)
-RUN cargo build --release --bin analysis
+# Build the service binary
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo build --profile docker -p analysis --no-default-features
 
-# ═══════════════════════════════════════════════════════════════
 # Stage 2: Runtime
-# ═══════════════════════════════════════════════════════════════
 FROM debian:bookworm-slim
 
 # Install runtime dependencies
@@ -41,7 +51,7 @@ RUN useradd -m -u 1000 -s /bin/bash appuser
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /app/target/release/analysis /usr/local/bin/analysis
+COPY --from=builder /app/target/docker/analysis /usr/local/bin/analysis
 
 # Create directories for models and temp files
 RUN mkdir -p /models /tmp && \

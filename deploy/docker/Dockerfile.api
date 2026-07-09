@@ -1,51 +1,39 @@
-# Build stage (optimized with cargo-chef for dependency layer caching)
-FROM rustlang/rust:nightly-bookworm AS chef
+# syntax=docker/dockerfile:1.7
+
+# Build stage
+# Rust 1.92 supports edition 2024, so nightly is unnecessary here and much
+# heavier for local Docker Desktop builds.
+FROM rust:1.92-slim-bookworm AS builder
 
 WORKDIR /app
 
-# Install build dependencies
-# - protobuf-compiler is required for crates using tonic_build/prost_build
+ENV DEBIAN_FRONTEND=noninteractive \
+    CARGO_NET_RETRY=10 \
+    CARGO_HTTP_TIMEOUT=600 \
+    CARGO_TERM_COLOR=never
+
+# Install build dependencies.
+# - protobuf-compiler is required for crates using tonic_build/prost_build.
+# - libcurl4-openssl-dev is required by rdkafka-sys when building librdkafka.
 RUN apt-get update && apt-get install -y \
+    build-essential \
     pkg-config \
     libssl-dev \
+    libcurl4-openssl-dev \
     cmake \
     protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
-# Install cargo-chef (cached in its own layer)
-RUN cargo install cargo-chef --locked
-
-FROM chef AS planner
-
-# Copy source to compute the dependency recipe (fast, no compilation)
+# Copy the full source and build only the API package.
 COPY Cargo.toml Cargo.lock ./
 COPY packages packages
 COPY apps apps
 COPY proto proto
 COPY tests tests
 
-RUN cargo chef prepare --recipe-path recipe.json
-
-FROM chef AS cacher
-
-COPY --from=planner /app/recipe.json recipe.json
-COPY --from=planner /app/proto /app/proto
-RUN cargo chef cook --release --recipe-path recipe.json
-
-FROM chef AS builder
-
-# Reuse the dependency build cache
-COPY --from=cacher /app/target /app/target
-COPY --from=cacher /usr/local/cargo /usr/local/cargo
-
-# Copy the full source and build only the API package
-COPY Cargo.toml Cargo.lock ./
-COPY packages packages
-COPY apps apps
-COPY proto proto
-COPY tests tests
-
-RUN cargo build --release -p api
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo build --profile docker -p api
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -60,7 +48,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy binary
-COPY --from=builder /app/target/release/api /app/api
+COPY --from=builder /app/target/docker/api /app/api
 
 # Create non-root user
 RUN groupadd -r idp && useradd -r -g idp idp

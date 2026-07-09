@@ -1,3 +1,5 @@
+name: randomapp
+
 services:
   # ═══════════════════════════════════════════════════════════════
   # 1. MESSAGING BACKBONE - Redpanda v26.1.5 (Kafka-compatible)
@@ -19,10 +21,10 @@ services:
       - --advertise-pandaproxy-addr internal://redpanda:8082,external://${EXTERNAL_HOST:-localhost}:18082
       - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
     ports:
-      - "19092:19092" # Kafka API
-      - "18082:18082" # Pandaproxy (REST)
-      - "18081:18081" # Schema Registry
-      - "9644:9644" # Admin API
+      - "127.0.0.1:${IDP_KAFKA_PORT:-19092}:19092" # Kafka API
+      - "127.0.0.1:${IDP_PANDAPROXY_PORT:-18082}:18082" # Pandaproxy (REST)
+      - "127.0.0.1:${IDP_SCHEMA_REGISTRY_PORT:-18081}:18081" # Schema Registry
+      - "127.0.0.1:${IDP_REDPANDA_ADMIN_PORT:-9644}:9644" # Admin API
     volumes:
       - redpanda_data:/var/lib/redpanda/data
     deploy:
@@ -40,6 +42,43 @@ services:
       timeout: 5s
       retries: 5
 
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.1.5
+    container_name: idp-redpanda-init
+    restart: "no"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    command:
+      - topic
+      - create
+      - --if-not-exists
+      - --partitions
+      - "1"
+      - --replicas
+      - "1"
+      - raw.npm.changes.v1
+      - raw.pypi.journal.v1
+      - raw.cargo.index.v1
+      - domain.package.events.v1
+      - domain.package.upsert.v1
+      - domain.package.deleted.v1
+      - domain.version.upsert.v1
+      - domain.version.yanked.v1
+      - domain.analysis.events.v1
+      - breaking-changes
+      - dependency-impact
+      - domain.analysis.dlq.v1
+      - graph-writer-dlq
+      - vector-writer-dlq
+      - -X
+      - brokers=redpanda:9092
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
   redpanda-console:
     image: docker.redpanda.com/redpandadata/console:v3.7.1
     container_name: idp-redpanda-console
@@ -48,7 +87,7 @@ services:
       redpanda:
         condition: service_healthy
     ports:
-      - "18080:8080"
+      - "127.0.0.1:${IDP_REDPANDA_CONSOLE_PORT:-18080}:8080"
     environment:
       - KAFKA_BROKERS=redpanda:9092
       - KAFKA_SCHEMAREGISTRY_ENABLED=true
@@ -68,14 +107,14 @@ services:
     restart: unless-stopped
     command: playground
     ports:
-      - "4566:4566" # PostgreSQL protocol
-      - "5691:5691" # Dashboard
+      - "127.0.0.1:${IDP_RISINGWAVE_SQL_PORT:-4566}:4566" # PostgreSQL protocol
+      - "127.0.0.1:${IDP_RISINGWAVE_DASHBOARD_PORT:-5691}:5691" # Dashboard
     volumes:
-      - risingwave_data:/risingwave
+      - risingwave_data:/risingwave/data
     deploy:
       resources:
         limits:
-          memory: 2g
+          memory: ${IDP_RISINGWAVE_MEMORY_LIMIT:-1g}
     logging:
       driver: "json-file"
       options:
@@ -88,6 +127,33 @@ services:
       retries: 5
       start_period: 30s
 
+  risingwave-init:
+    image: postgres:17.9-alpine
+    container_name: idp-risingwave-init
+    restart: "no"
+    depends_on:
+      risingwave:
+        condition: service_healthy
+    environment:
+      - PGHOST=risingwave
+      - PGPORT=4566
+      - PGUSER=root
+      - PGDATABASE=dev
+    volumes:
+      - ./infra/risingwave/init:/risingwave-init:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        for file in /risingwave-init/*.sql; do
+          psql -v ON_ERROR_STOP=1 -f "$$file"
+        done
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
   # ═══════════════════════════════════════════════════════════════
   # 3. GRAPH DATABASE - Memgraph 3.9.0 + MAGE (Cypher)
   # ═══════════════════════════════════════════════════════════════
@@ -97,8 +163,8 @@ services:
     container_name: idp-memgraph
     restart: unless-stopped
     ports:
-      - "7687:7687" # Bolt protocol
-      - "7444:7444" # HTTP API
+      - "127.0.0.1:${IDP_MEMGRAPH_BOLT_PORT:-7687}:7687" # Bolt protocol
+      - "127.0.0.1:${IDP_MEMGRAPH_HTTP_PORT:-7444}:7444" # HTTP API
     volumes:
       - memgraph_data:/var/lib/memgraph
       - ./infra/memgraph/init:/usr/lib/memgraph/init-queries
@@ -128,7 +194,7 @@ services:
     depends_on:
       - memgraph
     ports:
-      - "3002:3000"
+      - "127.0.0.1:${IDP_MEMGRAPH_LAB_PORT:-3002}:3000"
     environment:
       - QUICK_CONNECT_MG_HOST=memgraph
       - QUICK_CONNECT_MG_PORT=7687
@@ -146,8 +212,8 @@ services:
     container_name: idp-qdrant
     restart: unless-stopped
     ports:
-      - "6333:6333" # REST API
-      - "6334:6334" # gRPC
+      - "127.0.0.1:${IDP_QDRANT_REST_PORT:-6333}:6333" # REST API
+      - "127.0.0.1:${IDP_QDRANT_GRPC_PORT:-6334}:6334" # gRPC
     volumes:
       - qdrant_data:/qdrant/storage
     environment:
@@ -176,7 +242,7 @@ services:
     container_name: idp-postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${IDP_POSTGRES_PORT:-5434}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -207,10 +273,10 @@ services:
     container_name: idp-valkey
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:${IDP_REDIS_PORT:-6381}:6379"
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
     deploy:
       resources:
         limits:
@@ -234,9 +300,9 @@ services:
     container_name: idp-jaeger
     restart: unless-stopped
     ports:
-      - "16686:16686" # UI
-      - "4317:4317" # OTLP gRPC
-      - "4318:4318" # OTLP HTTP
+      - "127.0.0.1:${IDP_JAEGER_UI_PORT:-16686}:16686" # UI
+      - "127.0.0.1:${IDP_OTLP_GRPC_PORT:-4317}:4317" # OTLP gRPC
+      - "127.0.0.1:${IDP_OTLP_HTTP_PORT:-4318}:4318" # OTLP HTTP
     # Jaeger v2 has OTLP enabled by default (OpenTelemetry Collector based)
     deploy:
       resources:
@@ -255,7 +321,7 @@ services:
     image: prom/prometheus:v3.11.2
     container_name: idp-prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:${IDP_PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./observability/alerts:/etc/prometheus/alerts:ro
@@ -270,7 +336,7 @@ services:
     image: grafana/grafana:13.0.1
     container_name: idp-grafana
     ports:
-      - "3001:3000"
+      - "127.0.0.1:${IDP_GRAFANA_PORT:-3004}:3000"
     volumes:
       - grafana_data:/var/lib/grafana
     environment:

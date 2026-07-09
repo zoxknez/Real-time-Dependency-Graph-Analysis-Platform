@@ -10,25 +10,44 @@
 
 ```bash
 # Start all core services
-docker-compose up -d
+docker compose up -d
 
 # Start with monitoring (Prometheus + Grafana)
-docker-compose --profile monitoring up -d
+docker compose --profile monitoring up -d
 
 # Start application services (requires infrastructure)
-docker-compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.apps.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.apps.yml up -d
 
 # Check service health
-docker-compose ps
+docker compose ps
 
 # View logs
-docker-compose logs -f [service-name]
+docker compose logs -f [service-name]
 
 # Stop all services
-docker-compose down
+docker compose down
 
 # Stop and remove volumes (⚠️ deletes all data)
-docker-compose down -v
+docker compose down -v
+```
+
+For frontend status/logs/cache maintenance on Windows, use the helper:
+
+```powershell
+.\scripts\docker-frontend.ps1 -Task status
+.\scripts\docker-frontend.ps1 -Task logs
+.\scripts\docker-frontend.ps1 -Task prune-build-cache
+```
+
+The helper prints Docker disk usage before/after and prunes only Docker build cache when requested.
+
+For frontend-only rebuilds, use the direct compose command that avoids Docker Compose Bake:
+
+```powershell
+$env:COMPOSE_BAKE = "false"
+docker compose -f docker-compose.yml -f docker-compose.apps.yml build frontend
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.apps.yml up -d frontend
+Remove-Item Env:\COMPOSE_BAKE -ErrorAction SilentlyContinue
 ```
 
 ## Environment Variables
@@ -87,7 +106,7 @@ All services use JSON file logging with rotation:
 
 View logs:
 ```bash
-docker-compose logs -f --tail=100 memgraph
+docker compose logs -f --tail=100 memgraph
 ```
 
 ## Healthchecks
@@ -105,13 +124,13 @@ All core services have robust healthchecks:
 ### Services won't start
 ```bash
 # Check Docker Compose version
-docker-compose version  # Should be v2.x
+docker compose version  # Should be v2.x
 
 # Check available resources
 docker system df
 
 # View detailed logs
-docker-compose logs [service-name]
+docker compose logs [service-name]
 ```
 
 ### Port conflicts
@@ -131,9 +150,9 @@ QDRANT_MEMORY_LIMIT=512m
 ### Healthcheck failures
 Wait longer for services to initialize:
 ```bash
-docker-compose up -d
+docker compose up -d
 sleep 30
-docker-compose ps
+docker compose ps
 ```
 
 ## Production Deployment
@@ -160,7 +179,7 @@ For production/demo deployments:
 
 5. **Enable monitoring** (optional):
    ```bash
-   docker-compose --profile monitoring up -d
+   docker compose --profile monitoring up -d
    ```
 
 6. **Set up backups** for volumes:

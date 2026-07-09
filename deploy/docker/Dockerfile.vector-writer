@@ -1,14 +1,19 @@
+# syntax=docker/dockerfile:1.7
+
 # Build stage
-FROM rustlang/rust:nightly-bookworm AS builder
+FROM rust:1.92-slim-bookworm AS builder
 
 WORKDIR /app
 
-ENV CARGO_HTTP_TIMEOUT=600 \
+ENV DEBIAN_FRONTEND=noninteractive \
+    CARGO_HTTP_TIMEOUT=600 \
     CARGO_NET_RETRY=10
 
 RUN apt-get update && apt-get install -y \
+    build-essential \
     pkg-config \
     libssl-dev \
+    libcurl4-openssl-dev \
     cmake \
     protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
@@ -19,7 +24,9 @@ COPY apps apps
 COPY proto proto
 COPY tests tests
 
-RUN cargo build --release -p vector-writer
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo build --profile docker -p vector-writer
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -32,7 +39,7 @@ RUN apt-get update && apt-get install -y \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/vector-writer /app/vector-writer
+COPY --from=builder /app/target/docker/vector-writer /app/vector-writer
 
 RUN groupadd -r idp && useradd -r -g idp idp
 USER idp

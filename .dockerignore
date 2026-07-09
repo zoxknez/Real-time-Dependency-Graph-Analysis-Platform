@@ -24,11 +24,18 @@
 # IDE / OS
 .vscode
 .idea
+.codex
+.agents
+.runtime
 .DS_Store
 Thumbs.db
 
 # Logs / local artifacts
 *.log
+tmp
+tmp/**
+coverage
+coverage/**
 build_log.txt
 error_log.txt
 api_local_stdout.log
