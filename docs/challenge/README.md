@@ -1,6 +1,6 @@
 # WebMCP Challenge 2026 - Forensic Baseline & Truth Inventory
 
-This directory contains the authoritative forensic record of the repository state prior to WebMCP Challenge development.
+This directory contains the authoritative forensic record of the repository state prior to WebMCP Challenge development and the architectural contracts governing challenge implementation.
 
 ## Project Metadata
 
@@ -8,17 +8,25 @@ This directory contains the authoritative forensic record of the repository stat
 - **Challenge Branch:** `feature/webmcp-challenge-2026`
 - **Immutable Baseline SHA:** `864a3d6905826bd0fabab02cf02785ab0c702842`
 - **Baseline Commit Date:** `2026-07-09T23:37:35+02:00`
-- **Phase:** `WMCP-0A - Baseline Freeze & Challenge Truth Inventory`
 
 All functionality classified as pre-existing in WMCP-0A existed at or before: `864a3d6905826bd0fabab02cf02785ab0c702842`.
 
 ---
 
+## Phase Status Summary
+
+- **WMCP-0A (Baseline Freeze & Truth Inventory):** CLOSED at `bea51b53289bfab8596e8fd660ef22f38a7eb403`
+- **WMCP-0B (Challenge Contract, Architecture Invariants & Evidence Boundary):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
+
+---
+
 ## WMCP Phase Concept
 
-The WebMCP Challenge execution follows an evidence-based phased architecture. Phase WMCP-0A establishes the verifiable boundary between pre-existing platform capabilities and future challenge deliverables.
+The WebMCP Challenge execution follows an evidence-based phased architecture.
+- **WMCP-0A** established the verifiable boundary between pre-existing platform capabilities and future challenge deliverables.
+- **WMCP-0B** locks the architectural invariants, shared action boundaries, capability state machines, and empirical evidence rules.
 
-Under WMCP-0A:
+Under WMCP-0A and WMCP-0B:
 - No application behavior is altered.
 - No production source code or dependencies are modified.
 - Discovered defects and stubs are documented, not fixed.
@@ -40,11 +48,16 @@ Every capability in the baseline evaluation is categorized into exactly one of t
 
 ## Evidence Index
 
-The baseline freeze consists of exactly six tracked files:
-
+### Baseline Freeze (WMCP-0A)
 1. [`README.md`](README.md): Challenge index, phase concept, status definitions, and baseline metadata.
 2. [`WMCP-0A-BASELINE.md`](WMCP-0A-BASELINE.md): Comprehensive architectural audit, pre-existing capabilities summary, and planned challenge scope boundary.
 3. [`PREEXISTING-CAPABILITIES.md`](PREEXISTING-CAPABILITIES.md): Detailed capability matrix with status, repository evidence paths, and runtime verification status.
 4. [`TRUTH-INVENTORY.md`](TRUTH-INVENTORY.md): Forensic itemization of confirmed facts, partial logic, demo data, misleading nomenclature, legacy branding, and technical debt.
 5. [`BASELINE-TEST-RESULTS.md`](BASELINE-TEST-RESULTS.md): Results of required baseline verification commands, plus clearly identified supplemental executions where applicable.
 6. [`baseline-tree.txt`](baseline-tree.txt): Exact verbatim Git tree manifest generated from commit `864a3d6905826bd0fabab02cf02785ab0c702842`.
+
+### Architecture & Governance Contracts (WMCP-0B)
+7. [`WMCP-0B-CHALLENGE-CONTRACT.md`](WMCP-0B-CHALLENGE-CONTRACT.md): Master challenge contract, system architecture, shared actions, and governance model.
+8. [`ARCHITECTURE-INVARIANTS.md`](ARCHITECTURE-INVARIANTS.md): Normative engineering invariants (WMCP-INV-001 through WMCP-INV-025) governing implementation.
+9. [`EVIDENCE-BOUNDARY.md`](EVIDENCE-BOUNDARY.md): Evidence ladder, Blast Radius vs. Confidence definitions, claim rules, and provenance taxonomy.
+10. [`WEBMCP-STATE-MACHINE.md`](WEBMCP-STATE-MACHINE.md): Canonical state machine (`BOOTSTRAP` to `PLAN_READY`), adaptive tool surface, `contextRevision` race protection, and tool lifecycles.
