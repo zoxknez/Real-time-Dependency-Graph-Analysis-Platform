@@ -33,17 +33,17 @@ The repository's baseline version (`16.2.7`) also fell within the affected range
 
 ## 3. Frontend Tooling & Subdependency Advisories
 
-| Advisory Identifier | Component | Severity | Affected Version Range | Patched Version | Repository Declared Version | Package Affected by Version? | Application Exploitability Proven? | Deployment-Specific Conditions & Reachability Evidence | Required Action | Target Phase | Source Reference |
+| Advisory Identifier | Component | Severity | Affected Version Range | Patched Version | Repository Declared / Resolved Version | Package Affected by Version? | Application Exploitability Proven? | Deployment-Specific Conditions & Reachability Evidence | Required Action | Target Phase | Source Reference |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| **GHSA-r28c-9q8g-f849** | `postcss` | HIGH | `<= 8.5.17` | `8.5.22` | `8.5.15` (overrides) | **YES** | **UNVERIFIED** | Path Traversal in source map auto-loading when `from` is unset during CSS build processing. | Update `postcss` override to 8.5.22 | WMCP-1B | GitHub Advisory Database |
-| **GHSA-fxqj-rqcc-2cmp** | `postcss` | MODERATE | `<= 8.5.22` | `8.5.22` | `8.5.15` | **YES** | **UNVERIFIED** | Incomplete fix for arbitrary source map file reading during build. | Update `postcss` override to 8.5.22 | WMCP-1B | GitHub Advisory Database |
-| **GHSA-f88m-g3jw-g9cj** | `sharp` | HIGH | `< 0.35.0` | `0.35.0` | Resolved transitively | **YES** | **UNVERIFIED** | Subdependency inherited vulnerability in libvips. Resolved automatically with Next.js 16.3.3 dependency tree update. | Handled via Next.js upgrade | WMCP-1B | GitHub Advisory Database |
+| **GHSA-r28c-9q8g-f849** | `postcss` | HIGH | `<= 8.5.17` | `>= 8.5.18` | `8.5.15` (overrides) | **YES** | **UNVERIFIED** | Path Traversal in source map auto-loading when `from` is unset during CSS build processing. | Update `postcss` override to 8.5.26 | WMCP-1B | GitHub Advisory Database |
+| **GHSA-fxqj-rqcc-2cmp** | `postcss` | MODERATE | `<= 8.5.22` | `>= 8.5.23` | `8.5.15` (overrides) | **YES** | **UNVERIFIED** | Incomplete fix for arbitrary source map file reading during build. Note: PostCSS 8.5.22 remains affected. | Update `postcss` override to 8.5.26 | WMCP-1B | GitHub Advisory Database |
+| **GHSA-f88m-g3jw-g9cj** | `sharp` | HIGH | `< 0.35.0` | `>= 0.35.0` | `0.34.5` (resolved) | **YES** | **UNVERIFIED** | Subdependency inherited vulnerability in libvips. Lockfile resolves 0.34.5. | Remediate to sharp 0.35.3 in WMCP-1B (inspect dependency tree and apply override if needed) | WMCP-1B | GitHub Advisory Database |
 
 ---
 
 ## 4. Empirical Evidence Rule Compliance
 
-In strict compliance with [WMCP-0B Evidence Boundary (WMCP-INV-018)](file:///d:/ProjektiApp/randomapp/docs/challenge/ARCHITECTURE-INVARIANTS.md):
+In strict compliance with WMCP-0B Evidence Boundary (WMCP-INV-018):
 - The presence of a package version in an advisory range is recorded as **PACKAGE AFFECTED: YES**.
 - Exploitability in this specific application deployment is recorded as **EXPLOITABILITY: UNVERIFIED** unless concrete proof of reachability is demonstrated.
 - Regardless of reachability, all security-affected components are assigned to mandatory remediation phases.

@@ -8,9 +8,10 @@ This document defines the binding target versions, decision classifications, and
 |---|---|---|---|---|---|
 | **Next.js** | `16.2.7` | `16.3.3` | **LOCKED** | Emergency security release (25 Aug 2026) resolving Critical RCEs GHSA-2xp9-vwfh-vxw4 and CVE-2026-75604. | WMCP-1B |
 | **@next/eslint-plugin-next** | `16.2.7` | `16.3.3` | **LOCKED** | Mandatory version alignment with Next.js core framework. | WMCP-1B |
-| **React** | `19.2.7` (resolved) / `^19.2.5` | `19.2.8` | **LOCKED** | Stable patch alignment with Next 16.3.3 peer dependency requirements. | WMCP-1B |
-| **React DOM** | `19.2.7` (resolved) / `^19.2.5` | `19.2.8` | **LOCKED** | Stable patch alignment with Next 16.3.3 peer dependency requirements. | WMCP-1B |
-| **PostCSS** | `8.5.15` (declared override) | `8.5.22` | **LOCKED** | Resolves High-severity advisory GHSA-r28c-9q8g-f849 in build pipeline. | WMCP-1B |
+| **PostCSS** | `8.5.15` (declared override) | `8.5.26` | **LOCKED** | Resolves GHSA-r28c-9q8g-f849 (patched >=8.5.18) and GHSA-fxqj-rqcc-2cmp (patched >=8.5.23). | WMCP-1B |
+| **Sharp** | `0.34.5` (resolved in lockfile) | `0.35.3` | **LOCKED** | Resolves GHSA-f88m-g3jw-g9cj (affected <0.35.0, patched >=0.35.0). Exact resolution mechanism decided in 1B. | WMCP-1B |
+| **React** | `19.2.7` (resolved) / `^19.2.5` | `19.2.8` | **CANDIDATE** | Current stable patch release; low-risk alignment candidate for evaluation during WMCP-1B. | WMCP-1B |
+| **React DOM** | `19.2.7` (resolved) / `^19.2.5` | `19.2.8` | **CANDIDATE** | Current stable patch release; low-risk alignment candidate for evaluation during WMCP-1B. | WMCP-1B |
 | **Clippy Configuration** | `vec-init-len-threshold = 10` | Modernized `.clippy.toml` | **LOCKED** | Removes removed/deprecated lint key blocking modern Clippy execution. | WMCP-1C |
 | **Node.js (CI)** | `node-version: '22'` (floating) | `24.19.0` | **CANDIDATE** | Normalizes CI to modern Active LTS runtime environment. | WMCP-1C |
 | **Node.js (Docker)** | `node:22-alpine` (floating) | `24.19.0-alpine` | **CANDIDATE** | Normalizes Docker deployment to modern Active LTS runtime. | WMCP-1C |
@@ -37,7 +38,7 @@ This document defines the binding target versions, decision classifications, and
 ## 3. Staged Implementation Order
 
 ### Subphase WMCP-1B: Security-Critical Frontend Baseline
-- **Scope:** Update `next` (`16.3.3`), `@next/eslint-plugin-next` (`16.3.3`), `react` (`19.2.8`), `react-dom` (`19.2.8`), and `postcss` (`8.5.22`).
+- **Scope:** Update `next` (`16.3.3`), `@next/eslint-plugin-next` (`16.3.3`), `postcss` (`8.5.26`), and remediate `sharp` (`>= 0.35.0`, preferred `0.35.3`). Evaluate `react` / `react-dom` (`19.2.8`) patch alignment.
 - **Isolation Principle:** No TypeScript major upgrades, no Node major runtime changes, no ESLint major migrations, and no broad dependency sweeps.
 
 ### Subphase WMCP-1C: Runtime & Rust Toolchain Normalization
@@ -55,18 +56,25 @@ This document defines the binding target versions, decision classifications, and
 
 Execution of WMCP-1B must pass the following deterministic verification gates:
 1. `npm ci` finishes cleanly with zero lockfile conflicts.
-2. `npx tsc --noEmit` completes with zero type errors.
-3. `npm run lint` completes with zero ESLint errors against flat config.
-4. `npm run build` succeeds under `--webpack` mode.
-5. Verification of `.next/standalone` generation for Docker containerization.
-6. Verification that custom `@/` path aliases resolve properly.
-7. Verification that security response headers remain configured.
-8. Verification that Next.js runtime reports exact version `16.3.3`.
+2. `npm ls next` confirms exact resolution of `16.3.3`.
+3. `npm ls @next/eslint-plugin-next` confirms exact resolution of `16.3.3`.
+4. `npm ls postcss` confirms resolution of `8.5.26` for root override and no affected versions remain active.
+5. `npm ls sharp` confirms resolution of `>= 0.35.0` (preferred `0.35.3`).
+6. `npx tsc --noEmit` completes with zero type errors.
+7. `npm run lint` completes with zero ESLint errors against flat config.
+8. `npm run build` succeeds under `--webpack` mode.
+9. Verification of `.next/standalone` generation for Docker containerization.
+10. Verification that custom `@/` path aliases resolve properly.
+11. Verification that security response headers remain configured.
 
 ---
 
-## 5. Rollback Boundaries
+## 5. Contingency and Regression Policy
 
 If Next.js 16.3.3 encounters an irreconcilable webpack or SSR regression in WMCP-1B:
-- **Rollback Target:** Next.js `15.5.24` (Maintenance LTS security patched release).
-- **Rollback Condition:** Next.js 16.2.7 is strictly prohibited from remaining as a final submission artifact due to active Critical security advisories.
+1. Do NOT return to vulnerable `16.2.7`.
+2. Mark WMCP-1B as **HOLD**.
+3. Diagnose and isolate the regression cause.
+4. Prefer a newer patched stable `16.3.x` release if available upstream.
+5. Apply minimal, verified compatibility adjustments.
+6. Consider Next.js `15.5.24` (Maintenance LTS) only as a separately evaluated contingency requiring its own full downgrade compatibility audit. Next 15.5.24 is NOT an automatic drop-in rollback.

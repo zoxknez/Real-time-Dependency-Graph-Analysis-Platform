@@ -38,6 +38,8 @@ It establishes the empirical evidence, security advisory status, and upgrade dec
 | E2E Testing | `@playwright/test: ^1.59.1` | `1.60.0` |
 | State Management | `zustand: ^5.0.12` | `5.0.14` |
 | 3D Visualization | `three: ^0.182.0` | `0.182.0` |
+| CSS Preprocessing | `postcss: 8.5.15` (overrides) | `8.5.15` |
+| Image Processing | `sharp` (transitive) | `0.34.5` |
 | Rust Edition | `edition = "2024"` | N/A |
 | Cargo Resolver | `resolver = "2"` | N/A |
 
@@ -45,7 +47,7 @@ It establishes the empirical evidence, security advisory status, and upgrade dec
 
 ## 5. Frontend Runtime Baseline
 
-Statically inspected from [apps/frontend/next.config.js](file:///d:/ProjektiApp/randomapp/apps/frontend/next.config.js):
+Statically inspected from [apps/frontend/next.config.js](../../apps/frontend/next.config.js):
 - **Build Output:** `output: 'standalone'` (packaged for Docker deployment via `.next/standalone`).
 - **Bundler Mode:** Explicit Webpack invocation (`next dev --webpack`, `next build --webpack`).
 - **Image Optimization:** `images.remotePatterns: []`; `images.unoptimized: process.env.NODE_ENV === 'development'`.
@@ -57,15 +59,15 @@ Statically inspected from [apps/frontend/next.config.js](file:///d:/ProjektiApp/
 
 ## 6. Rust Toolchain Baseline
 
-- **Workspace Configuration:** [Cargo.toml](file:///d:/ProjektiApp/randomapp/Cargo.toml) declares `edition = "2024"` and `resolver = "2"`.
+- **Workspace Configuration:** [Cargo.toml](../../Cargo.toml) declares `edition = "2024"` and `resolver = "2"`.
 - **Rust Version Pin:** No `rust-version` field in `Cargo.toml` and no `rust-toolchain.toml` file exists in the repository.
-- **Clippy Configuration:** [.clippy.toml](file:///d:/ProjektiApp/randomapp/.clippy.toml) specifies `msrv = "1.85"` and contains `vec-init-len-threshold = 10` (deprecated/removed in modern Clippy).
+- **Clippy Configuration:** [.clippy.toml](../../.clippy.toml) specifies `msrv = "1.85"` and contains `vec-init-len-threshold = 10` (deprecated/removed in modern Clippy).
 
 ---
 
 ## 7. CI Platform Baseline
 
-Statically inspected from [.github/workflows/ci.yml](file:///d:/ProjektiApp/randomapp/.github/workflows/ci.yml):
+Statically inspected from [.github/workflows/ci.yml](../../.github/workflows/ci.yml):
 - **Node.js Toolchain:** `node-version: '22'` (floating major release).
 - **Rust Toolchain:** `dtolnay/rust-toolchain@stable` (floating stable compiler).
 - **Protobuf Compiler:** `PROTOC_VERSION: "29.3"`.
@@ -78,7 +80,7 @@ Statically inspected from [.github/workflows/ci.yml](file:///d:/ProjektiApp/rand
 
 ## 8. Docker Platform Baseline
 
-Statically inspected from [deploy/docker/Dockerfile.frontend](file:///d:/ProjektiApp/randomapp/deploy/docker/Dockerfile.frontend):
+Statically inspected from [deploy/docker/Dockerfile.frontend](../../deploy/docker/Dockerfile.frontend):
 - **Base Image:** `node:22-alpine` across `deps`, `builder`, and `runner` stages (floating major version).
 - **Runtime User:** Non-root user `nextjs:nodejs` (UID 1001).
 - **Server Entrypoint:** `node server.js` running standalone Next.js server.
@@ -96,6 +98,8 @@ Statically inspected from [deploy/docker/Dockerfile.frontend](file:///d:/Projekt
 
 - **Next.js:** 16.x is Active LTS; 15.x is Maintenance LTS. Current patched Active LTS is **16.3.3** (shipped 25 August 2026).
 - **React:** Current stable release is **19.2.8**. React 19.3 packages in npm are canary/experimental.
+- **PostCSS:** Current stable release is **8.5.26** (clearing both GHSA-r28c-9q8g-f849 and GHSA-fxqj-rqcc-2cmp).
+- **Sharp:** Current stable release is **0.35.3** (clearing GHSA-f88m-g3jw-g9cj libvips vulnerabilities).
 - **Node.js:** Current releases are Node 26.7.0 (Current), Node 24.19.0 (Active LTS), Node 22.23.2 (Maintenance LTS).
 - **TypeScript:** Current stable release is **6.0.3**.
 - **ESLint:** Current latest stable release is **10.9.0**; ESLint 9.x remains supported in maintenance.
@@ -119,11 +123,24 @@ On **25 August 2026**, Vercel published an emergency security release for Next.j
    - *Affected Versions:* `< 16.3.3`
    - *Severity:* CRITICAL
 
-### Repository Vulnerability Status:
+### Repository Next.js Status:
 - The repository declares and resolves `next: 16.2.7`.
 - **Package Version Affected:** **YES** (16.2.7 is strictly below 16.3.3).
 - **Application Exploitability:** **UNVERIFIED** (Static inspection shows `images.remotePatterns` is empty and production image processing is not exposed to untrusted external domains, but full reachability cannot be ruled out).
 - **Security Action:** **SECURITY_MANDATORY**. The challenge branch must not reach final submission on Next.js 16.2.7. Upgrading to `16.3.3` is mandatory.
+
+### PostCSS & Sharp Vulnerabilities:
+1. **PostCSS (GHSA-r28c-9q8g-f849 & GHSA-fxqj-rqcc-2cmp):**
+   - Baseline resolves `8.5.15`.
+   - GHSA-r28c-9q8g-f849 (High): affected `<= 8.5.17`, first patched `8.5.18`.
+   - GHSA-fxqj-rqcc-2cmp (Moderate): affected `<= 8.5.22`, first patched `8.5.23`.
+   - PostCSS 8.5.22 is vulnerable to GHSA-fxqj-rqcc-2cmp.
+   - Current stable target **8.5.26** is **LOCKED** as `SECURITY_MANDATORY`.
+2. **Sharp (GHSA-f88m-g3jw-g9cj):**
+   - Baseline lockfile resolves `sharp 0.34.5`.
+   - Affected: `< 0.35.0`, patched: `>= 0.35.0`.
+   - Package Affected: **YES**; Exploitability: **UNVERIFIED**.
+   - Remediation target **sharp 0.35.3** is **LOCKED** as `SECURITY_MANDATORY` for WMCP-1B.
 
 ---
 
@@ -158,7 +175,9 @@ The following upstream issue reports are tracked as part of the 16.3.x upgrade w
 │ WMCP-1B: Security-Critical Frontend Baseline               │
 │ - Upgrade next: 16.2.7 -> 16.3.3 (LOCKED)                   │
 │ - Upgrade @next/eslint-plugin-next: 16.2.7 -> 16.3.3 (LOCKED)│
-│ - Align react & react-dom: 19.2.7 -> 19.2.8 (LOCKED)        │
+│ - Upgrade postcss: 8.5.15 -> 8.5.26 (LOCKED)                │
+│ - Remediate sharp: 0.34.5 -> 0.35.3 (LOCKED)                │
+│ - Align react & react-dom: 19.2.7 -> 19.2.8 (CANDIDATE)     │
 │ - Verify build, type-check, lint, and standalone output     │
 ├─────────────────────────────────────────────────────────────┤
 │ WMCP-1C: Runtime & Rust Toolchain Normalization             │
@@ -193,12 +212,14 @@ The following upstream issue reports are tracked as part of the 16.3.x upgrade w
 2. Next.js 16.2.7 is affected by official security advisories and cannot be retained for final challenge submission.
 3. Next.js target is **LOCKED** at `16.3.3`.
 4. `@next/eslint-plugin-next` target is **LOCKED** at `16.3.3`.
-5. React / React DOM targets are **LOCKED** at `19.2.8` for alignment with Next 16.3.3.
-6. Node 26 is **REJECTED** for challenge critical path.
+5. PostCSS target is **LOCKED** at `8.5.26` (clearing GHSA-r28c-9q8g-f849 and GHSA-fxqj-rqcc-2cmp).
+6. Sharp target is **LOCKED** at `0.35.3` (clearing GHSA-f88m-g3jw-g9cj).
+7. React / React DOM are **CANDIDATE** (`19.2.8`, `RECOMMENDED_PATCH`) for evaluation during WMCP-1B.
+8. Node 26 is **REJECTED** for challenge critical path.
 
 ---
 
 ## 18. Unknown / Unverified Items
 
-- **Live Exploitability of Next.js CVEs in This Repository:** Classified as `UNVERIFIED` under WMCP-0B evidence rules (package version is affected; live reachability is unverified).
+- **Live Exploitability of Next.js / Sharp / PostCSS CVEs in This Repository:** Classified as `UNVERIFIED` under WMCP-0B evidence rules (package version is affected; live reachability is unverified).
 - **ESLint 10 Flat Config Compatibility:** Classified as `UNVERIFIED` until tested in WMCP-1D.

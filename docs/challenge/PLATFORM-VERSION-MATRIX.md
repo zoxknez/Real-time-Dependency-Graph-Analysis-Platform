@@ -7,9 +7,11 @@ This document provides the exhaustive platform version matrix for repository com
 | Area | Component | Repository Declaration / Config | Lockfile Resolved | CI / Runtime Value | Current Upstream Stable / LTS | Support State | Upgrade Classification | Proposed Target | Target Status | Implementation Phase | Evidence |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | Frontend Framework | Next.js | `16.2.7` | `16.2.7` | N/A | `16.3.3` | Active LTS (Patched) | `SECURITY_MANDATORY` | `16.3.3` | `LOCKED` | WMCP-1B | GHSA-2xp9-vwfh-vxw4, CVE-2026-75604 |
-| UI Library | React | `^19.2.5` | `19.2.7` | N/A | `19.2.8` | Current Stable | `RECOMMENDED_PATCH` | `19.2.8` | `LOCKED` | WMCP-1B | npm registry, Next.js peer matrix |
-| UI Library | React DOM | `^19.2.5` | `19.2.7` | N/A | `19.2.8` | Current Stable | `RECOMMENDED_PATCH` | `19.2.8` | `LOCKED` | WMCP-1B | npm registry, Next.js peer matrix |
+| UI Library | React | `^19.2.5` | `19.2.7` | N/A | `19.2.8` | Current Stable | `RECOMMENDED_PATCH` | `19.2.8` | `CANDIDATE` | WMCP-1B | npm registry, low-risk patch |
+| UI Library | React DOM | `^19.2.5` | `19.2.7` | N/A | `19.2.8` | Current Stable | `RECOMMENDED_PATCH` | `19.2.8` | `CANDIDATE` | WMCP-1B | npm registry, low-risk patch |
 | Frontend Linter | @next/eslint-plugin-next | `16.2.7` | `16.2.7` | N/A | `16.3.3` | Current Stable | `VERSION_ALIGNMENT_REQUIRED` | `16.3.3` | `LOCKED` | WMCP-1B | Next.js version alignment |
+| CSS Processing | PostCSS | `8.5.15` (overrides) | `8.5.15` | N/A | `8.5.26` | Current Stable | `SECURITY_MANDATORY` | `8.5.26` | `LOCKED` | WMCP-1B | GHSA-r28c-9q8g-f849, GHSA-fxqj-rqcc-2cmp |
+| Image Processing | Sharp | Transitive dependency | `0.34.5` | N/A | `0.35.3` | Current Stable | `SECURITY_MANDATORY` | `0.35.3` | `LOCKED` | WMCP-1B | GHSA-f88m-g3jw-g9cj |
 | Runtime Environment | Node.js (CI) | `node-version: '22'` | N/A | `22.x` | `24.19.0` (LTS) / `22.23.2` (LTS) | Active LTS | `PLATFORM_MODERNIZATION` | `24.19.0` | `CANDIDATE` | WMCP-1C | Node.js official release schedule |
 | Runtime Environment | Node.js (Docker) | `node:22-alpine` | N/A | `22-alpine` | `node:24.19.0-alpine` | Active LTS | `PLATFORM_MODERNIZATION` | `24.19.0-alpine` | `CANDIDATE` | WMCP-1C | DockerHub official node images |
 | Language (Frontend) | TypeScript | `^5.8.0` | `5.9.3` | N/A | `6.0.3` | Current Stable | `TOOLING_MODERNIZATION` | `6.0.3` | `CANDIDATE` | WMCP-1D | TypeScript release notes |
@@ -24,7 +26,6 @@ This document provides the exhaustive platform version matrix for repository com
 | Visualization | Three.js | `^0.182.0` | `0.182.0` | N/A | `0.182.0` | Current Stable | `KEEP_CURRENT` | `0.182.0` | `LOCKED` | N/A | Lockfile inspection |
 | Visualization | react-force-graph-2d | `^1.26.1` | `1.26.1` | N/A | `1.26.1` | Current Stable | `KEEP_CURRENT` | `1.26.1` | `LOCKED` | N/A | Lockfile inspection |
 | Visualization | react-force-graph-3d | `^1.29.0` | `1.29.0` | N/A | `1.29.0` | Current Stable | `KEEP_CURRENT` | `1.29.0` | `LOCKED` | N/A | Lockfile inspection |
-| CSS Processing | PostCSS | `8.5.15` | `8.5.15` | N/A | `8.5.22` | Current Stable | `RECOMMENDED_PATCH` | `8.5.22` | `CANDIDATE` | WMCP-1B | GHSA-fxqj-rqcc-2cmp patch |
 | CSS Framework | Tailwind CSS | `^3.4.17` | `3.4.19` | N/A | `3.4.19` | Current v3 Stable | `KEEP_CURRENT` | `3.4.19` | `LOCKED` | N/A | Lockfile inspection |
 | Rust Toolchain | Rust Compiler | unpinned | N/A | `stable` (1.98.0) | `1.98.0` | Current Stable (2026-08-20) | `PLATFORM_MODERNIZATION` | `1.98.0` | `CANDIDATE` | WMCP-1C | Rust release announcement |
 | Rust Workspace | Rust Edition | `edition = "2024"` | N/A | `2024` | `2024` | Current Edition | `KEEP_CURRENT` | `2024` | `LOCKED` | N/A | Cargo.toml inspection |
