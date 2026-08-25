@@ -16,7 +16,8 @@ All functionality classified as pre-existing in WMCP-0A existed at or before: `8
 ## Phase Status Summary
 
 - **WMCP-0A (Baseline Freeze & Truth Inventory):** CLOSED at `bea51b53289bfab8596e8fd660ef22f38a7eb403`
-- **WMCP-0B (Challenge Contract, Architecture Invariants & Evidence Boundary):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
+- **WMCP-0B (Challenge Contract, Architecture Invariants & Evidence Boundary):** CLOSED at `da6fb242c11a2dd70c54ed2072f9558a36875906`
+- **WMCP-1A (Platform Version & Security Truth Freeze):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
 
 ---
 
@@ -24,12 +25,13 @@ All functionality classified as pre-existing in WMCP-0A existed at or before: `8
 
 The WebMCP Challenge execution follows an evidence-based phased architecture.
 - **WMCP-0A** established the verifiable boundary between pre-existing platform capabilities and future challenge deliverables.
-- **WMCP-0B** locks the architectural invariants, shared action boundaries, capability state machines, and empirical evidence rules.
+- **WMCP-0B** locked the architectural invariants, shared action boundaries, capability state machines, and empirical evidence rules.
+- **WMCP-1A** freezes platform dependency truth, security advisories, and staged modernization upgrade targets.
 
-Under WMCP-0A and WMCP-0B:
+Under WMCP-0A, WMCP-0B, and WMCP-1A:
 - No application behavior is altered.
 - No production source code or dependencies are modified.
-- Discovered defects and stubs are documented, not fixed.
+- Discovered defects, security advisories, and stubs are documented, not fixed.
 - Claims in documentation are strictly validated against concrete repository source evidence.
 
 ---
@@ -61,3 +63,9 @@ Every capability in the baseline evaluation is categorized into exactly one of t
 8. [`ARCHITECTURE-INVARIANTS.md`](ARCHITECTURE-INVARIANTS.md): Normative engineering invariants (WMCP-INV-001 through WMCP-INV-025) governing implementation.
 9. [`EVIDENCE-BOUNDARY.md`](EVIDENCE-BOUNDARY.md): Evidence ladder, Blast Radius vs. Confidence definitions, claim rules, and provenance taxonomy.
 10. [`WEBMCP-STATE-MACHINE.md`](WEBMCP-STATE-MACHINE.md): Canonical state machine (`BOOTSTRAP` to `PLAN_READY`), adaptive tool surface, `contextRevision` race protection, and tool lifecycles.
+
+### Platform Modernization & Security Truth (WMCP-1A)
+11. [`WMCP-1A-PLATFORM-TRUTH.md`](WMCP-1A-PLATFORM-TRUTH.md): Authoritative platform baseline, security advisory findings, and staged modernization roadmap.
+12. [`PLATFORM-VERSION-MATRIX.md`](PLATFORM-VERSION-MATRIX.md): Comprehensive matrix of declared, resolved, CI, and upstream platform versions.
+13. [`SECURITY-ADVISORY-MATRIX.md`](SECURITY-ADVISORY-MATRIX.md): Itemized security advisories (Next.js August 2026 Critical CVEs, PostCSS) and reachability status.
+14. [`UPGRADE-TARGETS.md`](UPGRADE-TARGETS.md): Authoritative upgrade decisions (LOCKED, CANDIDATE, DEFERRED, REJECTED) and future test gates.
