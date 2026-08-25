@@ -10,10 +10,10 @@ This document records the exact baseline verification command executions perform
 |---|---|---|---|---|---|
 | Rust Formatting | `cargo fmt --all -- --check` | Root | 0 | PASS | Clean formatting |
 | Rust Workspace Check | `cargo check --workspace --all-targets` | Root | 0 | PASS | Finished dev target in 0.79s |
-| Rust Clippy | `cargo clippy --workspace --all-targets --all-features` | Root | 1 | BLOCKED | `.clippy.toml:42` deprecated key `vec-init-len-threshold` |
+| Rust Clippy (Required Attempt) | `cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all` | Root | 1 | BLOCKED | Host toolchain component `cargo-clippy` absent |
 | Rust Unit & Bin Tests | `cargo test --workspace --lib --bins` | Root | 0 | PASS | 114 tests passed across 8 crates |
-| Rust API Integration Tests | `cargo test --test api` | Root | 0 | PASS | 10 tests passed (GraphQL introspection, security, impact) |
-| Rust E2E Docker Tests | `cargo test --test e2e` | Root | 0 | SKIPPED | 6 ignored (requires active Docker containers) |
+| Rust API Integration Test Harness | `cargo test --test api` | Root | 0 | PASS WITH VERIFICATION LIMITATION | 10 harness functions passed; live endpoint execution unproven |
+| Rust E2E Docker Tests | `cargo test --test e2e` | Root | 0 | NOT EXECUTED - 6 IGNORED | 6 tests skipped via `#[ignore = "requires Docker"]` |
 | Frontend Install | `npm ci` | `apps/frontend` | 0 | PASS | 590 packages installed in 26s |
 | Frontend Type Check | `npx tsc --noEmit` | `apps/frontend` | 0 | PASS | Zero TypeScript errors |
 | Frontend Lint | `npm run lint` | `apps/frontend` | 0 | PASS | ESLint passed with 0 errors |
@@ -47,9 +47,9 @@ This document records the exact baseline verification command executions perform
 - **Working directory:** `.` (Repository root)
 - **Exit code:** `1`
 - **Status:** `BLOCKED`
-- **Result summary:** Clippy toolchain execution failed during configuration parsing due to `.clippy.toml:42:1` (`vec-init-len-threshold = 10`), a deprecated/removed configuration key in current Rust compiler editions.
-- **Failure reason:** Deprecated `.clippy.toml` field.
-- **Environment limitations:** Preserved in baseline without modifying `.clippy.toml`.
+- **Result summary:** Initial required execution blocked because `cargo-clippy.exe` was not installed on the active host toolchain (`stable-x86_64-pc-windows-msvc`).
+- **Failure reason:** Missing local toolchain component. Per strict single-attempt execution policy, no environment modification was performed during the initial baseline freeze.
+- **Environment limitations:** Rustup clippy component absent on execution host (observed process exit code: 1).
 
 ### 4. `cargo test --workspace --lib --bins`
 - **Command:** `cargo test --workspace --lib --bins`
@@ -73,30 +73,20 @@ This document records the exact baseline verification command executions perform
 - **Command:** `cargo test --test api`
 - **Working directory:** `.` (Repository root)
 - **Exit code:** `0`
-- **Status:** `PASS`
-- **Result summary:**
-  - `test_graphql_introspection` passed
-  - `test_health_endpoint` passed
-  - `test_ready_endpoint` passed
-  - `test_query_complexity_limit` passed
-  - `test_graphql_reverse_dependents` passed
-  - `test_rate_limit_headers` passed
-  - `test_security_headers` passed
-  - `test_graphql_package_query` passed
-  - `test_graphql_graph_stats` passed
-  - `test_graphql_impact_radius` passed
-  - Total: 10 passed, 0 failed, 0 ignored (duration: 2.36s).
+- **Status:** `PASS WITH VERIFICATION LIMITATION`
+- **Result summary:** Cargo reported 10 test functions passed and exit code 0 (`test_graphql_introspection`, `test_health_endpoint`, `test_ready_endpoint`, `test_query_complexity_limit`, `test_graphql_reverse_dependents`, `test_rate_limit_headers`, `test_security_headers`, `test_graphql_package_query`, `test_graphql_graph_stats`, `test_graphql_impact_radius`).
+- **Verification Limitation:** Inspection of `tests/tests/api.rs` shows that HTTP request connection failures are handled by logging a warning (`tracing::warn!("API not running, skipping test: {}", e)`) and returning normally rather than failing the test. Therefore, this execution proves that the test harness compiled and executed without Rust panics, but does NOT independently prove that a live API was running or that the HTTP/GraphQL response assertion paths executed.
 - **Failure reason:** None
-- **Environment limitations:** None
+- **Environment limitations:** Live API server response verification unproven by harness pass.
 
 ### 6. `cargo test --test e2e`
 - **Command:** `cargo test --test e2e`
 - **Working directory:** `.` (Repository root)
 - **Exit code:** `0`
-- **Status:** `SKIPPED`
-- **Result summary:** 6 tests skipped (`ignored, requires Docker` via `#[ignore]`).
-- **Failure reason:** None (declarative ignore for container dependencies).
-- **Environment limitations:** Requires running Docker daemon with ephemeral testcontainers.
+- **Status:** `NOT EXECUTED - 6 IGNORED`
+- **Result summary:** The test binary executed successfully with 0 failed, but all 6 test functions were skipped via declarative `#[ignore = "requires Docker"]` attributes (`test_full_e2e_flow`, `test_impact_radius_calculation`, `test_kafka_message_flow`, `test_memgraph_basic_operations`, `test_memgraph_dependency_graph`, `test_qdrant_vector_operations`). The test bodies did NOT execute.
+- **Failure reason:** None
+- **Environment limitations:** Test bodies require active Docker daemon for testcontainers.
 
 ### 7. `npm ci`
 - **Command:** `npm ci`
@@ -148,7 +138,27 @@ This document records the exact baseline verification command executions perform
 
 ---
 
-## Supplemental Out-of-Scope Execution
+## Supplemental Clippy Diagnostic Execution
+
+During a subsequent diagnostic check with `clippy` installed on the host toolchain, the workspace was checked with:
+
+- **Command:** `cargo clippy --workspace --all-targets --all-features`
+- **Working directory:** `.` (Repository root)
+- **Exit code:** `1`
+- **Status:** `BLOCKED`
+- **Observed diagnostic:** Clippy configuration parsing error:
+  ```text
+  error: error reading Clippy's configuration file: unknown field `vec-init-len-threshold`
+    --> .clippy.toml:42:1
+     |
+  42 | vec-init-len-threshold = 10
+     | ^^^^^^^^^^^^^^^^^^^^^^
+  ```
+- **Context:** The baseline configuration file `.clippy.toml` contains `vec-init-len-threshold = 10`, a key removed in modern Clippy releases. Modernization is deferred to implementation phases.
+
+---
+
+## Supplemental Out-of-Scope Release Execution
 
 A previous WMCP-0A attempt reported that a release-mode test execution occurred. The exact command output and independently verifiable exit result were not retained in the final evidence set. It is therefore recorded as UNVERIFIED supplemental execution history and is not used by any WMCP-0A acceptance gate.
 
