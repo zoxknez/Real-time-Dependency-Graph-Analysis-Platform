@@ -34,8 +34,8 @@ All codebase capabilities, data points, and evaluation results belong to exactly
 ## 3. Pre-Challenge Evidence
 
 - **Baseline Commit:** `864a3d6905826bd0fabab02cf02785ab0c702842`
-- **Verified Capabilities:** Ingestion pipelines (crates.io, PyPI, npm), in-memory graph storage (`DEPENDS_ON`, `DEPENDS_ON_PKG`), Tree-sitter multi-language parsers, AST breaking change detector, live OSV vulnerability lookups, Qdrant vector indexing, and Next.js frontend graph views.
-- **Known Baseline Gaps:** Hard-coded Scorecard resolver, unpopulated threat enrichment fields, filesystem-local snapshot storage, package projections without SemVer constraints, and subscription handlers without graph mutation.
+- **Verified Capabilities:** Ingestion pipelines (crates.io and PyPI unit-test verified; npm changes feed statically verified), in-memory graph storage (`DEPENDS_ON`, `DEPENDS_ON_PKG`), Tree-sitter multi-language parsers, AST breaking change detector, OSV lookup implementation (statically verified to target live OSV REST API; live network execution not runtime-verified during WMCP-0A), Qdrant vector client, and Next.js frontend production build.
+- **Known Baseline Gaps:** Hard-coded Scorecard resolver, unpopulated threat enrichment fields (CVSS, EPSS, KEV, reachability), filesystem-local snapshot storage, package projections without version requirement constraints, and subscription handlers without graph mutation.
 
 ---
 
@@ -46,7 +46,7 @@ Every feature developed for the challenge must be backed by distinct Git commits
 - `WebMcpPlatformAdapter` and `ModelContextRegistry`.
 - Context-aware adaptive tool surface with `contextRevision` race protection.
 - Deterministic counterfactual API scenario engine.
-- Ecosystem-specific version-aware exposure calculation (npm, Cargo, PyPI).
+- Ecosystem-specific version-aware exposure calculation (npm SemVer, Cargo requirements, PyPI/PEP 440).
 - Dual-metric risk evaluation: mathematical Blast Radius (0-100) and evidence Confidence (0-100).
 - Human business priority review layer.
 - Remediation synthesis and migration planner.
@@ -78,7 +78,8 @@ The platform strictly distinguishes degrees of downstream dependency exposure. D
 ├─────────────────────────────────────────────────────────────┤
 │ 2. RANGE_COMPATIBLE                                         │
 │    Downstream dependency constraint admits the simulated    │
-│    release version according to ecosystem SemVer rules.     │
+│    release version according to ecosystem-specific version  │
+│    constraint semantics (npm, Cargo, PyPI/PEP 440).         │
 ├─────────────────────────────────────────────────────────────┤
 │ 1. TOPOLOGY_ONLY                                            │
 │    Downstream package is connected via dependency graph     │
@@ -95,7 +96,7 @@ The platform strictly distinguishes degrees of downstream dependency exposure. D
 Technical risk and evidence certainty are independent orthogonal dimensions:
 
 - **Technical Blast Radius (0-100):** Deterministic mathematical measure of potential downstream impact based on API change severity (40%), direct exposure (25%), transitive propagation (20%), and ecosystem breadth (15%).
-- **Evidence Confidence (0-100):** Measure of underlying data completeness, based on AST snapshot availability, parse error rates, SemVer range coverage, and graph freshness.
+- **Evidence Confidence (0-100):** Measure of underlying data completeness, based on AST snapshot availability, parse error rates, version constraint coverage, and graph freshness.
 
 **Example Scenario:**
 - Blast Radius: `85/100` (High potential impact)
@@ -146,7 +147,7 @@ The following table defines the mandatory evidence required before any technical
 | Claim | Required Evidence Before Claim Is Allowed |
 |---|---|
 | Package is downstream | Graph relationship or path exists (`DEPENDS_ON_PKG` / `DEPENDS_ON`). |
-| Version is range-compatible | Ecosystem-specific version evaluator confirms target version satisfies dependency constraint. |
+| Version is range-compatible | Ecosystem-specific version evaluator confirms target version satisfies dependency constraint according to ecosystem semantics (npm, Cargo, PyPI/PEP 440). |
 | API change is breaking | `BreakingDetector` AST diff confirms removed symbol, signature change, or visibility reduction. |
 | Package uses affected symbol | Concrete usage evidence confirms import/call of affected symbol in downstream code. |
 | Package definitely breaks | Strong deterministic evidence combining breaking change, range compatibility, and symbol usage. |

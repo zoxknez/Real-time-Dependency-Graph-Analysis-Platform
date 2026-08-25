@@ -6,11 +6,11 @@ Every implementation phase must satisfy these invariants.
 
 ---
 
-### WMCP-INV-001: Context-Valid Tool Registration
-- **Statement:** A WebMCP tool is registered only in application states where its preconditions and input prerequisites are semantically valid.
-- **Rationale:** Exposing tools when required state (e.g. selected package, generated scenario) is missing leads to agent confusion and unforced tool call failures.
-- **Violation Example:** Registering `simulate_api_changes` in `IDLE` state before any package or graph has been opened.
-- **Future Verification Method:** Deterministic state machine tests validating active tool sets per state.
+### WMCP-INV-001: Context-Valid Logical Tool Availability
+- **Statement:** A WebMCP tool may be logically ACTIVE only when its semantic prerequisites are valid for the current canonical application state. A RETIRING generation may remain physically browser-registered temporarily for compatibility-safe execution drain, but it is not part of the logical active tool surface and must reject new invocations.
+- **Rationale:** Exposing tools when required context (e.g. selected package, generated scenario) is missing leads to agent confusion and unforced tool call failures.
+- **Violation Example:** Including `simulate_api_changes` in the logical tool surface during `IDLE` state before any package graph is loaded.
+- **Future Verification Method:** Deterministic state machine unit tests validating active tool sets per state.
 - **First Enforcement Phase:** WMCP-4.
 
 ---
@@ -132,11 +132,11 @@ Every implementation phase must satisfy these invariants.
 
 ---
 
-### WMCP-INV-015: In-Flight Execution Drain
-- **Statement:** State-driven tool retirement must account for in-flight executions and must not rely on browser-version-specific unregister behavior.
-- **Rationale:** Active tool executions must be allowed to complete cleanly or be explicitly aborted via `AbortSignal`.
-- **Violation Example:** Unregistering a tool while an execution is running, causing an unhandled promise rejection in the caller.
-- **Future Verification Method:** Lifecycle tests tracking `activeExecutions` count through `RETIRING` to `REMOVED`.
+### WMCP-INV-015: In-Flight Execution Drain & Safe Retirement
+- **Statement:** State-driven tool retirement must follow a phased drain cycle: `ACTIVE` $\rightarrow$ remove from desired logical surface $\rightarrow$ `RETIRING` $\rightarrow$ reject new admissions $\rightarrow$ drain or explicitly cancel active executions $\rightarrow$ physical browser unregister $\rightarrow$ `REMOVED`. The architecture must not rely on browser-version-specific unregister cancellation behavior.
+- **Rationale:** Active tool executions must be allowed to complete cleanly or be explicitly aborted via `AbortSignal` without browser unregister race conditions.
+- **Violation Example:** Unregistering a tool while an execution is running, causing unhandled promise rejections on browser engines lacking background execution drain.
+- **Future Verification Method:** Lifecycle unit tests tracking `activeExecutions` count through `RETIRING` to `REMOVED`.
 - **First Enforcement Phase:** WMCP-4.
 
 ---
@@ -169,7 +169,7 @@ Every implementation phase must satisfy these invariants.
 ---
 
 ### WMCP-INV-019: Deterministic Tool Availability
-- **Statement:** Tool availability for the same canonical application state must be deterministic.
+- **Statement:** The desired logical tool surface for the same canonical application state must be deterministic.
 - **Rationale:** Predictable tool surfaces enable reliable agent planning and rigorous evaluation benchmarks.
 - **Violation Example:** Randomly registering 3 tools out of 6 valid tools across different page loads in the same state.
 - **Future Verification Method:** State machine evaluation benchmarks testing tool surface determinism.

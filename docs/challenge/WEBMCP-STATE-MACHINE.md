@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This document specifies the canonical capability state machine, context revision rules, tool registration lifecycle, and race condition protections governing the WebMCP integration on `feature/webmcp-challenge-2026`.
+This document specifies the canonical capability state machine, derived artifact invalidation rules, context revision lifecycle, tool registration drain, and race condition protections governing the WebMCP integration on `feature/webmcp-challenge-2026`.
 
 ---
 
@@ -40,39 +40,74 @@ Application domain state and WebMCP protocol availability are strictly orthogona
 
 ---
 
-## 4. State Transition Table
+## 4. Derived Artifact Invalidation Rules
 
-| From State | Trigger Event | To State | `contextRevision` Effect | Notes |
+The platform models a strict upstream-to-downstream dependency chain:
+
+$$\text{Graph Context} \rightarrow \text{Node Selection} \rightarrow \text{Scenario} \rightarrow \text{Deterministic Analysis} \rightarrow \text{Human Review} \rightarrow \text{Migration Plan}$$
+
+When an upstream entity changes, all dependent downstream artifacts are automatically invalidated:
+
+1. **New Graph Opened:** Invalidates selected node, scenario, analysis results, human review bindings, migration plan, and graph overlays. Resets state to `GRAPH_READY` (`contextRevision +1`).
+2. **Selected Node Changed:** Invalidates scenario, analysis results, human review bindings, migration plan, and node overlays. Transitions to `NODE_SELECTED` (`contextRevision +1`).
+3. **Scenario Patch Changed / Replaced:** Invalidates derived breaking-change results, exposure sets, Blast Radius, Confidence, critical paths, and migration plan. Transitions to `SIMULATION_READY` (`contextRevision +1`). Human annotations are preserved only if their bound entity IDs remain valid.
+4. **Scenario Recalculated:** Re-runs deterministic analysis. Existing migration plans are invalidated. State transitions to `SIMULATION_READY` (from `SIMULATION_READY`) or `HUMAN_REVIEW` (from `HUMAN_REVIEW` or `PLAN_READY`) (`contextRevision +1`).
+5. **Human Annotation Changed While Plan Exists:** Invalidates the existing migration plan and returns state to `HUMAN_REVIEW` (`contextRevision +1`). Objective technical Blast Radius and Confidence scores do NOT change.
+
+---
+
+## 5. State Transition Table
+
+| From State | Trigger Event | To State | `contextRevision` Effect | Invalidation & Lifecycle Notes |
 |---|---|---|---|---|
-| `BOOTSTRAP` | `APP_INITIALIZED` | `IDLE` | Initialize (`1`) | Initial store setup |
+| `BOOTSTRAP` | `APP_INITIALIZED` | `IDLE` | Initialize (`1`) | Initial store initialization |
 | `IDLE` | `GRAPH_OPENED` | `GRAPH_READY` | Increment (`+1`) | Root package graph loaded |
 | `GRAPH_READY` | `NODE_SELECTED` | `NODE_SELECTED` | Increment (`+1`) | Target node selected |
 | `GRAPH_READY` | `GRAPH_CLOSED` | `IDLE` | Increment (`+1`) | Returns to idle view |
 | `NODE_SELECTED` | `NODE_DESELECTED`| `GRAPH_READY` | Increment (`+1`) | Selection cleared |
-| `NODE_SELECTED` | `NODE_SELECTED` (diff) | `NODE_SELECTED` | Increment (`+1`) | Selection switched to other node |
+| `NODE_SELECTED` | `NODE_SELECTED` (diff) | `NODE_SELECTED` | Increment (`+1`) | Selected node changed; scenario/plan invalidated |
 | `NODE_SELECTED` | `SCENARIO_CREATED` | `SIMULATION_READY` | Increment (`+1`) | Deterministic scenario created |
+| `SIMULATION_READY`| `SCENARIO_PATCH_CHANGED`| `SIMULATION_READY`| Increment (`+1`)| Patch updated; derived analysis invalidated |
+| `SIMULATION_READY`| `SCENARIO_RECALCULATED` | `SIMULATION_READY`| Increment (`+1`)| Deterministic analysis re-executed |
 | `SIMULATION_READY`| `HUMAN_ANNOTATED`| `HUMAN_REVIEW` | Increment (`+1`) | Human priority/exclusion added |
 | `SIMULATION_READY`| `SCENARIO_RESET` | `NODE_SELECTED` | Increment (`+1`) | Scenario cleared |
-| `HUMAN_REVIEW` | `PLAN_GENERATED` | `PLAN_READY` | Increment (`+1`) | Migration plan synthesized |
-| `HUMAN_REVIEW` | `ANNOTATION_CHANGED` | `HUMAN_REVIEW` | Increment (`+1`) | Updated business context |
+| `HUMAN_REVIEW` | `SCENARIO_RECALCULATED` | `HUMAN_REVIEW` | Increment (`+1`) | Analysis re-run; human context retained if valid |
+| `HUMAN_REVIEW` | `ANNOTATION_CHANGED` | `HUMAN_REVIEW` | Increment (`+1`) | Updated business annotations |
+| `HUMAN_REVIEW` | `PLAN_GENERATED` | `PLAN_READY` | Increment (`+1`) | Migration plan generated |
+| `PLAN_READY` | `SCENARIO_RECALCULATED` | `HUMAN_REVIEW` | Increment (`+1`) | Analysis re-run; existing plan invalidated |
+| `PLAN_READY` | `ANNOTATION_CHANGED` | `HUMAN_REVIEW` | Increment (`+1`) | Human context updated; plan invalidated |
 | `PLAN_READY` | `PLAN_RESET` | `HUMAN_REVIEW` | Increment (`+1`) | Plan cleared for re-analysis |
-| Any State | `GRAPH_OPENED` (new) | `GRAPH_READY` | Increment (`+1`) | Full context switch to new graph |
+| Any State | `GRAPH_OPENED` (new) | `GRAPH_READY` | Increment (`+1`) | Full context switch; all downstream state invalidated |
 
 *Note: Cosmetic UI events (panel resize, camera drag, theme toggle) do NOT increment `contextRevision`.*
 
 ---
 
-## 5. Tool Surface by State
+## 6. Logical Tool Surface vs. Physical Registration Set
 
-The active WebMCP tool surface is a pure deterministic function of state:
+The architecture strictly distinguishes:
 
-$$\text{ToolSurface} = f(\text{applicationState}, \text{webMcpAvailability})$$
+- **Desired Logical Tool Surface:** The set of tools semantically available to the agent for the active canonical state:
+  $$\text{DesiredLogicalTools} = f(\text{canonicalApplicationState}, \text{webMcpAvailability})$$
+- **Physical Browser Registration Set:** The actual tool registrations currently existing inside `document.modelContext`.
 
-When `webMcpAvailability = WEBMCP_AVAILABLE`, the adaptive tool set is registered according to the active phase:
+### Transient Phased Retirement
+When transitioning between application states:
+1. Retiring tools are immediately removed from the desired logical tool surface.
+2. The registration state transitions from `ACTIVE` to `RETIRING`.
+3. In `RETIRING`, the tool wrapper immediately rejects newly arriving invocations with `INVALID_STATE` (or `STALE_CONTEXT` if the context revision has advanced).
+4. Already admitted in-flight executions are allowed to drain or are explicitly cancelled via `executionSignal`.
+5. Once `activeExecutions == 0`, the registration is physically unmounted and transitions to `REMOVED`.
+
+---
+
+## 7. Tool Surface by State
+
+When `webMcpAvailability = WEBMCP_AVAILABLE`, the active logical tool surface is:
 
 ```
 ┌─────────────────┬────────────────────────────────────────────────────────┐
-│ Phase           │ Active Tool Surface (Target: 3-6 Tools)                │
+│ Phase           │ Active Logical Tool Surface (Target: 3-6 Tools)        │
 ├─────────────────┼────────────────────────────────────────────────────────┤
 │ BOOTSTRAP       │ (None)                                                 │
 │ IDLE            │ search_packages, open_package_graph                   │
@@ -94,7 +129,7 @@ When `webMcpAvailability = WEBMCP_AVAILABLE`, the adaptive tool set is registere
 
 ---
 
-## 6. Context Revision Rules
+## 8. Context Revision Rules
 
 1. **Monotonically Increasing:** `contextRevision` is a positive integer incremented whenever canonical context changes.
 2. **Captured Context at Invocation:** Every tool execution records `capturedContextRevision = currentContextRevision` at the moment of tool start.
@@ -104,61 +139,51 @@ When `webMcpAvailability = WEBMCP_AVAILABLE`, the adaptive tool set is registere
 
 ---
 
-## 7. Explicit-ID vs. Context-Bound Operations
+## 9. Explicit-ID vs. Context-Bound Operations
 
-- **Context-Bound Operations (Strict Revision Guard):** Operations whose parameters implicitly depend on current session focus (e.g. `simulate_api_changes`, `set_scenario_priority`, `generate_migration_plan`). These MUST enforce `contextRevision` verification before state commit.
+- **Context-Bound Operations (Strict Revision Guard):** Operations whose parameters implicitly depend on current session focus (e.g. `simulate_api_changes`, `set_scenario_priority`, `generate_migration_plan`, `recalculate_scenario`). These MUST enforce `contextRevision` verification before state commit.
 - **Explicit-ID Pure Reads (Permissive Completion):** Operations passing explicit immutable identifiers (e.g. `inspect_package(packageId: "npm:lodash@4.17.21")`). Pure reads may return data even if `contextRevision` has changed, provided they do NOT mutate active UI selection or graph overlays.
 
 ---
 
-## 8. Tool Registration Lifecycle
-
-Individual tool registrations follow a 4-stage lifecycle:
+## 10. Tool Registration Lifecycle & Generations
 
 ```
 ┌──────────────┐
-│  REGISTERING │ (Instantiating AbortController, generating ID)
+│  REGISTERING │ (Instantiating registrationLifetimeSignal, generating ID)
 └──────┬───────┘
        │
        ▼
 ┌──────────────┐
-│    ACTIVE    │ (Exposed to document.modelContext, accepting calls)
+│    ACTIVE    │ (Exposed in logical surface, accepting calls)
 └──────┬───────┘
        │ (State transition triggered)
        ▼
 ┌──────────────┐
-│   RETIRING   │ (Stop accepting calls; draining activeExecutions)
+│   RETIRING   │ (Removed from logical surface; rejects new calls; drains in-flight)
 └──────┬───────┘
        │ (activeExecutions == 0)
        ▼
 ┌──────────────┐
-│   REMOVED    │ (AbortController aborted, unregistration complete)
+│   REMOVED    │ (registrationLifetimeSignal aborted; physical unregister complete)
 └──────────────┘
 ```
 
----
-
-## 9. Registration Generations
-
-- Every tool registration is tracked by a composite key: `toolName + generation` (e.g. `simulate_api_changes#12`).
-- **Generation Independence Invariant:** Delayed asynchronous retirement of Generation $N$ must never unregister or corrupt active Generation $N+1$.
+- **Generation Composite Key:** `toolName + generation` (e.g. `simulate_api_changes#12`).
+- **Generation Independence Invariant:** Teardown of Generation $N$ must never unregister or corrupt active Generation $N+1$.
 
 ---
 
-## 10. In-Flight Execution Policy
+## 11. AbortSignal Role Separation
 
-- Each registered tool maintains an `activeExecutions` atomic counter.
-- When transitioning to `RETIRING`:
-  1. The tool stops accepting new invocations.
-  2. In-flight executions continue processing until completion or cancellation.
-  3. When `activeExecutions` reaches zero, the registration is finalized to `REMOVED`.
+The platform strictly isolates two distinct cancellation mechanisms:
 
----
+1. **`registrationLifetimeSignal`:** Passed to `document.modelContext.registerTool(tool, { signal: registrationLifetimeSignal })`. Controls physical browser registration lifetime. Aborting unregisters the tool.
+2. **`executionSignal`:** Passed into tool execution callback `execute(input, { signal: executionSignal })`. Signals cancellation of an individual invocation and propagates to network/analysis operations.
 
-## 11. Cancellation Compatibility Boundary
+$$\text{registrationLifetimeSignal} \neq \text{executionSignal}$$
 
-- `WebMcpPlatformAdapter` exposes standard `AbortSignal` instances to long-running asynchronous domain operations.
-- The domain layer does not depend on browser-specific unregister cancellation behaviors (e.g. Chrome 153+ semantics). All cancellation is managed via explicit AbortControllers.
+Registration teardown must never be conflated with execution cancellation.
 
 ---
 
@@ -182,7 +207,7 @@ All WebMCP tool errors return structured, typed payloads:
 |---|---|
 | `INVALID_INPUT` | Parameter failed schema or runtime domain validation. |
 | `NOT_FOUND` | Specified package, symbol, or scenario ID does not exist. |
-| `INVALID_STATE` | Tool invoked in an application phase where it is not permitted. |
+| `INVALID_STATE` | Tool invoked in an application phase where it is not logically active, or invoked during `RETIRING`. |
 | `STALE_CONTEXT` | In-flight execution completed after a contextRevision increment. |
 | `UNAVAILABLE` | Required external data service (e.g. OSV API) is unreachable. |
 | `UNSUPPORTED_ECOSYSTEM` | Registry ecosystem not supported for requested operation. |
@@ -200,7 +225,8 @@ All WebMCP tool errors return structured, typed payloads:
 The platform provides a real-time developer and judge inspection panel displaying:
 - WebMCP availability (`AVAILABLE` / `UNAVAILABLE`).
 - Current application phase and `contextRevision`.
-- Active registered tool set and generation identifiers.
+- **Desired Logical Tool Surface:** List of currently valid active tools.
+- **Physical Registration Set:** Detailed records of registered tools with generation ID, state (`ACTIVE` / `RETIRING`), and atomic `activeExecutions` count.
 - Real-time toolchange event log with timestamps.
 - Execution history with duration, status, and stale rejection counters.
 
@@ -209,7 +235,8 @@ The platform provides a real-time developer and judge inspection panel displayin
 ## 15. Future Evaluation & Test Matrix (WMCP-14)
 
 1. **State Machine Determinism Tests:** Verify exact tool sets for all 7 application phases.
-2. **Context Revision Race Tests:** Simulate interleaved asynchronous tool calls with rapid context increments.
-3. **Generation Drain Tests:** Verify rapid state bouncing ($A \rightarrow B \rightarrow A$) does not corrupt Generation $N+1$.
-4. **Error Payloads & Budget Tests:** Assert all tool responses conform to schema and character budgets ($\le 1500$ chars).
-5. **Agent Behavioral Evals:** Test tool selection accuracy, multi-step chaining, and negative evaluation cases (refusing tool call when prerequisites are absent).
+2. **Derived Invalidation Tests:** Assert changing upstream entities properly invalidates downstream analysis/plans.
+3. **Context Revision Race Tests:** Simulate interleaved asynchronous tool calls with rapid context increments.
+4. **Generation Drain Tests:** Verify rapid state bouncing ($A \rightarrow B \rightarrow A$) does not corrupt Generation $N+1$.
+5. **Error Payloads & Budget Tests:** Assert all tool responses conform to schema and character budgets ($\le 1500$ chars).
+6. **Agent Behavioral Evals:** Test tool selection accuracy, multi-step chaining, and negative evaluation cases (refusing tool call when prerequisites are absent).

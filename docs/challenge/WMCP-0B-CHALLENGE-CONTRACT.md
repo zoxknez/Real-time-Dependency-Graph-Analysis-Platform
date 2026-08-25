@@ -24,7 +24,7 @@ The following facts reflect external challenge constraints and formal requiremen
 
 - **Challenge Timeline:** Challenge opens August 25, 2026; submission deadline is September 3, 2026, at 5:00 PM PT. [FORMAL CHALLENGE REQUIREMENT]
 - **Existing Codebase Eligibility:** Pre-existing repositories are permitted; evaluation focuses on the value and quality of WebMCP integration added during the challenge. [FORMAL CHALLENGE REQUIREMENT]
-- **Required Submission Artifacts:** Project description, working live application URL, public code repository, demonstration video, and accompanying evaluation materials. [FORMAL CHALLENGE REQUIREMENT]
+- **Required Submission Artifacts:** Project description, working live application URL, public code repository, demonstration video, and any additional materials required by official challenge rules. (Exact repository licensing and Devpost submission details will be revalidated in WMCP-15). [FORMAL CHALLENGE REQUIREMENT]
 - **Evaluation Criteria:** Usefulness, originality, execution quality, thoughtful use of WebMCP, and quality of human-agent collaboration. [FORMAL CHALLENGE REQUIREMENT]
 
 ---
@@ -36,6 +36,7 @@ The following operational targets are our team decisions and must not be confuse
 - **Internal Code & Evidence Freeze:** September 2, 2026 (Internal target allowing final rehearsal, validation, and video capture before the official deadline). [INTERNAL DELIVERY TARGET]
 - **Target Tool Surface Concurrency:** Approximately 3-6 semantically relevant tools active simultaneously per application phase. [INTERNAL DELIVERY TARGET]
 - **Target Output Budget:** Tool responses target an approximate maximum of 1500 characters, returning concise structured summaries while directing detailed inspection to UI surfaces. [INTERNAL DELIVERY TARGET]
+- **Internal Evaluation Suite:** Deterministic tool validation and probabilistic agent eval suite (WMCP-14) are internal quality deliverables to guarantee submission excellence. [INTERNAL DELIVERY TARGET]
 
 ---
 
@@ -52,7 +53,7 @@ The following operational targets are our team decisions and must not be confuse
 The central differentiator of this architecture is shared state collaboration rather than disconnected chatbot question-answering:
 
 1. **Shared Live State:** Human engineer and AI agent operate on the identical underlying canonical state store (`WarRoomState`).
-2. **Synchronized Workspace:** When a human selects a package or adjusts a priority, the agent's available tool surface adapts immediately to the new context.
+2. **Synchronized Workspace:** When a human selects a package or adjusts a priority, the agent's available logical tool surface adapts immediately to the new context.
 3. **Transparent Actions:** Agent tool invocations and state mutations are rendered in real time on the interactive graph, data panels, and the audit timeline.
 4. **Complementary Roles:**
    - **Human:** Supplies business criticality, ownership boundaries, rollout constraints, risk tolerance, and final approval.
@@ -78,7 +79,8 @@ To maintain scientific integrity and auditability, system responsibilities are s
 │              DETERMINISTIC DOMAIN ENGINE               │
 │  - AST parsing & public API symbol extraction          │
 │  - Breaking change classification (BreakingDetector)   │
-│  - SemVer & PEP 440 range satisfiability               │
+│  - Ecosystem-specific version-range satisfiability     │
+│    (npm SemVer, Cargo requirements, PyPI/PEP 440)      │
 │  - Dependency graph pathfinding & topological query    │
 │  - Blast Radius & Confidence calculation               │
 │  - Tenant authorization & access control enforcement   │
@@ -119,22 +121,27 @@ To maintain scientific integrity and auditability, system responsibilities are s
 
 ## 9. WebMCP Progressive Enhancement
 
-- **Progressive Enhancement Requirement:** The primary browser API is `document.modelContext`. If `document.modelContext` is undefined (e.g. standard browsers without WebMCP experimental flags enabled), the application must load normally, initialize all visual views, and allow full human scenario authoring without errors. [CURRENT WEBMCP PLATFORM FACT]
-- **Graceful Degradation:** The UI displays clear indicators showing WebMCP availability status (`AVAILABLE` vs `UNAVAILABLE`) without disabling core graph exploration tools. [OUR ARCHITECTURAL DECISION]
+- **Platform Architecture Fact:** Chrome documentation and the WebMCP Community Group specifications define WebMCP as suitable for progressive enhancement over standard web applications. [CURRENT WEBMCP PLATFORM FACT]
+- **Our Progressive Enhancement Guarantee:** If `document.modelContext` is undefined (e.g. standard browsers without WebMCP experimental flags enabled), the complete human War Room workflow (graph inspection, counterfactual scenario simulation, blast radius calculation, human annotation, and migration planning) remains fully functional. WebMCP availability is an orthogonal enhancement, not an application dependency. [OUR ARCHITECTURAL DECISION]
 
 ---
 
-## 10. WebMCP Platform Compatibility Boundary
+## 10. WebMCP Platform Compatibility & Signal Separation Boundary
 
-- **Target Specification:** W3C Web Machine Learning Community Group Draft Report (19 August 2026). [CURRENT WEBMCP PLATFORM FACT]
+- **Target Specification:** Web Machine Learning Community Group Draft Community Group Report (19 August 2026). WebMCP remains experimental and actively evolving. [CURRENT WEBMCP PLATFORM FACT]
 - **Primary Namespace:** `document.modelContext` (The legacy `navigator.modelContext` namespace is deprecated and will not be used). [CURRENT WEBMCP PLATFORM FACT]
-- **Browser Compatibility Isolation:** Experimental browser API differences (such as registration AbortSignal semantics and Chrome 153+ unregister lifecycle behaviors) must be fully encapsulated within `WebMcpPlatformAdapter`. Domain services and UI components must never access WebMCP global variables directly. [OUR ARCHITECTURAL DECISION]
+- **AbortSignal Role Separation:** The architecture strictly separates two distinct lifecycle signals:
+  1. `registrationLifetimeSignal`: Passed to `document.modelContext.registerTool(tool, { signal: registrationLifetimeSignal })` to manage the physical registration lifetime in the browser. Aborting this signal unregisters the tool.
+  2. `executionSignal`: Passed into the tool invocation callback `execute(input, { signal: executionSignal })` to signal cancellation of an individual in-flight execution.
+  - **Invariant:** `registrationLifetimeSignal != executionSignal`. Registration teardown must never be conflated with execution abort. [OUR ARCHITECTURAL DECISION]
+- **Browser Compatibility Isolation:** Experimental browser differences (such as unregister lifecycle semantics across Chrome releases) must be fully encapsulated within `WebMcpPlatformAdapter`. Domain services and UI components must never access WebMCP global variables directly. [OUR ARCHITECTURAL DECISION]
 
 ---
 
 ## 11. Same-Origin Security Policy
 
 - **Challenge Scope Security:** The WebMCP tool surface will operate strictly within a same-origin execution boundary (`Permissions-Policy: tools=(self)` and `Origin-Agent-Cluster: ?1`). Cross-origin `exposedTo` configurations and third-party iframe tool sharing are explicitly out of scope for the challenge submission. [OUR ARCHITECTURAL DECISION]
+- **Origin Isolation Context:** WebMCP requires an origin-isolated document context. The `tools` Permissions Policy defaults to `self`; our planned explicit headers represent our deliberate challenge configuration. [CURRENT WEBMCP PLATFORM FACT]
 - **Input Sanitization:** WebMCP tools must accept strictly typed canonical parameters (e.g. `packageId`, `scenarioId`, `patchOperation`). Tools must never accept raw SQL, Cypher, GraphQL strings, filesystem paths, arbitrary URLs, or executable scripts. [OUR ARCHITECTURAL DECISION]
 
 ---
@@ -225,3 +232,4 @@ This architecture builds on the following verified technical specifications and 
 4. `contextRevision` guards prevent stale asynchronous responses from mutating active UI state.
 5. Technical Blast Radius and evidence Confidence are separate, unmerged values.
 6. Human priority enriches migration planning but never alters mathematical Blast Radius.
+7. `registrationLifetimeSignal` and `executionSignal` are distinct lifecycle concepts and must never be conflated.
