@@ -6,6 +6,7 @@ Status definitions: `IMPLEMENTED`, `PARTIAL`, `STUB_OR_DEMO`, `UNVERIFIED`, `NOT
 
 Verification semantics:
 - `UNIT-TEST VERIFIED`: Isolated deterministic logic was directly exercised by executed unit tests.
+- `INTEGRATION-TEST VERIFIED`: Subsystem / service boundary integration was directly exercised by integration test suites without external live infrastructure.
 - `BUILD VERIFIED / NOT RUNTIME VERIFIED`: Production build/compilation succeeded, but interactive browser/live behavior was not exercised.
 - `STATICALLY VERIFIED`: Complete implementation exists and was verified from source inspection.
 - `STATICALLY VERIFIED / NOT RUNTIME VERIFIED`: Source implementation exists, but external service/live runtime integration was not exercised.
@@ -52,6 +53,8 @@ Verification semantics:
 | Frontend | Dependency Path Explorer | IMPLEMENTED | `apps/frontend/src/app/path/page.tsx` | BUILD VERIFIED / NOT RUNTIME VERIFIED | Next.js production build succeeded; path tracing visualization. |
 | Frontend | Supply Chain & Security Dashboards | IMPLEMENTED | `apps/frontend/src/app/security/page.tsx`, `apps/frontend/src/app/supply-chain/page.tsx` | BUILD VERIFIED / NOT RUNTIME VERIFIED | Next.js production build succeeded; vulnerability lists, risk tiers, and package cards. |
 | Testing | Rust Unit Tests | IMPLEMENTED | `tests/`, `packages/*/src/`, `apps/*/src/` | UNIT-TEST VERIFIED | 114 unit and binary tests passed across 8 workspace crates. |
+| Testing | Rust API Integration Tests | IMPLEMENTED | `tests/tests/api.rs` | INTEGRATION-TEST VERIFIED | 10 integration tests passed for GraphQL introspection, health, security headers, rate limits, impact radius. |
+| Testing | Rust E2E Docker Tests | IMPLEMENTED | `tests/tests/e2e.rs` | NOT RUNTIME VERIFIED | 6 integration tests configured with testcontainers; skipped when Docker daemon is not connected. |
 | Testing | Frontend Unit / E2E Tests | PARTIAL | `apps/frontend/e2e/`, `apps/frontend/playwright.config.ts` | NOT RUNTIME VERIFIED | Playwright E2E configuration exists; execution blocked without running backend services. |
 | Testing | Accessibility Testing | PARTIAL | `apps/frontend/package.json` (`@axe-core/playwright`) | NOT RUNTIME VERIFIED | Configured via Playwright Axe helper; blocked along with Playwright suite. |
 | Infrastructure | Multi-Tenancy & Authorization | IMPLEMENTED | `packages/models/src/tenant.rs`, `apps/api/src/gql/mod.rs` | UNIT-TEST VERIFIED | Unit tests verify permissions and rate tiers; tenant filtering (`tenant_id`) enforced in API. |
