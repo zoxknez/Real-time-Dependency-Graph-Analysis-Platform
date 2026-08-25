@@ -60,11 +60,11 @@ The pre-challenge platform is a distributed supply-chain dependency analysis sys
         │ (Disk Snapshot)       │                       │
         ▼                       ▼                       ▼
 ┌───────────────┐       ┌───────────────┐       ┌───────────────┐
-│  Local Temp   │       │   Memgraph    │       │    Qdrant     │
-│   Storage     │       │(Graph Storage)│       │ (Vector DB)   │
-└───────────────┘       └───────┬───────┘       └───────┬───────┘
-                                │                       │
-                                └───────────┬───────────┘
+│Filesystem-    │       │   Memgraph    │       │    Qdrant     │
+│Local Storage  │       │(Graph Storage)│       │ (Vector DB)   │
+│(default: temp;│       └───────┬───────┘       └───────┬───────┘
+│env-config)    │               │                       │
+└───────────────┘               └───────────┬───────────┘
                                             ▼
                                 ┌───────────────────────┐
                                 │       apps/api        │
@@ -95,12 +95,13 @@ The pre-challenge platform is a distributed supply-chain dependency analysis sys
 3. **`packages/metrics`**: Prometheus metrics collection wrappers.
 4. **`packages/tracing`**: OpenTelemetry / `tracing-subscriber` initialization.
 
-### Data Stores
+### Data Stores & Storage
 
 - **Memgraph**: In-memory property graph storing package and version dependency topologies.
 - **PostgreSQL**: Relational database for audit logs and tenant metadata.
 - **Qdrant**: Vector database storing embeddings for semantic search.
 - **RisingWave**: Streaming SQL database for materializing real-time analytics.
+- **Filesystem-Local Snapshot Storage**: Public API snapshots are saved to a filesystem-local directory. The base path can be configured through `ANALYSIS_SNAPSHOT_DIR` and otherwise defaults to the OS temporary directory (`std::env::temp_dir().join("randomapp-snapshots")`). The baseline does not provide a shared durable snapshot repository, so cross-worker persistence and persistence across container replacement are deployment-dependent and not guaranteed by the application itself.
 
 ### External Integrations
 

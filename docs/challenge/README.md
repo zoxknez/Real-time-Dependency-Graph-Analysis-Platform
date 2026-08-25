@@ -30,7 +30,7 @@ Under WMCP-0A:
 
 Every capability in the baseline evaluation is categorized into exactly one of the following statuses:
 
-- **IMPLEMENTED**: Complete end-to-end source code implementation exists, connects across layers, and functions as intended without demo stubs or hard-coded shortcuts.
+- **IMPLEMENTED**: Concrete source implementation exists for the capability across the required baseline code paths, with no known stub replacing its core behavior. Runtime verification is tracked separately and is not implied by this status.
 - **PARTIAL**: Substantial implementation logic exists, but key pipeline stages, integrations, or calculations are missing, disconnected, or incomplete.
 - **STUB_OR_DEMO**: The capability returns hard-coded values, synthetic mock responses, static demo structures, or contains placeholder resolvers without real backend logic.
 - **UNVERIFIED**: Implementation source code is present but runtime execution or external service availability could not be verified in this phase.

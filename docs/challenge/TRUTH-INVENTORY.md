@@ -12,7 +12,7 @@ This document provides a forensic inventory of the platform codebase as of immut
 - **Semantic Breaking Change Engine:** `apps/analysis/src/breaking_detector.rs` performs AST symbol diffing to detect removed symbols, signature modifications, and visibility drops.
 - **Live OSV Integration:** `apps/api/src/services/osv.rs` queries the public OSV API (`https://api.osv.dev/v1/query`) and deserializes live CVE/GHSA vulnerability records.
 - **Vector Search Storage:** `packages/storage/src/qdrant.rs` provides concrete index creation and vector similarity querying against Qdrant.
-- **Modern Next.js Frontend:** `apps/frontend/` compiles cleanly with Next.js 16.2.7 and React 19, rendering interactive 2D (D3/Canvas) and 3D (Three.js/WebGL) dependency graph topologies.
+- **Next.js Frontend Build:** `apps/frontend/` compiles cleanly with Next.js 16.2.7 and React 19, containing code for 2D (D3/Canvas) and 3D (Three.js/WebGL) dependency graph views.
 
 ---
 
@@ -20,7 +20,7 @@ This document provides a forensic inventory of the platform codebase as of immut
 
 - **Impact Radius Calculation:** `apps/api/src/graph/queries.rs` traverses reverse dependency chains (`DEPENDS_ON_PKG`) topologically, but does not evaluate version constraint compatibility or AST breaking change signatures.
 - **Graph WebSocket Subscriptions:** `apps/api/src/gql/subscription.rs` broadcasts version events, but the frontend graph page (`apps/frontend/src/app/graph/page.tsx:128`) only logs updates to console without mutating or refetching graph data.
-- **API Snapshot Persistence:** `apps/analysis/src/main.rs:740` saves public API snapshots to a local directory on disk rather than a durable, distributed object store.
+- **API Snapshot Persistence:** `apps/analysis/src/main.rs:740` persists snapshots to a filesystem-local directory (configurable via `ANALYSIS_SNAPSHOT_DIR`, defaulting to the OS temporary directory) rather than a shared, durable object store.
 - **Vulnerability Risk Scoring:** `apps/api/src/gql/query.rs:1132` calculates risk scores using simple severity heuristics because EPSS, KEV, and reachability metrics are unpopulated.
 
 ---
@@ -29,7 +29,7 @@ This document provides a forensic inventory of the platform codebase as of immut
 
 - **GraphQL OpenSSF Scorecard Resolver:** `apps/api/src/gql/query.rs:1444-1534` returns hard-coded mock check results despite a real OpenSSF scorecard module existing in `apps/api/src/services/scorecard.rs`.
 - **Vulnerability Threat Intelligence Enrichment:** `apps/api/src/gql/query.rs:1173-1186` sets `cvss_score = 0.0`, `epss_score = None`, `in_kev = false`, `has_public_exploit = false`, and `reachability = ReachabilityStatus::NoRule`.
-- **Gemini Live Voice Token Endpoint:** `apps/api/src/main.rs:172` (`/live/token`) returns a static token from environment configuration rather than negotiating ephemeral credentials.
+- **Gemini Live Voice Token Endpoint:** `apps/api/src/handlers.rs` (`live_token_handler`) is a demo helper returning a pre-generated token from `GEMINI_LIVE_EPHEMERAL_TOKEN` rather than dynamically negotiating ephemeral credentials.
 
 ---
 
@@ -72,7 +72,7 @@ This document provides a forensic inventory of the platform codebase as of immut
 
 ## 9. Technical Debt Relevant to the Challenge Path
 
-- AST snapshots stored on local ephemeral disk cannot be shared across scalable analysis workers.
+- AST snapshots stored on filesystem-local storage lack a shared durable repository across distributed workers.
 - Package-level graph projections (`DEPENDS_ON_PKG`) discard SemVer range requirements, impeding precise counterfactual simulation.
 - Legacy Gemini hackathon code is coupled to custom JSON prompts rather than standard WebMCP protocol tools.
 
@@ -82,7 +82,7 @@ This document provides a forensic inventory of the platform codebase as of immut
 
 1. Replace hard-coded Scorecard GraphQL resolver with live OpenSSF evaluation (WMCP-9).
 2. Wire real threat enrichment (EPSS, KEV, Exploit signals) into vulnerability models (WMCP-9).
-3. Upgrade SBOM generator to modern SPDX 3.0 / CycloneDX 1.6 specifications and clean branding (WMCP-13).
+3. Revalidate and upgrade SBOM output against current stable specifications (SPDX 3.0.1 and CycloneDX 1.7) and clean branding during WMCP-13.
 4. Implement durable snapshot persistence for AST analysis (WMCP-6).
 5. Retain version requirements on graph projections to support counterfactual scenario simulation (WMCP-7, WMCP-8).
 6. Implement true WebMCP capability registry and tool surfaces (WMCP-3, WMCP-4).
@@ -115,16 +115,16 @@ This document provides a forensic inventory of the platform codebase as of immut
 - **Area:** Compliance & SBOM (`packages/models`, `apps/api`)
 - **Evidence:** `packages/models/src/sbom.rs:648-793`, `apps/api/src/gql/query.rs:1366-1410`
 - **Observed behavior:** SBOM generators target SPDX 2.3 and CycloneDX 1.5, and populate creator metadata with `randomapp-sbom-generator` and `https://randomapp.dev/sbom/`.
-- **Why it matters:** Legacy naming creates branding inconsistency, and modern compliance targets expect updated SBOM specifications.
+- **Why it matters:** Legacy naming creates branding inconsistency. Modern compliance workflows require validated upgrades to current specifications (SPDX 3.0.1 / CycloneDX 1.7).
 - **Hypothesis Classification:** CONFIRMED
 - **Recommended future phase:** WMCP-13 - Product finalization
 
-### TRUTH-004 (HYPOTHESIS D): AST Analysis Snapshots Stored in Ephemeral Directory
+### TRUTH-004 (HYPOTHESIS D): AST Analysis Snapshots Stored on Filesystem-Local Directory
 - **Severity:** HIGH
 - **Area:** AST Analysis Service (`apps/analysis`)
 - **Evidence:** `apps/analysis/src/main.rs:740-754`
-- **Observed behavior:** Snapshots are written to `std::env::temp_dir().join("randomapp-snapshots")` without durable replication or shared storage.
-- **Why it matters:** Restarting the analysis container or scaling horizontally destroys cached historical AST snapshots, breaking regression detection.
+- **Observed behavior:** Snapshots are persisted to a filesystem-local directory. The base path can be configured through `ANALYSIS_SNAPSHOT_DIR` and otherwise defaults to the OS temporary directory (`std::env::temp_dir().join("randomapp-snapshots")`). The baseline does not provide a shared durable snapshot repository, so cross-worker persistence and persistence across container replacement are deployment-dependent and not guaranteed by the application itself.
+- **Why it matters:** Without shared durable persistence, scaling horizontal analysis workers or redeploying ephemeral containers can lose cached historical AST snapshots, breaking regression detection.
 - **Hypothesis Classification:** CONFIRMED
 - **Recommended future phase:** WMCP-6 - Snapshot persistence
 
@@ -164,18 +164,10 @@ This document provides a forensic inventory of the platform codebase as of immut
 - **Hypothesis Classification:** CONFIRMED
 - **Recommended future phase:** WMCP-14 - Evals and hardening
 
-### TRUTH-009: Legacy Gemini Hackathon Implementation Precedes WebMCP
+### TRUTH-009: Pre-Existing Gemini Agent Architecture Differs from Challenge WebMCP Design
 - **Severity:** HIGH
 - **Area:** AI Architecture (`apps/api`, `apps/frontend`)
 - **Evidence:** `apps/api/src/services/gemini_agent.rs`, `apps/frontend/src/app/agent-live/`
-- **Observed behavior:** AI agent logic is tightly bound to custom Gemini 3 function calling formats rather than a standardized WebMCP interface.
-- **Why it matters:** WebMCP challenge requirements require a decoupled, adaptive tool surface and standardized protocol.
+- **Observed behavior:** Pre-existing AI agent logic is tightly coupled to Gemini 3 function calling definitions and custom JSON prompts rather than an open, protocol-based capability architecture.
+- **Why it matters:** The pre-existing Gemini function-calling implementation is separate from the WebMCP architecture selected for the challenge. The challenge implementation plans to introduce a standards-based WebMCP capability layer, shared human/agent actions, and an adaptive context-aware tool surface.
 - **Recommended future phase:** WMCP-3 - WebMCP foundation & WMCP-4 - Adaptive capability surface
-
-### TRUTH-010: Windows Environment Missing Clippy Component
-- **Severity:** LOW
-- **Area:** Developer Toolchain (`Root`)
-- **Evidence:** `cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all` exit code 1
-- **Observed behavior:** `cargo-clippy.exe` is absent from the host Rust toolchain.
-- **Why it matters:** Baseline verification must document the exact toolchain state without unapproved automatic environment modifications.
-- **Recommended future phase:** WMCP-1 - Platform modernization

@@ -12,7 +12,7 @@ Per the WMCP-0A specification, each required command was attempted at most once.
 |---|---|---|---|---|---|
 | Rust Formatting | `cargo fmt --all -- --check` | Root | 0 | PASS | Clean formatting |
 | Rust Workspace Check | `cargo check --workspace --all-targets` | Root | 0 | PASS | Finished dev target in 0.79s |
-| Rust Clippy | `cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all` | Root | 1 | FAIL / BLOCKED | Missing `cargo-clippy` toolchain component |
+| Rust Clippy | `cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all` | Root | 1 | BLOCKED | Missing `cargo-clippy` toolchain component |
 | Rust Unit & Bin Tests | `cargo test --workspace --lib --bins` | Root | 0 | PASS | 114 tests passed across 8 crates |
 | Frontend Install | `npm ci` | `apps/frontend` | 0 | PASS | 590 packages installed in 26s |
 | Frontend Type Check | `npx tsc --noEmit` | `apps/frontend` | 0 | PASS | Zero TypeScript errors |
@@ -46,10 +46,10 @@ Per the WMCP-0A specification, each required command was attempted at most once.
 - **Command:** `cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all`
 - **Working directory:** `.` (Repository root)
 - **Exit code:** `1`
-- **Status:** `FAIL / BLOCKED`
-- **Result summary:** Toolchain component `cargo-clippy.exe` is not installed on the active toolchain (`stable-x86_64-pc-windows-msvc`).
+- **Status:** `BLOCKED`
+- **Result summary:** Toolchain component `cargo-clippy.exe` is not installed on the active host toolchain (`stable-x86_64-pc-windows-msvc`).
 - **Failure reason:** Missing local toolchain component. Per strict single-attempt execution policy, no environment modification was performed.
-- **Environment limitations:** Rustup clippy component absent.
+- **Environment limitations:** Rustup clippy component absent on execution host (observed process exit code: 1).
 
 ### 4. `cargo test --workspace --lib --bins`
 - **Command:** `cargo test --workspace --lib --bins`
@@ -121,8 +121,6 @@ Per the WMCP-0A specification, each required command was attempted at most once.
 
 ## Supplemental Out-of-Scope Execution
 
-A release-mode test run was executed during an earlier WMCP-0A attempt even though it was not required by the phase specification.
+A previous WMCP-0A attempt reported that a release-mode test execution occurred. The exact command output and independently verifiable exit result were not retained in the final evidence set. It is therefore recorded as UNVERIFIED supplemental execution history and is not used by any WMCP-0A acceptance gate.
 
-The result is retained as supplemental baseline evidence only.
-
-It is not an WMCP-0A acceptance requirement.
+- **Status:** `UNVERIFIED`
