@@ -48,7 +48,7 @@ async fn main() -> Result<()> {
     );
 
     // Initialize metrics
-    let _recorder = metrics_exporter_prometheus::PrometheusBuilder::new()
+    metrics_exporter_prometheus::PrometheusBuilder::new()
         .install()
         .context("Failed to install Prometheus metrics recorder")?;
 

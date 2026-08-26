@@ -297,7 +297,7 @@ pub async fn execute_security_agent_tool(
             }
 
             let score_penalty = (critical * 20 + high * 10 + medium * 5 + low).min(100);
-            let compliance_score = (100 - score_penalty) as i32;
+            let compliance_score = 100 - score_penalty;
             let passed = violations.is_empty();
 
             Ok(json!({

@@ -4,7 +4,7 @@
 # Based on Rust best practices: https://docs.docker.com/language/rust/build-images/
 
 # Stage 1: Builder
-FROM rust:1.92-slim-bookworm AS builder
+FROM rust:1.98.0-slim-bookworm AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HTTP_TIMEOUT=600 \

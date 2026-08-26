@@ -2711,7 +2711,7 @@ impl QueryRoot {
 
             let event = AuditEvent {
                 id: id.clone(),
-                sequence: offset as i64 + idx as i64 + 1,
+                sequence: offset + idx as i64 + 1,
                 timestamp: created_at.to_rfc3339(),
                 event_type: action.clone(),
                 category: map_audit_category(&action),
@@ -2846,7 +2846,7 @@ impl QueryRoot {
             });
         };
 
-        let (eco_raw, name_raw, version_raw) = osv::parse_package_id(&package_id.to_string());
+        let (eco_raw, name_raw, version_raw) = osv::parse_package_id(package_id.as_ref());
         let ecosystem = eco_raw.unwrap_or_else(|| "".to_string());
         let name = name_raw.unwrap_or_else(|| package_id.to_string());
         let current_version = version_raw.unwrap_or_default();
@@ -3218,7 +3218,7 @@ fn map_audit_severity(status_code: Option<i16>) -> AuditSeverity {
 
 fn map_audit_outcome(status_code: Option<i16>) -> AuditOutcome {
     match status_code {
-        Some(code) if code >= 200 && code < 300 => AuditOutcome::Success,
+        Some(code) if (200..300).contains(&code) => AuditOutcome::Success,
         Some(_) => AuditOutcome::Failure,
         None => AuditOutcome::Unknown,
     }

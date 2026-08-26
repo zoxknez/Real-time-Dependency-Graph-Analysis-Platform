@@ -332,7 +332,7 @@ mod tests {
         let mut throttled = throttled_stream(Box::pin(stream), Duration::from_millis(50));
 
         let mut count = 0;
-        while let Some(_) = throttled.next().await {
+        while throttled.next().await.is_some() {
             count += 1;
         }
 

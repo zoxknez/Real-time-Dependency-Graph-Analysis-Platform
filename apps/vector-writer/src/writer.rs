@@ -421,7 +421,7 @@ mod tests {
         let int_val = PayloadValue::Integer(42);
         let _: Value = int_val.into();
 
-        let float_val = PayloadValue::Float(3.14);
+        let float_val = PayloadValue::Float(3.5);
         let _: Value = float_val.into();
 
         let bool_val = PayloadValue::Bool(true);

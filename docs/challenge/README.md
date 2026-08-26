@@ -18,7 +18,8 @@ All functionality classified as pre-existing in WMCP-0A existed at or before: `8
 - **WMCP-0A (Baseline Freeze & Truth Inventory):** CLOSED at `bea51b53289bfab8596e8fd660ef22f38a7eb403`
 - **WMCP-0B (Challenge Contract, Architecture Invariants & Evidence Boundary):** CLOSED at `da6fb242c11a2dd70c54ed2072f9558a36875906`
 - **WMCP-1A (Platform Version & Security Truth Freeze):** CLOSED at `c9c5293fb39e9c4dcc5bad44b713e8c8e3a0d483`
-- **WMCP-1B (Security-Critical Frontend Baseline):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
+- **WMCP-1B (Security-Critical Frontend Baseline):** CLOSED at `2b2ad3692b3b5e9295fc220d927883ab6b8d7c87`
+- **WMCP-1C (Runtime & Rust Toolchain Normalization):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
 
 ---
 
@@ -28,7 +29,8 @@ The WebMCP Challenge execution follows an evidence-based phased architecture.
 - **WMCP-0A** established the verifiable boundary between pre-existing platform capabilities and future challenge deliverables.
 - **WMCP-0B** locked the architectural invariants, shared action boundaries, capability state machines, and empirical evidence rules.
 - **WMCP-1A** froze platform dependency truth, security advisories, and staged modernization upgrade targets.
-- **WMCP-1B** executes the security-critical frontend dependency remediation (`next: 16.3.3`, `@next/eslint-plugin-next: 16.3.3`, `postcss: 8.5.26`, `sharp: 0.35.3`).
+- **WMCP-1B** executed security-critical frontend dependency remediation (`next: 16.3.3`, `postcss: 8.5.26`, `sharp: 0.35.3`).
+- **WMCP-1C** unifies and normalizes the project runtime and toolchain environments (`node: 24.19.0` LTS, `rust: 1.98.0` stable, Clippy configuration cleanup, Docker build unification).
 
 ---
 
@@ -68,3 +70,6 @@ Every capability in the baseline evaluation is categorized into exactly one of t
 
 ### Frontend Security Remediation (WMCP-1B)
 15. [`WMCP-1B-SECURITY-UPGRADE-RESULTS.md`](WMCP-1B-SECURITY-UPGRADE-RESULTS.md): Execution verification, dependency tree inspection, build/lint gates, and security remediation results.
+
+### Runtime & Toolchain Normalization (WMCP-1C)
+16. [`WMCP-1C-RUNTIME-TOOLCHAIN-RESULTS.md`](WMCP-1C-RUNTIME-TOOLCHAIN-RESULTS.md): Node 24 LTS and Rust 1.98.0 toolchain pins, Docker builder normalization, and regression gates.

@@ -86,10 +86,8 @@ async fn metrics_handler() -> String {
 
     // For now, return basic metrics
     // In production, we'd use a shared recorder
-    format!(
-        r#"# HELP graph_writer_up Indicates if the graph-writer service is up
+    r#"# HELP graph_writer_up Indicates if the graph-writer service is up
 # TYPE graph_writer_up gauge
 graph_writer_up 1
-"#
-    )
+"#.to_string()
 }

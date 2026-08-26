@@ -553,37 +553,6 @@ impl GraphQueries {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_reverse_dependents_query_builds() {
-        let _query =
-            GraphQueries::reverse_dependents_transitive("test_tenant", "npm:express", 3, 100, 0);
-        // Just verify it builds without panic
-        assert!(true);
-    }
-
-    #[test]
-    fn test_dependency_path_query_builds() {
-        let _query = GraphQueries::dependency_path("test_tenant", "npm:express", "npm:lodash", 6);
-        assert!(true);
-    }
-
-    #[test]
-    fn test_impact_radius_query_builds() {
-        let _query = GraphQueries::impact_radius("test_tenant", "npm:lodash", 3, 5000);
-        assert!(true);
-    }
-
-    #[test]
-    fn test_transitive_paths_query_builds() {
-        let _query = GraphQueries::transitive_paths("test_tenant", "npm:express", "npm:lodash", 3);
-        assert!(true);
-    }
-}
-
 // ═══════════════════════════════════════════════════════════════
 // TRANSITIVE PATH QUERIES
 // Based on GitHub Dependency Graph "Show paths" feature
@@ -702,5 +671,31 @@ impl GraphQueries {
             .param("package_id", package_id.to_string())
             .param("limit", Self::result_limit(limit))
             .param("offset", Self::result_offset(offset))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_reverse_dependents_query_builds() {
+        let _query =
+            GraphQueries::reverse_dependents_transitive("test_tenant", "npm:express", 3, 100, 0);
+    }
+
+    #[test]
+    fn test_dependency_path_query_builds() {
+        let _query = GraphQueries::dependency_path("test_tenant", "npm:express", "npm:lodash", 6);
+    }
+
+    #[test]
+    fn test_impact_radius_query_builds() {
+        let _query = GraphQueries::impact_radius("test_tenant", "npm:lodash", 3, 5000);
+    }
+
+    #[test]
+    fn test_transitive_paths_query_builds() {
+        let _query = GraphQueries::transitive_paths("test_tenant", "npm:express", "npm:lodash", 3);
     }
 }

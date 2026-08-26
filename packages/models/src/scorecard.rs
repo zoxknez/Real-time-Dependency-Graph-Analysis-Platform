@@ -414,61 +414,26 @@ impl ScorecardAnalyzer {
     /// Analyze a repository and return scorecard results
     /// This is a framework - actual implementation would call git/API
     pub fn analyze_repo(&self, repo: &RepoMetadata) -> ScorecardResult {
-        let mut checks = Vec::new();
-
-        // Binary Artifacts check
-        checks.push(self.check_binary_artifacts(repo));
-
-        // Branch Protection check
-        checks.push(self.check_branch_protection(repo));
-
-        // CI Tests check
-        checks.push(self.check_ci_tests(repo));
-
-        // CII Best Practices check
-        checks.push(self.check_cii_best_practices(repo));
-
-        // Code Review check
-        checks.push(self.check_code_review(repo));
-
-        // Contributors check
-        checks.push(self.check_contributors(repo));
-
-        // Dangerous Workflow check
-        checks.push(self.check_dangerous_workflow(repo));
-
-        // Dependency Update Tool check
-        checks.push(self.check_dependency_update_tool(repo));
-
-        // Fuzzing check
-        checks.push(self.check_fuzzing(repo));
-
-        // License check
-        checks.push(self.check_license(repo));
-
-        // Maintained check
-        checks.push(self.check_maintained(repo));
-
-        // Packaging check
-        checks.push(self.check_packaging(repo));
-
-        // Pinned Dependencies check
-        checks.push(self.check_pinned_dependencies(repo));
-
-        // SAST check
-        checks.push(self.check_sast(repo));
-
-        // Security Policy check
-        checks.push(self.check_security_policy(repo));
-
-        // Signed Releases check
-        checks.push(self.check_signed_releases(repo));
-
-        // Token Permissions check
-        checks.push(self.check_token_permissions(repo));
-
-        // Vulnerabilities check
-        checks.push(self.check_vulnerabilities(repo));
+        let checks = vec![
+            self.check_binary_artifacts(repo),
+            self.check_branch_protection(repo),
+            self.check_ci_tests(repo),
+            self.check_cii_best_practices(repo),
+            self.check_code_review(repo),
+            self.check_contributors(repo),
+            self.check_dangerous_workflow(repo),
+            self.check_dependency_update_tool(repo),
+            self.check_fuzzing(repo),
+            self.check_license(repo),
+            self.check_maintained(repo),
+            self.check_packaging(repo),
+            self.check_pinned_dependencies(repo),
+            self.check_sast(repo),
+            self.check_security_policy(repo),
+            self.check_signed_releases(repo),
+            self.check_token_permissions(repo),
+            self.check_vulnerabilities(repo),
+        ];
 
         let mut result = ScorecardResult {
             target: repo.url.clone(),

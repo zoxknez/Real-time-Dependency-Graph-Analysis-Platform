@@ -953,16 +953,15 @@ impl GeminiSecurityAgent {
         // Simple extraction - look for recommendation patterns
         for line in text.lines() {
             let line = line.trim();
-            if line.starts_with("- ") || line.starts_with("* ") || line.starts_with("• ") {
-                if line.to_lowercase().contains("upgrade")
+            if (line.starts_with("- ") || line.starts_with("* ") || line.starts_with("• "))
+                && (line.to_lowercase().contains("upgrade")
                     || line.to_lowercase().contains("update")
                     || line.to_lowercase().contains("replace")
                     || line.to_lowercase().contains("remove")
                     || line.to_lowercase().contains("consider")
-                    || line.to_lowercase().contains("recommend")
-                {
-                    recommendations.push(line[2..].trim().to_string());
-                }
+                    || line.to_lowercase().contains("recommend"))
+            {
+                recommendations.push(line[2..].trim().to_string());
             }
             // Numbered recommendations
             if line.len() > 2

@@ -202,7 +202,7 @@ impl PolicySet {
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Context for policy evaluation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PolicyContext {
     /// Package identifier
     pub package_id: String,
@@ -232,27 +232,6 @@ pub struct PolicyContext {
     pub dependency_depth: Option<u32>,
     /// Additional metadata
     pub metadata: HashMap<String, String>,
-}
-
-impl Default for PolicyContext {
-    fn default() -> Self {
-        Self {
-            package_id: String::new(),
-            package_name: String::new(),
-            package_version: String::new(),
-            license: None,
-            vulnerabilities: HashMap::new(),
-            vex_assessments: 0,
-            slsa_level: None,
-            has_sbom: false,
-            has_provenance: false,
-            scorecard_score: None,
-            scorecard_checks: HashMap::new(),
-            last_updated: None,
-            dependency_depth: None,
-            metadata: HashMap::new(),
-        }
-    }
 }
 
 /// Individual rule evaluation result

@@ -37,6 +37,3 @@ msrv = "1.85"
 
 # Maximum lines for a single function
 too-many-lines-threshold = 200
-
-# Threshold for vec![] vs vec![] with capacity
-vec-init-len-threshold = 10

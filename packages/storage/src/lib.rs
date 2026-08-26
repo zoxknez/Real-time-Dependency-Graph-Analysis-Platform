@@ -39,21 +39,11 @@ pub use risingwave::{DependencyCount, EcosystemStats, RisingWaveClient, RisingWa
 use anyhow::Result;
 
 /// Storage configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct StorageConfig {
     pub memgraph: MemgraphConfig,
     pub qdrant: QdrantConfig,
     pub risingwave: RisingWaveConfig,
-}
-
-impl Default for StorageConfig {
-    fn default() -> Self {
-        Self {
-            memgraph: MemgraphConfig::default(),
-            qdrant: QdrantConfig::default(),
-            risingwave: RisingWaveConfig::default(),
-        }
-    }
 }
 
 impl StorageConfig {

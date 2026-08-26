@@ -138,11 +138,11 @@ impl EventConsumer {
                     }
 
                     // Flush if batch is full or interval elapsed
-                    if batch.len() >= self.batch_size || last_flush.elapsed() >= flush_interval {
-                        if !batch.is_empty() {
-                            self.flush_batch(&mut batch).await;
-                            last_flush = std::time::Instant::now();
-                        }
+                    if (batch.len() >= self.batch_size || last_flush.elapsed() >= flush_interval)
+                        && !batch.is_empty()
+                    {
+                        self.flush_batch(&mut batch).await;
+                        last_flush = std::time::Instant::now();
                     }
                 }
             }
@@ -222,7 +222,7 @@ impl EventConsumer {
         let count = batch.len();
         info!(count, "Flushing batch to Qdrant");
 
-        let points: Vec<VectorPoint> = batch.drain(..).collect();
+        let points: Vec<VectorPoint> = std::mem::take(batch);
 
         if let Err(e) = self.writer.upsert_batch(points.clone()).await {
             error!(error = %e, "Failed to upsert batch, sending to DLQ");

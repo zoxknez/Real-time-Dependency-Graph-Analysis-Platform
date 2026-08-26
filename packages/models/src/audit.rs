@@ -558,7 +558,7 @@ impl AuditLog {
             .filter(|e| {
                 e.target
                     .as_ref()
-                    .map_or(false, |t| t.target_type == target_type && t.id == target_id)
+                    .is_some_and(|t| t.target_type == target_type && t.id == target_id)
             })
             .cloned()
             .collect()

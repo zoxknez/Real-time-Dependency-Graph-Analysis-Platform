@@ -303,31 +303,6 @@ fn add_token_features(embedding: &mut [f32], token: &str) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{MockEmbedder, l2_normalize};
-
-    #[test]
-    fn mock_embedder_is_deterministic() {
-        let e = MockEmbedder::new(384);
-        let a = e.embed("React HTTP client library");
-        let b = e.embed("React HTTP client library");
-        assert_eq!(a, b);
-        assert_eq!(a.len(), 384);
-    }
-
-    #[test]
-    fn mock_embeddings_are_l2_normalized() {
-        let e = MockEmbedder::new(384);
-        let mut v = e.embed("tokio async runtime");
-
-        // Already normalized, but do a sanity normalize to ensure helper is safe.
-        l2_normalize(&mut v);
-        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-        assert!((norm - 1.0).abs() < 1e-3);
-    }
-}
-
 fn add_hashed_feature(embedding: &mut [f32], feature: &str, weight: f32) {
     if embedding.is_empty() {
         return;
@@ -932,5 +907,30 @@ impl EmbeddingGenerator {
             max_cache_size: config.cache_max_entries,
             cache_ttl: Duration::from_secs(config.cache_ttl_secs),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MockEmbedder, l2_normalize};
+
+    #[test]
+    fn mock_embedder_is_deterministic() {
+        let e = MockEmbedder::new(384);
+        let a = e.embed("React HTTP client library");
+        let b = e.embed("React HTTP client library");
+        assert_eq!(a, b);
+        assert_eq!(a.len(), 384);
+    }
+
+    #[test]
+    fn mock_embeddings_are_l2_normalized() {
+        let e = MockEmbedder::new(384);
+        let mut v = e.embed("tokio async runtime");
+
+        // Already normalized, but do a sanity normalize to ensure helper is safe.
+        l2_normalize(&mut v);
+        let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+        assert!((norm - 1.0).abs() < 1e-3);
     }
 }

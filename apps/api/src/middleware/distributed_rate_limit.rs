@@ -25,9 +25,10 @@ use tokio::sync::RwLock;
 use tracing::{debug, instrument, warn};
 
 /// Rate limit tiers with different limits
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum RateTier {
     /// Anonymous/free tier: 300 requests per minute
+    #[default]
     Free,
     /// Pro tier: 600 requests per minute
     Pro,
@@ -35,12 +36,6 @@ pub enum RateTier {
     Enterprise,
     /// Unlimited (for internal services)
     Unlimited,
-}
-
-impl Default for RateTier {
-    fn default() -> Self {
-        Self::Free
-    }
 }
 
 impl RateTier {

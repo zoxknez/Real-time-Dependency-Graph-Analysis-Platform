@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
 # Build stage
-# Rust 1.92 supports edition 2024, so nightly is unnecessary here and much
+# Rust 1.98.0 supports edition 2024, so nightly is unnecessary here and much
 # heavier for local Docker Desktop builds.
-FROM rust:1.92-slim-bookworm AS builder
+FROM rust:1.98.0-slim-bookworm AS builder
 
 WORKDIR /app
 
