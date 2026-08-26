@@ -677,7 +677,7 @@ async fn extract_source_files(
                 continue;
             }
 
-            if bytes.iter().any(|b| *b == 0) {
+            if bytes.contains(&0) {
                 continue;
             }
 
@@ -743,7 +743,7 @@ fn snapshot_base_dir() -> PathBuf {
 }
 
 fn sanitize_segment(value: &str) -> String {
-    value.replace('/', "_").replace('\\', "_").replace(':', "_")
+    value.replace(['/', '\\', ':'], "_")
 }
 
 fn snapshot_path(package_id: &str, version: &str) -> PathBuf {
@@ -806,7 +806,7 @@ async fn prune_package_snapshots(package_dir: &Path, keep_versions: usize) -> Re
         files.push((modified, entry.path()));
     }
 
-    files.sort_by(|a, b| b.0.cmp(&a.0));
+    files.sort_by_key(|a| std::cmp::Reverse(a.0));
     for (_, path) in files.into_iter().skip(keep_versions) {
         let _ = tokio::fs::remove_file(path).await;
     }
@@ -849,7 +849,7 @@ async fn prune_snapshot_cache(base_dir: PathBuf, max_total_bytes: usize) -> Resu
             return Ok(());
         }
 
-        files.sort_by(|a, b| a.0.cmp(&b.0));
+        files.sort_by_key(|a| a.0);
         for (_, len, path) in files {
             if total_bytes <= max_total_bytes as u64 {
                 break;

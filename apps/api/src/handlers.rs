@@ -4,7 +4,6 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::{Json, extract::State};
 use futures::Stream;
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::convert::Infallible;
 use std::sync::Arc;
 use std::time::Duration;

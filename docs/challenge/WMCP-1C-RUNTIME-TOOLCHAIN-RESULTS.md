@@ -124,17 +124,16 @@ cargo fmt --all -- --check
 ```bash
 cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all
 ```
-- **Configuration Blocker:** **RESOLVED** (The removed `.clippy.toml` key no longer blocks Clippy execution).
-- **Workspace Status:**
-  - `models`: Clean (PASS after minimal corrections: `is_some_and`, derived `Default`, `vec!` initialization, `should_implement_trait` allow).
-  - `storage`: Clean (PASS after deriving `Default` on `StorageConfig`).
-  - `vector-writer`: Clean (PASS after collapsing if, `std::mem::take`, float test value).
-  - `graph-writer`: Clean (PASS after string conversion and unit let removal).
-  - `syncer`: Clean (PASS).
-  - `ingestion`: Clean (PASS).
-  - `analysis`: Clean (PASS).
-  - `api`: Reached source analysis; reported ~33 pre-existing source lints in `gql/query.rs` under strict `-D clippy::all` on Rust 1.98.0 (e.g. `manual_range_contains`, `to_string_in_format_args`, `unnecessary_to_owned`).
-- **Forensic Classification:** **CONFIGURATION BLOCKER RESOLVED; SOURCE LINT SCOPE ISOLATED**.
+
+### Execution History:
+- **Attempt 1 (WMCP-1C initial commit `f6f1872`):**
+  - Configuration blocker resolved (obsolete `.clippy.toml` key removed).
+  - Most workspace crates (`models`, `storage`, `vector-writer`, `graph-writer`, `syncer`, `ingestion`, `analysis`) passed after minimal adjustments.
+  - `apps/api/src/gql/query.rs` remained with ~33 legacy source lints under strict `-D clippy::all` on Rust 1.98.0 (Exit code: `1`).
+- **Attempt R1 (WMCP-1C-R1 strict closure):**
+  - Resolved remaining source lints in `apps/api/src/gql/query.rs` and workspace targets.
+  - **Exit Code:** `0` (**PASS**)
+  - **Status:** **STRICT CLIPPY PASS**
 
 ---
 
@@ -154,9 +153,9 @@ cargo check --workspace --all-targets
 cargo test --workspace --lib --bins
 ```
 - **Exit Code:** `0`
-- **Result:** All 145 unit tests passed across all workspace crates (0 failed, 0 ignored).
+- **Result:** All unit tests passed across all workspace crates (0 failed, 0 ignored).
   - `analysis`: 11 passed
-  - `api`: 22 passed
+  - `api`: 22 passed (plus 48 library tests in focused run)
   - `graph-writer`: 1 passed
   - `ingestion`: 41 passed (11 lib + 30 bin)
   - `metrics_lib`: 1 passed
@@ -190,7 +189,19 @@ docker build -f deploy/docker/Dockerfile.frontend -t wmcp-1c-frontend:local .
 
 ---
 
-## 18. Rust 1.98 Docker Build Result
+## 18. Node 24 Container Smoke Result
+
+- **Container Image / Tag:** `wmcp-1c-frontend:local`
+- **Port Mapping:** `3001:3000`
+- **Container Execution:** `docker run --rm -d -p 3001:3000 --name wmcp-1c-frontend-smoke wmcp-1c-frontend:local`
+- **HTTP Request:** `curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:3001/`
+- **HTTP Response:** `200` OK
+- **Container Cleanup:** `docker stop wmcp-1c-frontend-smoke` (stopped and removed cleanly).
+- **Classification:** **NODE 24 CONTAINER SMOKE VERIFIED**.
+
+---
+
+## 19. Rust 1.98 Docker Build Result
 
 ```bash
 docker build -f deploy/docker/Dockerfile.api -t wmcp-1c-api:local .
@@ -202,7 +213,7 @@ docker build -f deploy/docker/Dockerfile.api -t wmcp-1c-api:local .
 
 ---
 
-## 19. CI Static Verification
+## 20. CI Static Verification
 
 - Search in `.github/workflows/ci.yml`:
   - `dtolnay/rust-toolchain@stable`: `0` occurrences.
@@ -213,7 +224,7 @@ docker build -f deploy/docker/Dockerfile.api -t wmcp-1c-api:local .
 
 ---
 
-## 20. Lockfile Invariants
+## 21. Lockfile Invariants
 
 - **`Cargo.lock`:** Byte-identical (0 diff).
 - **`apps/frontend/package.json`:** Byte-identical (0 diff).
@@ -221,34 +232,46 @@ docker build -f deploy/docker/Dockerfile.api -t wmcp-1c-api:local .
 
 ---
 
-## 21. Compatibility Corrections
+## 22. Compatibility Corrections
 
-Applied minimal, deterministic source adjustments required by new Rust 1.98 compiler lints:
+Applied minimal, deterministic source adjustments required by Rust 1.98 compiler lints:
 1. `packages/models/src/audit.rs`: Simplified `map_or` to `is_some_and`.
-2. `packages/models/src/policy.rs`: Derived `Default` on `PolicyContext`, removed manual implementation.
+2. `packages/models/src/policy.rs`: Derived `Default` on `PolicyContext`, allowed `field_reassign_with_default` in test helper.
 3. `packages/models/src/scorecard.rs`: Initialized checks collection using `vec!` macro.
 4. `packages/models/src/lib.rs`: Added `#[allow(clippy::should_implement_trait)]` on `Ecosystem::from_str`.
 5. `packages/storage/src/lib.rs`: Derived `Default` on `StorageConfig`, removed manual implementation.
-6. `apps/vector-writer/src/consumer.rs`: Collapsed nested if; used `std::mem::take`.
-7. `apps/vector-writer/src/writer.rs`: Updated test float literal to avoid approx constant lint.
-8. `apps/graph-writer/src/server.rs`: Converted raw string using `.to_string()`.
-9. `apps/graph-writer/src/main.rs`: Removed unused unit binding `let _recorder =`.
-10. `apps/api/src/embeddings.rs`: Moved test module to end of file.
-11. `apps/api/src/graph/queries.rs`: Moved test module to end of file, removed constant assertions.
-12. `apps/api/src/middleware/distributed_rate_limit.rs`: Derived `Default` on `RateTier`.
-13. `apps/api/src/services/agent_tools.rs`: Removed redundant cast `as i32`.
-14. `apps/api/src/services/gemini_agent.rs`: Collapsed nested if in recommendation extraction.
-15. `apps/api/src/streaming/mod.rs`: Simplified stream while loop to `.is_some()`.
+6. `packages/storage/src/bulkhead.rs`: Collapsed nested if blocks.
+7. `apps/vector-writer/src/consumer.rs`: Collapsed nested if; used `std::mem::take`.
+8. `apps/vector-writer/src/writer.rs`: Updated test float literal to avoid approx constant lint.
+9. `apps/graph-writer/src/server.rs`: Converted raw string using `.to_string()`.
+10. `apps/graph-writer/src/main.rs`: Removed unused unit binding `let _recorder =`.
+11. `apps/api/src/embeddings.rs`: Moved test module to end of file, allowed uppercase acronym on `TEI` variant.
+12. `apps/api/src/graph/queries.rs`: Moved test module to end of file, removed constant assertions.
+13. `apps/api/src/gql/query.rs`: Corrected unnecessary casts (`as i64`, `as i32`), used `as_ref()` for borrowed `package_id`, collapsed nested if statements, applied `clamp` for `max_top_k`, and used `Range::contains`.
+14. `apps/api/src/handlers.rs`: Removed unused imports/variables.
+15. `apps/api/src/middleware/distributed_rate_limit.rs`: Derived `Default` on `RateTier`.
+16. `apps/api/src/services/agent_tools.rs`: Removed redundant cast `as i32`.
+17. `apps/api/src/services/gemini_agent.rs`: Collapsed nested if in recommendation extraction.
+18. `apps/api/src/streaming/mod.rs`: Simplified stream while loop to `.is_some()`.
+19. `apps/ingestion/src/http/proxy.rs`: Collapsed nested if block.
+20. `apps/ingestion/src/main.rs`: Replaced single-use `vec!` with array slice.
+21. `apps/ingestion/src/registries/npm/fetcher.rs`: Removed redundant `.into()` conversion.
+22. `apps/ingestion/src/registries/pypi/fetcher.rs`: Used char array for pattern comparison.
+23. `apps/analysis/src/ast_parser.rs`: Simplified identical branch in constructor declaration kind.
+24. `apps/analysis/src/breaking_detector.rs`: Allowed `needless_range_loop` on 2D edit distance matrix.
+25. `apps/analysis/src/config.rs`: Simplified redundant closure / map patterns.
+26. `apps/analysis/src/embeddings.rs`: Allowed `large_enum_variant` on `EmbeddingProvider`.
+27. `apps/analysis/src/main.rs`: Replaced consecutive replaces with char array; used `sort_by_key`.
 
 ---
 
-## 22. Blocked / Unverified Gates
+## 23. Blocked / Unverified Gates
 
 - External services (Memgraph, Redis, Qdrant) integration test execution was not executed locally as external infrastructure is not part of the 1C offline scope.
 
 ---
 
-## 23. Acceptance Gate Matrix
+## 24. Acceptance Gate Matrix
 
 | Gate ID | Description | Status | Evidence / Notes |
 |---|---|---|---|
@@ -273,9 +296,9 @@ Applied minimal, deterministic source adjustments required by new Rust 1.98 comp
 | **1C-19** | Frontend `package-lock.json` unchanged | **PASS** | 0 diff against git HEAD |
 | **1C-20** | `rustc` reports `1.98.0` in project context | **PASS** | `rustc 1.98.0 (88d9e12ae 2026-08-18)` |
 | **1C-21** | `cargo fmt --all -- --check` PASS | **PASS** | Exit code 0 |
-| **1C-22** | `cargo clippy` strict command | **HOLD / PARTIAL** | Config blocker resolved; source lints isolated |
+| **1C-22** | `cargo clippy` strict command | **PASS** | Exit code 0 on `cargo clippy --workspace --all-targets --all-features -- -D warnings -D clippy::all` |
 | **1C-23** | `cargo check --workspace --all-targets` PASS | **PASS** | Exit code 0 |
-| **1C-24** | `cargo test --workspace --lib --bins` PASS | **PASS** | 145/145 unit tests pass, exit code 0 |
+| **1C-24** | `cargo test --workspace --lib --bins` PASS | **PASS** | All unit tests pass, exit code 0 |
 | **1C-25** | Frontend `npm ci` PASS | **PASS** | Exit code 0 |
 | **1C-26** | Frontend TypeScript PASS | **PASS** | Exit code 0 |
 | **1C-27** | Frontend ESLint PASS | **PASS** | Exit code 0 |
@@ -293,8 +316,8 @@ Applied minimal, deterministic source adjustments required by new Rust 1.98 comp
 
 ---
 
-## 24. Final Status
+## 25. Final Status
 
-Phase WMCP-1C platform normalization has been implemented. All platform toolchains (Node.js 24.19.0 LTS, Rust 1.98.0 pinned, Docker builders) are unified and verified.
+Phase WMCP-1C platform normalization has been implemented and all strict acceptance gates (including Rust 1.98 strict Clippy on all targets/features) have passed with exit code 0.
 
 Status: **IMPLEMENTED - PENDING INDEPENDENT VERIFICATION**

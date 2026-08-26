@@ -744,6 +744,7 @@ mod tests {
     use super::*;
     use crate::license::{CopyleftType, LicenseCategory};
 
+    #[allow(clippy::field_reassign_with_default)]
     fn test_context() -> PolicyContext {
         let mut ctx = PolicyContext::default();
         ctx.package_id = "pkg:npm/test@1.0.0".to_string();

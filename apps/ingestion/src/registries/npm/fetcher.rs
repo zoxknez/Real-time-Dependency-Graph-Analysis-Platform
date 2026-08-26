@@ -36,7 +36,7 @@ impl NpmFetcher {
             let lease = match self.rotator.get_client() {
                 Ok(l) => l,
                 Err(e) => {
-                    last_error = Some(e.into());
+                    last_error = Some(e);
                     continue;
                 }
             };

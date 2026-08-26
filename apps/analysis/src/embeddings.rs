@@ -45,6 +45,7 @@ pub struct EmbeddingGenerator {
     max_cache_size: usize,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum EmbeddingProvider {
     /// Local ONNX-based embeddings
     #[cfg(feature = "onnx")]

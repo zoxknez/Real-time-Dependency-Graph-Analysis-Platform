@@ -165,6 +165,16 @@ impl Bulkhead {
     }
 }
 
+impl Clone for Bulkhead {
+    fn clone(&self) -> Self {
+        Self {
+            service: self.service.clone(),
+            semaphore: self.semaphore.clone(),
+            config: self.config.clone(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,15 +275,5 @@ mod tests {
 
         assert_eq!(bulkhead.available_permits(), 10);
         assert!(!bulkhead.is_full());
-    }
-}
-
-impl Clone for Bulkhead {
-    fn clone(&self) -> Self {
-        Self {
-            service: self.service.clone(),
-            semaphore: self.semaphore.clone(),
-            config: self.config.clone(),
-        }
     }
 }

@@ -35,6 +35,7 @@ pub struct EmbeddingGenerator {
 enum EmbeddingProvider {
     OpenAI(OpenAIEmbedder),
     Mock(MockEmbedder),
+    #[allow(clippy::upper_case_acronyms)]
     TEI(TEIEmbedder),
     Hybrid(HybridEmbedder),
 }
@@ -585,7 +586,7 @@ impl TEIEmbedder {
             let started = Instant::now();
             let resp = self
                 .client
-                .post(&format!("{}/embed", self.url))
+                .post(format!("{}/embed", self.url))
                 .json(&req)
                 .send()
                 .await;
@@ -694,12 +695,7 @@ impl TEIEmbedder {
 
     /// Health check for TEI server
     pub async fn health_check(&self) -> bool {
-        match self
-            .client
-            .get(&format!("{}/health", self.url))
-            .send()
-            .await
-        {
+        match self.client.get(format!("{}/health", self.url)).send().await {
             Ok(resp) => resp.status().is_success(),
             Err(_) => false,
         }

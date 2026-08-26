@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// Analysis service configuration
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct Config {
     /// Kafka/Redpanda configuration
     #[serde(default)]
@@ -304,18 +304,6 @@ impl Default for ServiceConfig {
             log_level: default_log_level(),
             metrics_enabled: true,
             metrics_port: default_metrics_port(),
-        }
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            kafka: KafkaConfig::default(),
-            workers: WorkerConfig::default(),
-            parser: ParserConfig::default(),
-            embedding: EmbeddingConfig::default(),
-            service: ServiceConfig::default(),
         }
     }
 }

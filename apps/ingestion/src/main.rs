@@ -180,7 +180,7 @@ async fn run_simulation_mode(config: AppConfig) -> Result<()> {
     info!("Starting event simulation ticker (2s interval)...");
 
     // List of popular packages to simulate activity for
-    let popular_packages = vec![
+    let popular_packages = [
         ("react", "npm"),
         ("lodash", "npm"),
         ("express", "npm"),

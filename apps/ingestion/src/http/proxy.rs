@@ -45,10 +45,8 @@ impl ProxyNode {
         self.last_failure.insert((), Instant::now());
 
         // Threshold: 3 consecutive fails
-        if fails >= 3 {
-            if self.is_healthy.swap(false, Ordering::Relaxed) {
-                warn!(proxy=%self.url, "Proxy marked unhealthy due to consecutive failures");
-            }
+        if fails >= 3 && self.is_healthy.swap(false, Ordering::Relaxed) {
+            warn!(proxy=%self.url, "Proxy marked unhealthy due to consecutive failures");
         }
     }
 

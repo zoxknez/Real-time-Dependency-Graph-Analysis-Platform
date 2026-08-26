@@ -1264,11 +1264,12 @@ impl ParserPool {
             }
 
             // Only recurse for top-level, not into function/class bodies (handled above)
-            if kind != "function_definition" && kind != "class_definition" {
-                if cursor.goto_first_child() {
-                    self.walk_python_tree(cursor, source, file_path, module_path, symbols);
-                    cursor.goto_parent();
-                }
+            if kind != "function_definition"
+                && kind != "class_definition"
+                && cursor.goto_first_child()
+            {
+                self.walk_python_tree(cursor, source, file_path, module_path, symbols);
+                cursor.goto_parent();
             }
 
             if !cursor.goto_next_sibling() {
@@ -1743,11 +1744,7 @@ impl ParserPool {
                     symbols.push(ExtractedSymbol {
                         name,
                         qualified_path,
-                        kind: if kind == "constructor_declaration" {
-                            SymbolKind::Method
-                        } else {
-                            SymbolKind::Method
-                        },
+                        kind: SymbolKind::Method,
                         visibility,
                         signature,
                         raw_signature,

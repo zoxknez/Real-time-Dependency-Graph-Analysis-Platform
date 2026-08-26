@@ -212,8 +212,7 @@ impl PypiFetcher {
         };
 
         // Extract name and version constraint
-        let (name, version_req) = if let Some(idx) = main_part
-            .find(|c: char| c == '(' || c == '<' || c == '>' || c == '=' || c == '!' || c == '~')
+        let (name, version_req) = if let Some(idx) = main_part.find(['(', '<', '>', '=', '!', '~'])
         {
             let name = main_part[..idx].trim();
             let version = main_part[idx..]

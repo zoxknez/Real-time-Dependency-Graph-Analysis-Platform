@@ -89,5 +89,6 @@ async fn metrics_handler() -> String {
     r#"# HELP graph_writer_up Indicates if the graph-writer service is up
 # TYPE graph_writer_up gauge
 graph_writer_up 1
-"#.to_string()
+"#
+    .to_string()
 }
