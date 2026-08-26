@@ -95,7 +95,7 @@ All other entries (including `typescript: "^5.8.0"`, `eslint-plugin-react-hooks:
 
 ## 10. Lockfile Resolution Changes
 
-Regenerated via `npm install --package-lock-only --ignore-scripts`:
+Regenerated via `npm install --package-lock-only --ignore-scripts` and targeted remediation:
 - Clean resolution without peer dependency conflicts.
 - `eslint` resolved to `9.39.5`.
 - `@eslint/js` resolved to `9.39.5`.
@@ -105,6 +105,7 @@ Regenerated via `npm install --package-lock-only --ignore-scripts`:
 - `playwright` resolved to `1.62.1`.
 - `@types/node` resolved to `24.13.3`.
 - `js-yaml` resolved naturally to `4.3.1` (patched).
+- `brace-expansion` resolved naturally to `1.1.18` (patched) in 1.x branch and `5.0.9` (patched) in 5.x branch.
 
 ---
 
@@ -215,7 +216,7 @@ npm run test:e2e -- e2e/homepage.spec.ts --project=chromium
 - **Passed:** `8`
 - **Failed:** `0`
 - **Skipped:** `0`
-- **Duration:** 10.9s
+- **Duration:** 12.8s
 - **Verified Flows:** Main heading, search input, explore page navigation, accessibility compliance, theme toggling, skip links, mobile navigation, mobile responsiveness.
 
 ---
@@ -223,10 +224,9 @@ npm run test:e2e -- e2e/homepage.spec.ts --project=chromium
 ## 22. Post-Change npm Audit
 
 Command: `npm audit --json`
-- **Exit Code:** `1`
-- **Total Vulnerabilities:** `1` (Critical: `0`, High: `1`, Moderate: `0`, Low: `0`)
-  1. `brace-expansion` (High) - via `eslint-plugin-react@7.37.5 -> minimatch@3.1.5 -> brace-expansion@1.1.15`.
-- **Remediated Vulnerabilities:** `js-yaml` (High) was resolved from `4.1.1` to `4.3.1` naturally via ESLint 9.39.5 upgrade.
+- **Initial 1D Execution:** Exit code `1` (1 High remaining: `brace-expansion@1.1.15`).
+- **Post WMCP-1D-R1 Execution:** Exit code `0` (`found 0 vulnerabilities`, Critical: 0, High: 0, Moderate: 0, Low: 0).
+- **Remediated Vulnerabilities:** Both `js-yaml` (High) and `brace-expansion` (High) were remediated via compatible same-major resolution.
 
 ---
 
@@ -234,8 +234,9 @@ Command: `npm audit --json`
 
 Installed instances in active tree:
 1. `node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion`: `5.0.9` (>=5.0.7, patched for 5.x branch).
-2. `node_modules/brace-expansion`: `1.1.15` (depended on by `minimatch@3.1.5` under `eslint-plugin-react@7.37.5`).
-- **Policy:** Per WMCP-1D policy, no forced major overrides were injected to prevent peer breakage. Documented for WMCP-1R closure review.
+2. `node_modules/brace-expansion`: `1.1.18` (via `minimatch@3.1.5` under `eslint-plugin-react@7.37.5` and `eslint@9.39.5`).
+- **Advisories Addressed:** GHSA-3jxr-9vmj-r5cp (patched 1.1.16+), GHSA-mh99-v99m-4gvg (1.x backport), and GHSA-rgw5-rvv9-x895 (patched 1.1.18+).
+- **Status:** **NATURALLY REMEDIATED** without package.json overrides.
 
 ---
 
@@ -248,14 +249,25 @@ Installed instance:
 
 ---
 
-## 25. Remaining Tooling Risk
+## 25. Remaining Tooling Risk Evaluation
 
-- `brace-expansion@1.1.15` remains as a transitive dependency of `eslint-plugin-react@7.37.5 -> minimatch@3.1.5`. It poses zero runtime production risk as ESLint runs strictly during dev/build linting.
-- This will be reviewed as part of the holistic WMCP-1R security review.
+- The affected `brace-expansion` and `js-yaml` dependencies are dev-only tooling dependencies used exclusively during static linting and are not part of the shipped frontend production runtime dependency path. Runtime exploitability was not established.
+- With the natural resolution to `brace-expansion@1.1.18` and `js-yaml@4.3.1`, all known High advisory floors in the active tooling tree are satisfied.
 
 ---
 
-## 26. Out-of-Scope Major Migrations
+## 26. WMCP-1D-R1 Security Closure
+
+- **Starting Commit:** `7d0b4694f1e026b5e5ee728b7a6e1d888c35069d`
+- **Initial State:** `brace-expansion@1.1.15` retained under `minimatch@3.1.5`.
+- **Remediation Mechanism:** **NATURAL SAME-MAJOR TRANSITIVE REMEDIATION** executed via `npm update brace-expansion --package-lock-only --ignore-scripts` within `minimatch@3.1.5`'s declared `^1.1.7` semver range.
+- **Tree Verification:** `node_modules/brace-expansion` updated to `1.1.18`; `node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion` remained at `5.0.9`.
+- **npm audit Output:** `found 0 vulnerabilities` (Exit code: 0).
+- **Regression Gates:** Re-executed `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npx playwright test --list`, and `npm run test:e2e -- e2e/homepage.spec.ts --project=chromium` with 100% PASS.
+
+---
+
+## 27. Out-of-Scope Major Migrations
 
 - **TypeScript 6 / 7:** NOT PERFORMED (Deliberately deferred).
 - **ESLint 10:** NOT PERFORMED (Deliberately deferred due to `eslint-plugin-react` peer constraint).
@@ -268,7 +280,7 @@ Installed instance:
 
 ---
 
-## 27. Acceptance Gate Matrix
+## 28. Acceptance Gate Matrix
 
 | Gate ID | Description | Status | Evidence / Notes |
 |---|---|---|---|
@@ -293,20 +305,20 @@ Installed instance:
 | **1D-19** | npx playwright --version reports 1.62.1 | **PASS** | `Version 1.62.1` |
 | **1D-20** | npx playwright test --list PASS | **PASS** | Exit code 0 (114 tests discovered) |
 | **1D-21** | Chromium install PASS | **PASS** | Exit code 0 (playwright chromium v1234 downloaded) |
-| **1D-22** | Homepage Chromium E2E smoke PASS | **PASS** | Exit code 0 (8/8 passed in 10.9s) |
+| **1D-22** | Homepage Chromium E2E smoke PASS | **PASS** | Exit code 0 (8/8 passed in 12.8s) |
 | **1D-23** | No application source refactor | **PASS** | Zero `src/` changes |
 | **1D-24** | tsconfig unchanged | **PASS** | 0 diff against git HEAD |
 | **1D-25** | Playwright config unchanged | **PASS** | 0 diff against git HEAD |
 | **1D-26** | CI/Docker/Rust configuration unchanged | **PASS** | 0 diff against git HEAD |
-| **1D-27** | Post-upgrade npm audit recorded | **PASS** | Recorded in Section 22 |
-| **1D-28** | brace-expansion tree explicitly inspected | **PASS** | Recorded in Section 23 |
-| **1D-29** | js-yaml tree explicitly inspected | **PASS** | Recorded in Section 24 |
+| **1D-27** | Post-upgrade npm audit recorded | **PASS** | Recorded in Section 22 (0 vulnerabilities) |
+| **1D-28** | brace-expansion tree explicitly inspected | **PASS** | Recorded in Section 23 (1.1.18 & 5.0.9) |
+| **1D-29** | js-yaml tree explicitly inspected | **PASS** | Recorded in Section 24 (4.3.1) |
 | **1D-30** | Only scope-valid files staged | **PASS** | Verified via git status |
 
 ---
 
-## 28. Final Status
+## 29. Final Status
 
-Phase WMCP-1D frontend tooling modernization has been implemented with complete regression verification.
+Phase WMCP-1D frontend tooling modernization and WMCP-1D-R1 brace-expansion security closure have been implemented with complete regression verification and 0 remaining npm audit vulnerabilities.
 
 Status: **IMPLEMENTED - PENDING INDEPENDENT VERIFICATION**
