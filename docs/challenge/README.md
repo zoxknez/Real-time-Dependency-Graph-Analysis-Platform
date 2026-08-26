@@ -20,7 +20,8 @@ All functionality classified as pre-existing in WMCP-0A existed at or before: `8
 - **WMCP-1A (Platform Version & Security Truth Freeze):** CLOSED at `c9c5293fb39e9c4dcc5bad44b713e8c8e3a0d483`
 - **WMCP-1B (Security-Critical Frontend Baseline):** CLOSED at `2b2ad3692b3b5e9295fc220d927883ab6b8d7c87`
 - **WMCP-1C (Runtime & Rust Toolchain Normalization):** CLOSED at `6fa94ad5f48ddc08889dfa894aee3f24f7e8e58e`
-- **WMCP-1D (Frontend Tooling Modernization):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
+- **WMCP-1D (Frontend Tooling Modernization):** CLOSED at `767d852cc6963a2f7f3e58c363aa948acc6dd7fa`
+- **WMCP-1R (Platform Modernization Final Review):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
 
 ---
 
@@ -32,7 +33,8 @@ The WebMCP Challenge execution follows an evidence-based phased architecture.
 - **WMCP-1A** froze platform dependency truth, security advisories, and staged modernization upgrade targets.
 - **WMCP-1B** executed security-critical frontend dependency remediation (`next: 16.3.3`, `postcss: 8.5.26`, `sharp: 0.35.3`).
 - **WMCP-1C** unified and normalized the project runtime and toolchain environments (`node: 24.19.0` LTS, `rust: 1.98.0` stable, Clippy configuration cleanup, Docker build unification).
-- **WMCP-1D** modernizes frontend tooling, aligns Node 24 typings, updates Playwright and typescript-eslint, while preserving stable compiler and linting compatibility (`eslint: 9.39.5`, `typescript-eslint: 8.67.0`, `playwright: 1.62.1`, `@types/node: 24.13.3`).
+- **WMCP-1D** modernized frontend tooling, aligned Node 24 typings, updated Playwright and typescript-eslint, while remediating tooling advisories (`eslint: 9.39.5`, `typescript-eslint: 8.67.0`, `playwright: 1.62.1`, `@types/node: 24.13.3`, `brace-expansion: 1.1.18`, `js-yaml: 4.3.1`).
+- **WMCP-1R** executes holistic multi-crate and full-stack platform verification across the entire WMCP-1 modernized baseline.
 
 ---
 
@@ -78,3 +80,6 @@ Every capability in the baseline evaluation is categorized into exactly one of t
 
 ### Frontend Tooling Modernization (WMCP-1D)
 17. [`WMCP-1D-FRONTEND-TOOLING-RESULTS.md`](WMCP-1D-FRONTEND-TOOLING-RESULTS.md): Modernized ESLint v9, typescript-eslint, Playwright, Node 24 typings, and E2E regression verification.
+
+### Platform Modernization Final Review (WMCP-1R)
+18. [`WMCP-1R-PLATFORM-CLOSURE.md`](WMCP-1R-PLATFORM-CLOSURE.md): Authoritative holistic synthesis and verification of the complete WMCP-1 platform modernization track.

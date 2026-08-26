@@ -78,3 +78,30 @@ If Next.js 16.3.3 encounters an irreconcilable webpack or SSR regression in WMCP
 4. Prefer a newer patched stable `16.3.x` release if available upstream.
 5. Apply minimal, verified compatibility adjustments.
 6. Consider Next.js `15.5.24` (Maintenance LTS) only as a separately evaluated contingency requiring its own full downgrade compatibility audit. Next 15.5.24 is NOT an automatic drop-in rollback.
+
+---
+
+## 6. WMCP-1R Final Disposition
+
+This section records the final disposition of all candidate, locked, deferred, and rejected targets across the closed WMCP-1 track (WMCP-1A through WMCP-1D-R2). This disposition reflects actual implementation outcomes and does not retroactively rewrite the historical WMCP-1A research freeze.
+
+| Component | Historical 1A Decision | Final 1R Resolution | Final Status | Evidence / Notes |
+|---|---|---|---|---|
+| **Next.js** | LOCKED (16.3.3) | `16.3.3` | **ACHIEVED** | Verified in WMCP-1B; webpack build clean; 15/15 routes compiled. |
+| **@next/eslint-plugin-next** | LOCKED (16.3.3) | `16.3.3` | **ACHIEVED** | Aligned with core Next.js 16.3.3. |
+| **PostCSS** | LOCKED (8.5.26) | `8.5.26` | **ACHIEVED** | All active PostCSS tree instances resolved to 8.5.26 via override. |
+| **Sharp** | LOCKED (0.35.3) | `0.35.3` | **ACHIEVED** | Transitive resolution under Next 16.3.3 satisfies GHSA-f88m. |
+| **React** | CANDIDATE (19.2.8) | `19.2.7` | **NOT ADOPTED** | Kept on stable 19.2.7; non-security patch candidate. |
+| **React DOM** | CANDIDATE (19.2.8) | `19.2.7` | **NOT ADOPTED** | Kept on stable 19.2.7; non-security patch candidate. |
+| **Clippy Configuration** | LOCKED (Modernized) | Modernized | **ACHIEVED** | Removed removed `vec-init-len-threshold` key; preserved MSRV 1.85. |
+| **Node.js (CI)** | CANDIDATE (24.19.0) | `24.19.0` | **ACHIEVED** | Normalization to Node 24.19.0 LTS in CI workflow. |
+| **Node.js (Docker)** | CANDIDATE (24.19.0-alpine) | `24.19.0-alpine` | **ACHIEVED** | Pinned all three frontend stages to `node:24.19.0-alpine`. |
+| **Rust Toolchain (CI)** | CANDIDATE (1.98.0) | `1.98.0` | **ACHIEVED** | Pinned via `rust-toolchain.toml`, CI workflow, and deploy Dockerfiles. |
+| **TypeScript** | CANDIDATE (6.0.3) | `5.9.3` | **NOT ADOPTED** | TS 6/7 deferred to preserve stable `typescript-eslint` compatibility. |
+| **typescript-eslint** | CANDIDATE (8.54.0) | `8.67.0` | **ACHIEVED** | Modernized to compatible 8.67.0 target supporting TS 5.9.3. |
+| **@playwright/test** | CANDIDATE (1.62.1) | `1.62.1` | **ACHIEVED** | Upgraded to 1.62.1; 114 tests discovered, 8/8 smoke passed. |
+| **@types/node** | Unspecified | `24.13.3` | **ACHIEVED** | Aligned with Node 24 runtime; zero TypeScript errors. |
+| **ESLint** | DEFERRED (10.9.0) | `9.39.5` | **DEFERRED** | Retained on compatible v9 maintenance line (9.39.5). |
+| **Node.js 26.x** | REJECTED | N/A | **REJECTED** | Non-LTS branch; excluded from challenge baseline. |
+| **Next.js Canary / Pre-release** | REJECTED | N/A | **REJECTED** | Unstable pre-release; excluded from challenge baseline. |
+| **React 19.3 Canary** | REJECTED | N/A | **REJECTED** | Unstable build; excluded from challenge baseline. |
