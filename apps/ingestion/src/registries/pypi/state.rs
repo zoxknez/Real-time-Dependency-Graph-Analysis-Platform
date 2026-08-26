@@ -8,13 +8,26 @@ use sqlx::PgPool;
 use tracing::instrument;
 
 /// State record for a PyPI package
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PypiPackageState {
     pub package_name: String,
     pub versions_json: serde_json::Value,
     pub versions_hash: String,
     pub last_serial: i64,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for PypiPackageState {
+    fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
+        use sqlx::Row;
+        Ok(Self {
+            package_name: row.try_get("package_name")?,
+            versions_json: row.try_get("versions_json")?,
+            versions_hash: row.try_get("versions_hash")?,
+            last_serial: row.try_get("last_serial")?,
+            updated_at: row.try_get("updated_at")?,
+        })
+    }
 }
 
 pub struct PypiStateStore {

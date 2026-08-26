@@ -11,6 +11,7 @@ members = [
     "packages/storage",
     "packages/metrics",
     "packages/tracing",
+    "packages/sqlx",
     "tests"
 ]
 
@@ -61,7 +62,7 @@ singleflight-async = "0.2"
 # Database Clients
 neo4rs = "0.8"            # Memgraph (Bolt protocol)
 qdrant-client = "1.17"    # Qdrant Vector DB
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"] }
+sqlx = { path = "packages/sqlx" }
 
 # Tracing & Observability
 tracing = "0.1"

@@ -1,0 +1,19 @@
+[package]
+name = "sqlx"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+sqlx-core = { version = "0.8.6", default-features = false, features = ["_rt-tokio", "json", "chrono", "uuid", "migrate", "offline"] }
+sqlx-postgres = { version = "0.8.6", default-features = false, features = ["json", "chrono", "uuid", "migrate", "offline"] }
+
+[features]
+default = ["postgres"]
+postgres = []
+runtime-tokio = []
+chrono = []
+uuid = []
+json = []
+migrate = []

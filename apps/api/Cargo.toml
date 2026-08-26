@@ -64,7 +64,7 @@ metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 
 # PostgreSQL for audit logging
-sqlx = { workspace = true, features = ["runtime-tokio", "postgres", "uuid", "chrono"] }
+sqlx.workspace = true
 
 [build-dependencies]
 prost-build.workspace = true

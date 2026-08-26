@@ -142,7 +142,7 @@ async fn main() -> Result<()> {
         .connect(&config.database.url)
         .await?;
 
-    sqlx::migrate!("./migrations").run(&pool).await?;
+    apply_migrations(&pool).await?;
     info!("Database migrations applied.");
     ready.store(true, Ordering::Relaxed);
 
@@ -635,4 +635,25 @@ fn spawn_cargo_ingestion(_pool: sqlx::PgPool) {
 
     // Note: Cargo Worker would consume from raw.cargo.index.v1 and emit domain events
     // For seed mode, we bypass this and write directly to outbox
+}
+
+async fn apply_migrations(pool: &sqlx::PgPool) -> Result<()> {
+    let migrations_dir = std::path::Path::new("./migrations");
+    if !migrations_dir.exists() {
+        return Ok(());
+    }
+    let mut entries = tokio::fs::read_dir(migrations_dir).await?;
+    let mut files = Vec::new();
+    while let Some(entry) = entries.next_entry().await? {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("sql") {
+            files.push(path);
+        }
+    }
+    files.sort();
+    for file in files {
+        let sql = tokio::fs::read_to_string(&file).await?;
+        sqlx::raw_sql(&sql).execute(pool).await?;
+    }
+    Ok(())
 }

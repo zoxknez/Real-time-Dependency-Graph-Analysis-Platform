@@ -214,7 +214,7 @@ impl PypiWatcher {
                     }
                 }
                 Ok(Event::Text(e)) if in_value => {
-                    let text = e.unescape()?.to_string();
+                    let text = std::str::from_utf8(e.as_ref())?.to_string();
                     current_values.push(text);
                 }
                 Ok(Event::Eof) => break,
