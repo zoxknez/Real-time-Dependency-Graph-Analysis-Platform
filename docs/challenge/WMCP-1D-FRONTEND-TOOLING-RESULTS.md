@@ -235,7 +235,12 @@ Command: `npm audit --json`
 Installed instances in active tree:
 1. `node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion`: `5.0.9` (>=5.0.7, patched for 5.x branch).
 2. `node_modules/brace-expansion`: `1.1.18` (via `minimatch@3.1.5` under `eslint-plugin-react@7.37.5` and `eslint@9.39.5`).
-- **Advisories Addressed:** GHSA-3jxr-9vmj-r5cp (patched 1.1.16+), GHSA-mh99-v99m-4gvg (1.x backport), and GHSA-rgw5-rvv9-x895 (patched 1.1.18+).
+
+Advisory status and metadata reconciliation:
+- **GHSA-3jxr-9vmj-r5cp:** published 1.x patched floor `1.1.16`; satisfied by `1.1.18`.
+- **GHSA-rgw5-rvv9-x895:** published 1.x patched floor `1.1.18`; satisfied exactly by `1.1.18`.
+- **GHSA-mh99-v99m-4gvg:** current advisory metadata remains broad (`<=5.0.7` / `5.0.8`) and does not express legacy branch-specific patched ranges; legacy 1.x backport evidence and the post-R1 `npm audit` execution (0 vulnerabilities) are recorded separately.
+
 - **Status:** **NATURALLY REMEDIATED** without package.json overrides.
 
 ---
@@ -252,7 +257,7 @@ Installed instance:
 ## 25. Remaining Tooling Risk Evaluation
 
 - The affected `brace-expansion` and `js-yaml` dependencies are dev-only tooling dependencies used exclusively during static linting and are not part of the shipped frontend production runtime dependency path. Runtime exploitability was not established.
-- With the natural resolution to `brace-expansion@1.1.18` and `js-yaml@4.3.1`, all known High advisory floors in the active tooling tree are satisfied.
+- The published branch-specific patched floors for GHSA-3jxr-9vmj-r5cp and GHSA-rgw5-rvv9-x895 are satisfied. GHSA-mh99-v99m-4gvg retains broader advisory metadata that does not model the legacy 1.x backport; the installed `1.1.18` state, upstream backport evidence, and npm audit result are recorded separately.
 
 ---
 
@@ -263,6 +268,7 @@ Installed instance:
 - **Remediation Mechanism:** **NATURAL SAME-MAJOR TRANSITIVE REMEDIATION** executed via `npm update brace-expansion --package-lock-only --ignore-scripts` within `minimatch@3.1.5`'s declared `^1.1.7` semver range.
 - **Tree Verification:** `node_modules/brace-expansion` updated to `1.1.18`; `node_modules/@typescript-eslint/typescript-estree/node_modules/brace-expansion` remained at `5.0.9`.
 - **npm audit Output:** `found 0 vulnerabilities` (Exit code: 0).
+- **Advisory Nuance:** `npm audit` returned zero findings for the installed tree. This execution result does not rewrite or supersede the current GitHub Advisory Database metadata for GHSA-mh99.
 - **Regression Gates:** Re-executed `npx tsc --noEmit`, `npm run lint`, `npm run build`, `npx playwright test --list`, and `npm run test:e2e -- e2e/homepage.spec.ts --project=chromium` with 100% PASS.
 
 ---
