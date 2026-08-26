@@ -1,8 +1,8 @@
 /**
- * Canonical War Room Domain Module
+ * Canonical War Room Domain & Application Module
  *
  * Public export boundary for canonical types, error contracts, selectors,
- * transition helpers, and store factory (Section 42).
+ * transition helpers, store factory, service ports, and WarRoomActions (WMCP-2A, WMCP-2B).
  */
 
 export * from "./domain/types";
@@ -11,3 +11,7 @@ export * from "./domain/scenario";
 export * from "./state/transition";
 export * from "./state/selectors";
 export * from "./state/store";
+export * from "./application/types";
+export * from "./application/ports";
+export * from "./application/validation";
+export * from "./application/actions";

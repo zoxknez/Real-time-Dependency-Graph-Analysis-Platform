@@ -22,7 +22,8 @@ All functionality classified as pre-existing in WMCP-0A existed at or before: `8
 - **WMCP-1C (Runtime & Rust Toolchain Normalization):** CLOSED at `6fa94ad5f48ddc08889dfa894aee3f24f7e8e58e`
 - **WMCP-1D (Frontend Tooling Modernization):** CLOSED at `767d852cc6963a2f7f3e58c363aa948acc6dd7fa`
 - **WMCP-1R (Platform Modernization Final Review):** CLOSED at `5ad4585b858f99edb33de19bca70f5bfa8012c11`
-- **WMCP-2A (Canonical War Room Domain State Kernel):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
+- **WMCP-2A (Canonical War Room Domain State Kernel):** CLOSED at `01c47c35a597916dceb0360c34e745c0ad9184fc`
+- **WMCP-2B (Shared WarRoomActions Application Boundary):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
 
 ---
 
@@ -85,5 +86,6 @@ Every capability in the baseline evaluation is categorized into exactly one of t
 ### Platform Modernization Final Review (WMCP-1R)
 18. [`WMCP-1R-PLATFORM-CLOSURE.md`](WMCP-1R-PLATFORM-CLOSURE.md): Authoritative holistic synthesis and verification of the complete WMCP-1 platform modernization track.
 
-### War Room Domain State & Action Layer (WMCP-2A)
+### War Room Domain State & Action Layer (WMCP-2A, WMCP-2B)
 19. [`WMCP-2A-WAR-ROOM-DOMAIN-RESULTS.md`](WMCP-2A-WAR-ROOM-DOMAIN-RESULTS.md): Canonical War Room domain types, pure transition reducer, stale-context guard, and state port verification.
+20. [`WMCP-2B-WAR-ROOM-ACTIONS-RESULTS.md`](WMCP-2B-WAR-ROOM-ACTIONS-RESULTS.md): Shared WarRoomActions application boundary, trusted security/auth ports, and context-bound execution results.
