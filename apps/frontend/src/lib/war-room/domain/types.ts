@@ -74,11 +74,19 @@ export interface AddRequiredParameterOperation {
   readonly parameterType: string;
 }
 
+export type ScenarioVisibility =
+  | "public"
+  | "private"
+  | "protected"
+  | "internal"
+  | "crate"
+  | "super";
+
 export interface ChangeVisibilityOperation {
   readonly kind: "CHANGE_VISIBILITY";
   readonly operationId: string;
   readonly symbolPath: string;
-  readonly newVisibility: "public" | "internal" | "private" | string;
+  readonly newVisibility: ScenarioVisibility;
 }
 
 export type ScenarioPatchOperation =

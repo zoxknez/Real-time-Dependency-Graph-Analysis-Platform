@@ -1,8 +1,8 @@
 /**
- * Vanilla Zustand Store Container & War Room State Port
+ * Vanilla Zustand Store Container & War Room State Port Adapter
  *
- * Framework-independent state container following WMCP-INV-003, WMCP-INV-004,
- * and Section 37-41.
+ * Provides a genuine Zustand StoreApi container and a separate framework-independent
+ * WarRoomStatePort adapter following WMCP-INV-003, WMCP-INV-004, and Section 10-13.
  */
 
 import { createStore, StoreApi } from "zustand/vanilla";
@@ -22,6 +22,8 @@ export interface WarRoomStoreState {
   ) => TransitionResult;
 }
 
+export type WarRoomStoreInstance = StoreApi<WarRoomStoreState>;
+
 export interface WarRoomStatePort {
   getState(): WarRoomState;
   transition(event: WarRoomEvent): TransitionResult;
@@ -34,12 +36,13 @@ export interface WarRoomStatePort {
   ): () => void;
 }
 
-export type WarRoomStoreInstance = StoreApi<WarRoomStoreState> & WarRoomStatePort;
-
+/**
+ * Creates a genuine vanilla Zustand StoreApi instance holding the canonical domain state.
+ */
 export function createWarRoomStore(
   initialCanonicalState: WarRoomState = INITIAL_WAR_ROOM_STATE
 ): WarRoomStoreInstance {
-  const store = createStore<WarRoomStoreState>((set, get) => ({
+  return createStore<WarRoomStoreState>((set, get) => ({
     canonical: initialCanonicalState,
     transition: (event: WarRoomEvent): TransitionResult => {
       const current = get().canonical;
@@ -65,31 +68,34 @@ export function createWarRoomStore(
       return result;
     },
   }));
+}
 
-  const rawGetState = store.getState;
-  const rawSubscribe = store.subscribe;
-
-  const port: WarRoomStatePort = {
+/**
+ * Creates a dedicated WarRoomStatePort adapter wrapping a Zustand StoreApi instance.
+ * Decouples future WarRoomActions and WebMCP handlers from Zustand internals (Section 12).
+ */
+export function createWarRoomStatePort(
+  store: StoreApi<WarRoomStoreState>
+): WarRoomStatePort {
+  return {
     getState(): WarRoomState {
-      return rawGetState().canonical;
+      return store.getState().canonical;
     },
     transition(event: WarRoomEvent): TransitionResult {
-      return rawGetState().transition(event);
+      return store.getState().transition(event);
     },
     commitContextBound(
       capturedRevision: number,
       event: WarRoomEvent
     ): TransitionResult {
-      return rawGetState().commitContextBound(capturedRevision, event);
+      return store.getState().commitContextBound(capturedRevision, event);
     },
     subscribe(
       listener: (state: WarRoomState, previousState: WarRoomState) => void
     ): () => void {
-      return rawSubscribe((newState, oldState) => {
+      return store.subscribe((newState, oldState) => {
         listener(newState.canonical, oldState.canonical);
       });
     },
   };
-
-  return Object.assign(store, port);
 }

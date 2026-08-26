@@ -2,12 +2,13 @@
  * Pure Structural Scenario Validator
  *
  * Enforces scenario structural validity and patch operation conflict detection
- * without performing breaking-change domain analysis (Section 14 & 15).
+ * without performing breaking-change domain analysis (Section 14, 15, 17-19).
  */
 
 import {
   WarRoomScenario,
   ScenarioPatchOperation,
+  ScenarioVisibility,
   WarRoomHumanReview,
 } from "./types";
 import {
@@ -20,7 +21,23 @@ export type ScenarioValidationResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly error: WarRoomDomainError };
 
+const VALID_VISIBILITIES: ReadonlySet<string> = new Set<ScenarioVisibility>([
+  "public",
+  "private",
+  "protected",
+  "internal",
+  "crate",
+  "super",
+]);
+
 export function validateScenario(scenario: WarRoomScenario): ScenarioValidationResult {
+  if (!scenario || typeof scenario !== "object") {
+    return {
+      ok: false,
+      error: invalidInputError("Scenario must be an object"),
+    };
+  }
+
   if (!scenario.id || scenario.id.trim() === "") {
     return {
       ok: false,
@@ -35,10 +52,24 @@ export function validateScenario(scenario: WarRoomScenario): ScenarioValidationR
     };
   }
 
+  if (!Array.isArray(scenario.patchOperations)) {
+    return {
+      ok: false,
+      error: invalidInputError("Patch operations must be an array"),
+    };
+  }
+
   const seenOperationIds = new Set<string>();
   const symbolOperations = new Map<string, ScenarioPatchOperation[]>();
 
   for (const op of scenario.patchOperations) {
+    if (!op || typeof op !== "object") {
+      return {
+        ok: false,
+        error: invalidInputError("Patch operation must be an object"),
+      };
+    }
+
     if (!op.operationId || op.operationId.trim() === "") {
       return {
         ok: false,
@@ -65,21 +96,98 @@ export function validateScenario(scenario: WarRoomScenario): ScenarioValidationR
       };
     }
 
-    if (op.kind === "RENAME_SYMBOL") {
-      if (!op.newSymbolPath || op.newSymbolPath.trim() === "") {
-        return {
-          ok: false,
-          error: invalidInputError(
-            `New symbol path must not be empty in rename operation ${op.operationId}`
-          ),
-        };
+    switch (op.kind) {
+      case "REMOVE_SYMBOL":
+        break;
+
+      case "RENAME_SYMBOL": {
+        if (!op.newSymbolPath || op.newSymbolPath.trim() === "") {
+          return {
+            ok: false,
+            error: invalidInputError(
+              `New symbol path must not be empty in rename operation ${op.operationId}`
+            ),
+          };
+        }
+        if (op.symbolPath === op.newSymbolPath) {
+          return {
+            ok: false,
+            error: invalidInputError(
+              `Rename to identical path is invalid in operation ${op.operationId}`
+            ),
+          };
+        }
+        break;
       }
-      if (op.symbolPath === op.newSymbolPath) {
+
+      case "CHANGE_RETURN_TYPE": {
+        if (!op.newReturnType || op.newReturnType.trim() === "") {
+          return {
+            ok: false,
+            error: invalidInputError(
+              `New return type must not be empty in operation ${op.operationId}`
+            ),
+          };
+        }
+        break;
+      }
+
+      case "CHANGE_PARAMETER_TYPE": {
+        if (!op.parameterName || op.parameterName.trim() === "") {
+          return {
+            ok: false,
+            error: invalidInputError(
+              `Parameter name must not be empty in operation ${op.operationId}`
+            ),
+          };
+        }
+        if (!op.newType || op.newType.trim() === "") {
+          return {
+            ok: false,
+            error: invalidInputError(
+              `New parameter type must not be empty in operation ${op.operationId}`
+            ),
+          };
+        }
+        break;
+      }
+
+      case "ADD_REQUIRED_PARAMETER": {
+        if (!op.parameterName || op.parameterName.trim() === "") {
+          return {
+            ok: false,
+            error: invalidInputError(
+              `Parameter name must not be empty in operation ${op.operationId}`
+            ),
+          };
+        }
+        if (!op.parameterType || op.parameterType.trim() === "") {
+          return {
+            ok: false,
+            error: invalidInputError(
+              `Parameter type must not be empty in operation ${op.operationId}`
+            ),
+          };
+        }
+        break;
+      }
+
+      case "CHANGE_VISIBILITY": {
+        if (!op.newVisibility || typeof op.newVisibility !== "string" || !VALID_VISIBILITIES.has(op.newVisibility.trim())) {
+          return {
+            ok: false,
+            error: invalidInputError(
+              `Invalid visibility value in operation ${op.operationId}: expected one of public, private, protected, internal, crate, super`
+            ),
+          };
+        }
+        break;
+      }
+
+      default: {
         return {
           ok: false,
-          error: invalidInputError(
-            `Rename to identical path is invalid in operation ${op.operationId}`
-          ),
+          error: invalidInputError(`Unknown operation kind: ${(op as ScenarioPatchOperation).kind}`),
         };
       }
     }
@@ -140,14 +248,14 @@ export function validateScenario(scenario: WarRoomScenario): ScenarioValidationR
       };
     }
 
-    // Parameter operation conflicts
+    // Parameter operation conflicts & cross-kind contradictions
     const paramTypeOps = ops.filter(
       (o): o is import("./types").ChangeParameterTypeOperation =>
         o.kind === "CHANGE_PARAMETER_TYPE"
     );
-    const seenParamTypes = new Set<string>();
+    const seenParamTypeNames = new Set<string>();
     for (const p of paramTypeOps) {
-      if (seenParamTypes.has(p.parameterName)) {
+      if (seenParamTypeNames.has(p.parameterName)) {
         return {
           ok: false,
           error: scenarioConflictError(
@@ -155,16 +263,16 @@ export function validateScenario(scenario: WarRoomScenario): ScenarioValidationR
           ),
         };
       }
-      seenParamTypes.add(p.parameterName);
+      seenParamTypeNames.add(p.parameterName);
     }
 
     const addParamOps = ops.filter(
       (o): o is import("./types").AddRequiredParameterOperation =>
         o.kind === "ADD_REQUIRED_PARAMETER"
     );
-    const seenAddParams = new Set<string>();
+    const seenAddParamNames = new Set<string>();
     for (const p of addParamOps) {
-      if (seenAddParams.has(p.parameterName)) {
+      if (seenAddParamNames.has(p.parameterName)) {
         return {
           ok: false,
           error: scenarioConflictError(
@@ -172,7 +280,19 @@ export function validateScenario(scenario: WarRoomScenario): ScenarioValidationR
           ),
         };
       }
-      seenAddParams.add(p.parameterName);
+      seenAddParamNames.add(p.parameterName);
+    }
+
+    // Cross-kind parameter contradiction check: ADD_REQUIRED_PARAMETER vs CHANGE_PARAMETER_TYPE
+    for (const paramName of seenAddParamNames) {
+      if (seenParamTypeNames.has(paramName)) {
+        return {
+          ok: false,
+          error: scenarioConflictError(
+            `Contradictory parameter operations: ADD_REQUIRED_PARAMETER and CHANGE_PARAMETER_TYPE both target parameter ${paramName} on symbol ${symbolPath}`
+          ),
+        };
+      }
     }
   }
 

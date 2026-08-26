@@ -2,7 +2,7 @@
  * Canonical War Room State Transition Reducer
  *
  * Deterministic pure state machine implementation following WEBMCP-STATE-MACHINE.md,
- * WMCP-INV-002, WMCP-INV-021.
+ * WMCP-INV-002, WMCP-INV-021, and WMCP-2A-R1 contract clarifications.
  */
 
 import {
@@ -163,15 +163,15 @@ export function reduceWarRoomState(
         };
       }
 
-      // Same-node selection is a semantic NO-OP: changed false, revision unchanged
+      // Same-node selection is a semantic NO-OP in all selected phases (NODE_SELECTED, SIMULATION_READY, HUMAN_REVIEW, PLAN_READY)
       if (
-        state.phase === "NODE_SELECTED" &&
+        state.phase !== "GRAPH_READY" &&
         state.selection.package.id === selection.package.id
       ) {
         return { ok: true, changed: false, state };
       }
 
-      // Node change invalidates scenario, analysis, review, plan
+      // Node change invalidates scenario, analysis, review, plan, and visual overlays
       const nextState: NodeSelectedState = {
         phase: "NODE_SELECTED",
         contextRevision: state.contextRevision + 1,
@@ -305,13 +305,34 @@ export function reduceWarRoomState(
       }
 
       const { analysis } = event.payload;
-      if (!analysis || analysis.scenarioId !== state.scenario.id) {
+      if (!analysis || typeof analysis !== "object") {
+        return {
+          ok: false,
+          changed: false,
+          state,
+          error: invalidInputError("Analysis payload must be provided"),
+        };
+      }
+
+      if (analysis.scenarioId !== state.scenario.id) {
         return {
           ok: false,
           changed: false,
           state,
           error: invalidInputError(
-            `Analysis scenarioId ${analysis?.scenarioId} does not match active scenario ${state.scenario.id}`
+            `Analysis scenarioId ${analysis.scenarioId} does not match active scenario ${state.scenario.id}`
+          ),
+        };
+      }
+
+      // Evidence source context revision consistency check
+      if (analysis.sourceContextRevision !== state.contextRevision) {
+        return {
+          ok: false,
+          changed: false,
+          state,
+          error: invalidInputError(
+            `Analysis sourceContextRevision ${analysis.sourceContextRevision} does not match current state contextRevision ${state.contextRevision}`
           ),
         };
       }
@@ -350,17 +371,14 @@ export function reduceWarRoomState(
     }
 
     case "SCENARIO_RESET": {
-      if (
-        state.phase !== "SIMULATION_READY" &&
-        state.phase !== "HUMAN_REVIEW" &&
-        state.phase !== "PLAN_READY"
-      ) {
+      // SCENARIO_RESET is strictly valid ONLY from SIMULATION_READY according to frozen transition table
+      if (state.phase !== "SIMULATION_READY") {
         return {
           ok: false,
           changed: false,
           state,
           error: invalidStateError(
-            `SCENARIO_RESET is only valid from SIMULATION_READY, HUMAN_REVIEW, or PLAN_READY, current phase is ${state.phase}`
+            `SCENARIO_RESET is only valid from SIMULATION_READY, current phase is ${state.phase}`
           ),
         };
       }
@@ -388,13 +406,22 @@ export function reduceWarRoomState(
       }
 
       const { review } = event.payload;
-      if (!review || review.scenarioId !== state.scenario.id) {
+      if (!review || typeof review !== "object") {
+        return {
+          ok: false,
+          changed: false,
+          state,
+          error: invalidInputError("Review payload must be provided"),
+        };
+      }
+
+      if (review.scenarioId !== state.scenario.id) {
         return {
           ok: false,
           changed: false,
           state,
           error: invalidInputError(
-            `Review scenarioId ${review?.scenarioId} does not match active scenario ${state.scenario.id}`
+            `Review scenarioId ${review.scenarioId} does not match active scenario ${state.scenario.id}`
           ),
         };
       }
@@ -426,13 +453,22 @@ export function reduceWarRoomState(
       }
 
       const { review } = event.payload;
-      if (!review || review.scenarioId !== state.scenario.id) {
+      if (!review || typeof review !== "object") {
+        return {
+          ok: false,
+          changed: false,
+          state,
+          error: invalidInputError("Review payload must be provided"),
+        };
+      }
+
+      if (review.scenarioId !== state.scenario.id) {
         return {
           ok: false,
           changed: false,
           state,
           error: invalidInputError(
-            `Review scenarioId ${review?.scenarioId} does not match active scenario ${state.scenario.id}`
+            `Review scenarioId ${review.scenarioId} does not match active scenario ${state.scenario.id}`
           ),
         };
       }
@@ -465,7 +501,7 @@ export function reduceWarRoomState(
       }
 
       const { plan } = event.payload;
-      if (!plan) {
+      if (!plan || typeof plan !== "object") {
         return {
           ok: false,
           changed: false,
@@ -492,6 +528,18 @@ export function reduceWarRoomState(
           state,
           error: invalidInputError(
             `Plan sourceReviewId ${plan.sourceReviewId} does not match active review ${state.review.id}`
+          ),
+        };
+      }
+
+      // Evidence source context revision consistency check
+      if (plan.sourceContextRevision !== state.contextRevision) {
+        return {
+          ok: false,
+          changed: false,
+          state,
+          error: invalidInputError(
+            `Plan sourceContextRevision ${plan.sourceContextRevision} does not match current state contextRevision ${state.contextRevision}`
           ),
         };
       }
