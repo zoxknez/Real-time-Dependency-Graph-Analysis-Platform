@@ -519,8 +519,8 @@ impl AuditPersistence {
             ));
         }
 
-        // Execute bulk insert
-        let mut sqlx_query = sqlx::query(&query);
+        // Execute bulk insert with dynamic bind parameter placeholders
+        let mut sqlx_query = sqlx::query(sqlx::AssertSqlSafe(query.as_str()));
         for v in &values {
             sqlx_query = sqlx_query
                 .bind(v.0)     // tenant_id

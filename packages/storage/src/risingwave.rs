@@ -107,7 +107,8 @@ impl RisingWaveClient {
     /// Execute a query
     #[instrument(skip(self, query))]
     pub async fn execute(&self, query: &str) -> Result<u64> {
-        let result = sqlx::query(query)
+        // Dynamic DDL and query statements intentionally constructed by application services
+        let result = sqlx::query(sqlx::AssertSqlSafe(query))
             .execute(&self.pool)
             .await
             .context("Failed to execute query")?;
@@ -121,7 +122,8 @@ impl RisingWaveClient {
     where
         T: for<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> + Send + Unpin,
     {
-        let rows = sqlx::query_as::<_, T>(query)
+        // Dynamic analytical query statements intentionally constructed by application services
+        let rows = sqlx::query_as::<_, T>(sqlx::AssertSqlSafe(query))
             .fetch_all(&self.pool)
             .await
             .context("Failed to fetch rows")?;
