@@ -168,54 +168,83 @@ impl PypiWatcher {
 
     /// Parse XML-RPC response into changelog entries
     fn parse_changelog_response(&self, xml: &str) -> Result<Vec<PypiChangeEntry>> {
+        Self::parse_changelog_response_static(xml)
+    }
+
+    pub(crate) fn parse_changelog_response_static(xml: &str) -> Result<Vec<PypiChangeEntry>> {
         use quick_xml::Reader;
         use quick_xml::events::Event;
 
         let mut entries = Vec::new();
         let mut reader = Reader::from_str(xml);
-        reader.config_mut().trim_text(true);
+        reader.config_mut().trim_text(false);
 
         let mut in_data = false;
         let mut in_value = false;
         let mut current_values: Vec<String> = Vec::new();
+        let mut current_value_buf = String::new();
         let mut buf = Vec::new();
 
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => match e.name().as_ref() {
                     b"data" => in_data = true,
-                    b"value" if in_data => in_value = true,
+                    b"value" if in_data => {
+                        in_value = true;
+                        current_value_buf.clear();
+                    }
                     _ => {}
                 },
-                Ok(Event::End(ref e)) => {
-                    match e.name().as_ref() {
-                        b"data" => {
-                            // Each <data> element contains one changelog entry
-                            // [name, version, timestamp, action, serial]
-                            if current_values.len() >= 5 {
-                                let entry = PypiChangeEntry {
-                                    project_name: current_values[0].clone(),
-                                    version: if current_values[1].is_empty() {
-                                        None
-                                    } else {
-                                        Some(current_values[1].clone())
-                                    },
-                                    timestamp: current_values[2].parse().unwrap_or(0),
-                                    action: current_values[3].clone(),
-                                    serial: current_values[4].parse().unwrap_or(0),
-                                };
-                                entries.push(entry);
-                            }
-                            current_values.clear();
-                            in_data = false;
-                        }
-                        b"value" => in_value = false,
-                        _ => {}
+                Ok(Event::End(ref e)) => match e.name().as_ref() {
+                    b"value" if in_value => {
+                        current_values.push(current_value_buf.trim().to_string());
+                        current_value_buf.clear();
+                        in_value = false;
                     }
-                }
+                    b"data" => {
+                        // Each <data> element contains one changelog entry
+                        // [name, version, timestamp, action, serial]
+                        if current_values.len() >= 5 {
+                            let entry = PypiChangeEntry {
+                                project_name: current_values[0].clone(),
+                                version: if current_values[1].is_empty() {
+                                    None
+                                } else {
+                                    Some(current_values[1].clone())
+                                },
+                                timestamp: current_values[2].parse().unwrap_or(0),
+                                action: current_values[3].clone(),
+                                serial: current_values[4].parse().unwrap_or(0),
+                            };
+                            entries.push(entry);
+                        }
+                        current_values.clear();
+                        in_data = false;
+                    }
+                    _ => {}
+                },
                 Ok(Event::Text(e)) if in_value => {
-                    let text = std::str::from_utf8(e.as_ref())?.to_string();
-                    current_values.push(text);
+                    let text = std::str::from_utf8(e.as_ref())?;
+                    current_value_buf.push_str(text);
+                }
+                Ok(Event::GeneralRef(e)) if in_value => {
+                    if let Some(ch) = e.resolve_char_ref()? {
+                        current_value_buf.push(ch);
+                    } else {
+                        match e.as_ref() as &[u8] {
+                            b"amp" => current_value_buf.push('&'),
+                            b"lt" => current_value_buf.push('<'),
+                            b"gt" => current_value_buf.push('>'),
+                            b"apos" => current_value_buf.push('\''),
+                            b"quot" => current_value_buf.push('"'),
+                            other => {
+                                let s = std::str::from_utf8(other)?;
+                                current_value_buf.push('&');
+                                current_value_buf.push_str(s);
+                                current_value_buf.push(';');
+                            }
+                        }
+                    }
                 }
                 Ok(Event::Eof) => break,
                 Err(e) => {
@@ -252,5 +281,51 @@ mod tests {
 
         assert_eq!(entry.project_name, "requests");
         assert!(entry.version.is_some());
+    }
+
+    #[test]
+    fn test_quick_xml_entity_and_char_ref_handling() {
+        let xml = r#"<?xml version="1.0"?>
+<methodResponse>
+  <params>
+    <param>
+      <value>
+        <array>
+          <data>
+            <value><string>Foo &amp; Bar &#38; Baz &#x26; Qux</string></value>
+            <value><string>1.0.0</string></value>
+            <value><int>1640000000</int></value>
+            <value><string>create</string></value>
+            <value><int>12345678</int></value>
+          </data>
+          <data>
+            <value><string>alpha &lt; beta &gt; gamma</string></value>
+            <value><string>2.1.0</string></value>
+            <value><int>1640000100</int></value>
+            <value><string>new release</string></value>
+            <value><int>12345679</int></value>
+          </data>
+        </array>
+      </value>
+    </param>
+  </params>
+</methodResponse>"#;
+
+        let entries = PypiWatcher::parse_changelog_response_static(xml).unwrap();
+        assert_eq!(entries.len(), 2);
+
+        // Verify entity and numeric character reference reconstruction
+        assert_eq!(entries[0].project_name, "Foo & Bar & Baz & Qux");
+        assert_eq!(entries[0].version, Some("1.0.0".to_string()));
+        assert_eq!(entries[0].timestamp, 1640000000);
+        assert_eq!(entries[0].action, "create");
+        assert_eq!(entries[0].serial, 12345678);
+
+        // Verify second entry alignment and lt/gt entity handling
+        assert_eq!(entries[1].project_name, "alpha < beta > gamma");
+        assert_eq!(entries[1].version, Some("2.1.0".to_string()));
+        assert_eq!(entries[1].timestamp, 1640000100);
+        assert_eq!(entries[1].action, "new release");
+        assert_eq!(entries[1].serial, 12345679);
     }
 }

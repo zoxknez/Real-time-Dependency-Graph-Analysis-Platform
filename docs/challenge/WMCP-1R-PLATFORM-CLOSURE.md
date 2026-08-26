@@ -10,14 +10,32 @@ This document provides the authoritative holistic synthesis, multi-crate securit
 
 ### Attempt 1: Initial Holistic Review
 - **Commit SHA:** `d334f3d37daf2d515c6e2717f6062d6c517358c7`
-- **Commit Message:** `docs(challenge): synthesize WMCP-1 platform modernization review`
+- **Commit Message:** `docs(challenge): record WMCP-1 platform closure review`
 - **Verdict:** `HOLD - NOT CLOSED`
-- **Audit Findings:** The initial review executed the verification suite but identified 16 RustSec security advisories in the resolved `Cargo.lock` (including `bytes`, `crossbeam-epoch`, `h2`, `quick-xml`, `quinn-proto`, `rsa`, `rustls-webpki`, `tar`, `time`, `tokio-tar`). Reclassifying gate `1R-46` as PASS on the basis of "pre-existing" was rejected because an active advisory in `Cargo.lock` cannot be waived without concrete remediation or graph removal.
+- **Audit Findings:** The initial review executed the verification suite but identified 16 RustSec security advisories in the resolved `Cargo.lock` (including `bytes`, `crossbeam-epoch`, `h2`, `quick-xml`, `quinn-proto`, `rsa`, `rustls-webpki`, `tar`, `time`, `tokio-tar`). Reclassifying gate `1R-46` as PASS on the basis of "pre-existing" was rejected because active advisories in `Cargo.lock` cannot be waived without concrete remediation or graph removal.
 
 ### Attempt 2 (WMCP-1R-R1): RustSec Dependency Security Closure
-- **Remediation Scope:** Remediate all 16 RustSec advisories in `Cargo.lock` to achieve `cargo audit = 0 vulnerabilities` and exit code `0`.
-- **Target Commit Message:** `fix(rust): close RustSec platform audit gate`
-- **Parent Commit:** `d334f3d37daf2d515c6e2717f6062d6c517358c7`
+- **Commit SHA:** `6b55bc6408952b33ab0c7f4550baece493bc3bed`
+- **Commit Message:** `fix(rust): close RustSec platform audit gate`
+- **Executor Report:** `PASS - CLOSED`
+- **Independent Audit Verdict:** `REJECTED / REWORK REQUIRED` (WMCP-1R: `HOLD - NOT CLOSED`)
+- **Reasons for Rejection:**
+  1. *SQLx remediation exceeded authorized scope:* Replaced upstream SQLx with a local workspace compatibility shim (`packages/sqlx`).
+  2. *Compile-time migration regression:* Replaced `sqlx::migrate!` with a runtime filesystem scan (`apply_migrations`), which silently returned `Ok(())` if `./migrations` was missing. Because `deploy/docker/Dockerfile.ingestion` only copies the binary (and not the migrations folder), production containers silently skipped all migrations on startup.
+  3. *Incomplete quick-xml 0.41 adaptation:* Replaced `unescape()` with raw UTF-8 string conversion without handling `Event::GeneralRef`, which caused multi-part text and entity splitting on values containing `&amp;` or character references.
+  4. *Evidence inaccuracies:* Reported `X-Frame-Options: DENY` (actual `next.config.js` is `SAMEORIGIN`), inaccurate Attempt 1 commit message, and mismatched Clippy configuration history.
+- **Accepted R1 Security Achievement:** Confirmed that `cargo audit` reported 0 vulnerabilities and exit code 0 on the updated dependency graph.
+
+### Attempt 3 (WMCP-1R-R2): Security Remediation Semantic Restoration
+- **Remediation Scope:**
+  1. Remove local `packages/sqlx` shim and restore official upstream `sqlx 0.8.6` with explicit Postgres-only features (`default-features = false`, `postgres`, `runtime-tokio`, `macros`, `migrate`, `chrono`, `uuid`, `json`).
+  2. Restore original `sqlx::migrate!("./migrations")` compile-time migration tracking and remove runtime filesystem scanner.
+  3. Restore original `FromRow` and `Type` derive semantics across all SQLx source files.
+  4. Fix `quick-xml 0.41` text and entity handling to properly accumulate `Event::Text` and resolve `Event::GeneralRef` (including `&amp;`, `&lt;`, `&gt;`, `&apos;`, `&quot;`, and numeric references like `&#38;`).
+  5. Add deterministic unit test `test_quick_xml_entity_and_char_ref_handling`.
+  6. Reconcile evidence metadata.
+- **Target Commit Message:** `fix(rust): restore semantics after RustSec remediation`
+- **Parent Commit:** `6b55bc6408952b33ab0c7f4550baece493bc3bed`
 
 ---
 
@@ -32,7 +50,8 @@ Linear commit ancestry verified from baseline freeze through all platform modern
 6. `7d0b4694f1e026b5e5ee728b7a6e1d888c35069d` - `chore(frontend): modernize compatible tooling baseline` (WMCP-1D Implementation)
 7. `a6d72d92b80f9e52f0764dd1377631acd1be8497` - `fix(frontend): remediate brace-expansion tooling advisory` (WMCP-1D-R1)
 8. `767d852cc6963a2f7f3e58c363aa948acc6dd7fa` - `docs(challenge): reconcile brace-expansion advisory metadata` (WMCP-1D CLOSED)
-9. `d334f3d37daf2d515c6e2717f6062d6c517358c7` - `docs(challenge): synthesize WMCP-1 platform modernization review` (WMCP-1R Attempt 1 - HOLD)
+9. `d334f3d37daf2d515c6e2717f6062d6c517358c7` - `docs(challenge): record WMCP-1 platform closure review` (WMCP-1R Attempt 1 - HOLD)
+10. `6b55bc6408952b33ab0c7f4550baece493bc3bed` - `fix(rust): close RustSec platform audit gate` (WMCP-1R-R1 - REJECTED / REWORK REQUIRED)
 
 - **Merge Commits in Range:** `0` (Linear history verified via `git rev-list --merges c9c5293fb39e9c4dcc5bad44b713e8c8e3a0d483..HEAD`).
 
@@ -68,7 +87,7 @@ Authoritative evidence reviewed from repository artifacts:
 | **Rust Toolchain (Repository)** | `1.98.0` | `1.98.0` via `rust-toolchain.toml` | Stable Pinned |
 | **Rust Toolchain (CI)** | `1.98.0` | `dtolnay/rust-toolchain@1.98.0` | Stable Pinned |
 | **Rust Deploy Builders** | `1.98.0-slim-bookworm` | `rust:1.98.0-slim-bookworm` (all 6 builders) | Stable Pinned |
-| **Clippy Configuration** | Modernized | MSRV `1.85`, obsolete key removed | Clean |
+| **Clippy Configuration** | Modernized | MSRV `1.85`, `vec-init-len-threshold` removed | Clean |
 | **Cargo Edition & Resolver** | `2024` / `2` | `2024` / `2` | Preserved |
 | **TypeScript Compiler** | `5.9.3` | `5.9.3` | Preserved / Compatible |
 | **@types/node** | `24.13.3` | `24.13.3` | Aligned with Node 24 |
@@ -80,6 +99,7 @@ Authoritative evidence reviewed from repository artifacts:
 | **brace-expansion (1.x)** | `1.1.18` | `1.1.18` | Same-major patched |
 | **brace-expansion (5.x)** | `5.0.9` | `5.0.9` | Patched 5.x |
 | **js-yaml** | `4.3.1` | `4.3.1` | Patched 4.x |
+| **sqlx** | `0.8.6` | `0.8.6` (upstream, postgres-only) | Secure / Parity |
 | **bytes** | `>=1.11.1` | `1.12.1` | Patched / Secure |
 | **crossbeam-epoch** | `>=0.9.20` | `0.9.20` | Patched / Secure |
 | **h2** | `>=0.4.16` | `0.4.19` | Patched / Secure |
@@ -97,18 +117,18 @@ Authoritative evidence reviewed from repository artifacts:
 
 All 16 security advisories identified in Attempt 1 were systematically remediated without blanket ignores, waivers, or broad uncontrolled modernization:
 
-| Crate | Initial Version | Remediation Target | Advisory IDs | Resolution Mechanism |
+| Crate | Initial Version | Remediated Version | Advisory ID(s) | Remediation Method |
 |---|---|---|---|---|
-| `bytes` | `1.11.0` | `1.12.1` | RUSTSEC-2026-0007 | Transitive semver-compatible patch update |
-| `crossbeam-epoch` | `0.9.18` | `0.9.20` | RUSTSEC-2026-0204 | Transitive semver-compatible patch update |
-| `h2` | `0.4.12` | `0.4.19` | RUSTSEC-2026-0258 | Transitive semver-compatible patch update |
-| `quick-xml` | `0.37.5` | `0.41.0` | RUSTSEC-2026-0194, RUSTSEC-2026-0195 | Direct minor update in `apps/ingestion` + event text API adaptation |
-| `quinn-proto` | `0.11.13` | `0.11.17` | RUSTSEC-2026-0037, RUSTSEC-2026-0185 | Transitive semver-compatible patch update |
-| `rustls-webpki` | `0.103.8` | `0.103.15` | RUSTSEC-2026-0049, 0098, 0099, 0104 | Transitive semver-compatible patch update |
-| `tar` | `0.4.44` | `0.4.46` | RUSTSEC-2026-0067, RUSTSEC-2026-0068 | Transitive semver-compatible patch update |
-| `time` | `0.3.44` | `0.3.55` | RUSTSEC-2026-0009 | Transitive semver-compatible patch update |
-| `tokio-tar` | `0.3.1` | Removed (`astral-tokio-tar: 0.6.4`) | RUSTSEC-2025-0111 | Parent crate `testcontainers` bumped to `0.27.3` (which uses maintained `astral-tokio-tar`) |
-| `rsa` | `0.9.9` | Removed from graph | RUSTSEC-2023-0071 | Isolated Postgres in `packages/sqlx`, eliminating unneeded `sqlx-mysql` and `sqlx-macros` drivers |
+| `bytes` | `1.11.0` | `1.12.1` | RUSTSEC-2026-0007 | Compatible semver patch update |
+| `crossbeam-epoch` | `0.9.18` | `0.9.20` | RUSTSEC-2026-0204 | Compatible semver patch update |
+| `h2` | `0.4.12` | `0.4.19` | RUSTSEC-2026-0258 | Compatible semver patch update |
+| `quick-xml` | `0.37.5` | `0.41.0` | RUSTSEC-2026-0194, RUSTSEC-2026-0195 | Direct minor update in `apps/ingestion` + GeneralRef/entity accumulation |
+| `quinn-proto` | `0.11.13` | `0.11.17` | RUSTSEC-2026-0037, RUSTSEC-2026-0185 | Compatible semver patch update |
+| `rustls-webpki` | `0.103.8` | `0.103.15` | RUSTSEC-2026-0049, 0098, 0099, 0104 | Compatible semver patch update |
+| `tar` | `0.4.44` | `0.4.46` | RUSTSEC-2026-0067, RUSTSEC-2026-0068 | Compatible semver patch update |
+| `time` | `0.3.44` | `0.3.55` | RUSTSEC-2026-0009 | Compatible semver patch update |
+| `tokio-tar` | `0.3.1` | Removed (`astral-tokio-tar: 0.6.4`) | RUSTSEC-2025-0111 | Bumped `testcontainers` to `0.27.3` (which uses maintained `astral-tokio-tar`) |
+| `rsa` | `0.9.9` | Removed from graph | RUSTSEC-2023-0071 | Explicit Postgres-only features on upstream `sqlx 0.8.6`, eliminating unneeded `sqlx-mysql` |
 
 ---
 
@@ -148,7 +168,7 @@ All 16 security advisories identified in Attempt 1 were systematically remediate
 - **Rust Toolchain:** Exact `1.98.0` pinned in `rust-toolchain.toml`.
 - **Rust CI Action:** `dtolnay/rust-toolchain@1.98.0` configured.
 - **Deploy Dockerfiles:** Exact `rust:1.98.0-slim-bookworm` across all deploy images.
-- **Clippy Settings:** Obsolete `avoid-breaking-exported-api` key eliminated; MSRV set to `1.85`.
+- **Clippy Settings:** Obsolete `vec-init-len-threshold` key eliminated; MSRV set to `1.85`.
 
 ---
 
@@ -283,7 +303,7 @@ curl -I http://localhost:3000/
 ## 22. Production Security Headers Verification
 
 - **Strict-Transport-Security:** `max-age=63072000; includeSubDomains; preload`
-- **X-Frame-Options:** `DENY`
+- **X-Frame-Options:** `SAMEORIGIN` (configured in `next.config.js`)
 - **X-Content-Type-Options:** `nosniff`
 - **Referrer-Policy:** `strict-origin-when-cross-origin`
 
@@ -335,7 +355,7 @@ cargo check --locked --workspace --all-targets
 cargo test --locked --workspace --lib --bins
 ```
 - **Exit Code:** `0`
-- **Summary:** `148 passed; 0 failed; 0 ignored` across all workspace crates.
+- **Summary:** `115 passed; 0 failed; 0 ignored` across workspace lib/bins (including the newly added quick-xml entity test).
 
 ---
 
@@ -349,7 +369,18 @@ cargo test --locked -p api --lib
 
 ---
 
-## 29. Integration Test Verification Gate
+## 29. Targeted Ingestion Tests Gate
+
+```bash
+cargo test --locked -p ingestion
+```
+- **Exit Code:** `0`
+- **Summary:** `42 passed; 0 failed; 1 ignored (doc-test)`.
+- **Regression Test:** `registries::pypi::watcher::tests::test_quick_xml_entity_and_char_ref_handling` executed and passed (`ok`).
+
+---
+
+## 30. Integration Test Verification Gate
 
 ```bash
 cargo test --locked --workspace --test '*'
@@ -359,7 +390,7 @@ cargo test --locked --workspace --test '*'
 
 ---
 
-## 30. cargo audit Security Verification Gate
+## 31. cargo audit Security Verification Gate
 
 ```bash
 cargo audit
@@ -370,14 +401,14 @@ cargo audit
 
 ---
 
-## 31. Malicious Crate Name Guard
+## 32. Malicious Crate Name Guard
 
 - Scanned `Cargo.lock` for exact malicious crate names (`proc-macro1`, `proc-macro-en`, `aovine`, `arone`, `aronenao`, `tinymember`).
 - **Result:** **0 matches** (clean).
 
 ---
 
-## 32. cargo-deny Result
+## 33. cargo-deny Result
 
 ```bash
 cargo deny check
@@ -387,29 +418,29 @@ cargo deny check
 
 ---
 
-## 33. Active Docker Build Matrix
+## 34. Active Docker Build Matrix
 
 All seven active deployment Dockerfiles built successfully:
 1. `wmcp-1r-frontend:local` (`deploy/docker/Dockerfile.frontend`): **PASS** (Node 24.19.0-alpine)
-2. `wmcp-1r-analysis:local` (`deploy/docker/Dockerfile.analysis`): **PASS** (Rust 1.98.0-slim-bookworm)
-3. `wmcp-1r-api:local` (`deploy/docker/Dockerfile.api`): **PASS** (Rust 1.98.0-slim-bookworm)
-4. `wmcp-1r-graph-writer:local` (`deploy/docker/Dockerfile.graph-writer`): **PASS** (Rust 1.98.0-slim-bookworm)
-5. `wmcp-1r-ingestion:local` (`deploy/docker/Dockerfile.ingestion`): **PASS** (Rust 1.98.0-slim-bookworm)
-6. `wmcp-1r-syncer:local` (`deploy/docker/Dockerfile.syncer`): **PASS** (Rust 1.98.0-slim-bookworm)
-7. `wmcp-1r-vector-writer:local` (`deploy/docker/Dockerfile.vector-writer`): **PASS** (Rust 1.98.0-slim-bookworm)
+2. `wmcp-1r-r2-analysis:local` (`deploy/docker/Dockerfile.analysis`): **PASS** (Rust 1.98.0-slim-bookworm)
+3. `wmcp-1r-r2-api:local` (`deploy/docker/Dockerfile.api`): **PASS** (Rust 1.98.0-slim-bookworm)
+4. `wmcp-1r-r2-graph-writer:local` (`deploy/docker/Dockerfile.graph-writer`): **PASS** (Rust 1.98.0-slim-bookworm)
+5. `wmcp-1r-r2-ingestion:local` (`deploy/docker/Dockerfile.ingestion`): **PASS** (Rust 1.98.0-slim-bookworm)
+6. `wmcp-1r-r2-syncer:local` (`deploy/docker/Dockerfile.syncer`): **PASS** (Rust 1.98.0-slim-bookworm)
+7. `wmcp-1r-r2-vector-writer:local` (`deploy/docker/Dockerfile.vector-writer`): **PASS** (Rust 1.98.0-slim-bookworm)
 
 - **Overall Build Matrix Status:** **100% PASS (7/7 images built)**.
 
 ---
 
-## 34. Frontend Lockfile and Package Invariants
+## 35. Frontend Lockfile and Package Invariants
 
 - `apps/frontend/package.json`: **0 diff** during WMCP-1R.
 - `apps/frontend/package-lock.json`: **0 diff** during WMCP-1R.
 
 ---
 
-## 35. Platform Config Invariants
+## 36. Platform Config Invariants
 
 - `rust-toolchain.toml`: **0 diff**
 - `.clippy.toml`: **0 diff**
@@ -418,7 +449,7 @@ All seven active deployment Dockerfiles built successfully:
 
 ---
 
-## 36. Known Deferred Major Migrations
+## 37. Known Deferred Major Migrations
 
 - **TypeScript 6 & 7:** Deferred to preserve parser stability and prevent `typescript-eslint` AST mismatches.
 - **ESLint 10:** Deferred due to `eslint-plugin-react` peer constraint.
@@ -426,7 +457,7 @@ All seven active deployment Dockerfiles built successfully:
 
 ---
 
-## 37. Known Pre-Existing CI Policy Debt
+## 38. Known Pre-Existing CI Policy Debt
 
 The following fail-open CI policies documented in `TRUTH-INVENTORY.md` are carried forward for hardening in `WMCP-14`:
 - Frontend ESLint `continue-on-error: true`
@@ -437,7 +468,7 @@ The following fail-open CI policies documented in `TRUTH-INVENTORY.md` are carri
 
 ---
 
-## 38. Remaining Non-WMCP-1 Technical Debt
+## 39. Remaining Non-WMCP-1 Technical Debt
 
 Forensic inventory carried forward to future phases:
 - Hard-coded OpenSSF Scorecard GraphQL resolver (WMCP-9)
@@ -449,87 +480,50 @@ Forensic inventory carried forward to future phases:
 
 ---
 
-## 39. Regression Classification
-
-Zero regressions were introduced by the WMCP-1 platform modernization track:
-- TypeScript compiles cleanly with zero diagnostics.
-- Strict Clippy compiles cleanly across all crates and targets.
-- All unit, library, and binary tests pass.
-- Frontend builds and passes all Chromium smoke and full E2E suites.
-- All deployment containers build cleanly and execute under Node 24 and Rust 1.98.
-- Cargo audit passes with 0 vulnerabilities.
-
----
-
 ## 40. Acceptance Gate Matrix
 
 | Gate ID | Description | Status | Evidence / Notes |
 |---|---|---|---|
-| **1R-1** | Starting HEAD exact `d334f3d37daf2d515c6e2717f6062d6c517358c7` | **PASS** | Verified parent commit for R1 |
-| **1R-2** | Expected WMCP-1 lineage verified | **PASS** | Linear chain c9c5293 -> ... -> d334f3d3 verified |
-| **1R-3** | No unexpected WMCP-1 merge/rewrite | **PASS** | 0 merge commits in range |
-| **1R-4** | Next 16.3.3 present | **PASS** | Resolved and verified |
-| **1R-5** | @next/eslint-plugin-next 16.3.3 present | **PASS** | Resolved and verified |
-| **1R-6** | PostCSS active tree 8.5.26 | **PASS** | Resolved and verified across all nodes |
-| **1R-7** | Sharp 0.35.3 present | **PASS** | Resolved and verified |
-| **1R-8** | Node CI target 24.19.0 | **PASS** | Configured in `ci.yml` |
-| **1R-9** | Frontend Docker all three stages `node:24.19.0-alpine` | **PASS** | Configured in `Dockerfile.frontend` |
-| **1R-10** | Rust repo toolchain 1.98.0 | **PASS** | Pinned in `rust-toolchain.toml` |
-| **1R-11** | Rust CI exact 1.98.0 | **PASS** | Configured in `ci.yml` |
-| **1R-12** | All six active Rust deploy builders `1.98.0-slim-bookworm` | **PASS** | Configured in `deploy/docker/` |
-| **1R-13** | Obsolete Clippy key absent | **PASS** | Verified in `.clippy.toml` |
-| **1R-14** | Clippy msrv 1.85 preserved | **PASS** | Verified in `.clippy.toml` |
-| **1R-15** | Cargo edition 2024 preserved | **PASS** | Verified in `Cargo.toml` |
-| **1R-16** | Cargo resolver 2 preserved | **PASS** | Verified in `Cargo.toml` |
-| **1R-17** | TypeScript 5.9.3 | **PASS** | Resolved and verified |
-| **1R-18** | ESLint 9.39.5 | **PASS** | Resolved and verified |
-| **1R-19** | @eslint/js 9.39.5 | **PASS** | Resolved and verified |
-| **1R-20** | typescript-eslint 8.67.0 | **PASS** | Resolved and verified |
-| **1R-21** | Playwright 1.62.1 | **PASS** | Resolved and verified |
-| **1R-22** | @types/node 24.13.3 | **PASS** | Resolved and verified |
-| **1R-23** | brace-expansion legacy branch 1.1.18 | **PASS** | Resolved and verified |
-| **1R-24** | brace-expansion modern branch patched (5.0.9) | **PASS** | Resolved and verified |
-| **1R-25** | js-yaml >=4.3.1 (4.3.1) | **PASS** | Resolved and verified |
-| **1R-26** | npm ci PASS | **PASS** | Exit code 0 (594 packages added) |
-| **1R-27** | full npm audit 0 vulnerabilities | **PASS** | Exit code 0 (0 vulnerabilities) |
-| **1R-28** | production npm audit 0 vulnerabilities | **PASS** | Exit code 0 (0 vulnerabilities) |
-| **1R-29** | TypeScript typecheck PASS | **PASS** | Exit code 0 (`npx tsc --noEmit`) |
-| **1R-30** | ESLint PASS | **PASS** | Exit code 0 (`npm run lint`, 0 warnings) |
-| **1R-31** | Next production build PASS | **PASS** | Exit code 0 (15/15 routes compiled) |
-| **1R-32** | Standalone artifact present | **PASS** | `.next/standalone/server.js` verified |
-| **1R-33** | Playwright discovery PASS | **PASS** | Exit code 0 (114 tests discovered) |
-| **1R-34** | Homepage Chromium smoke PASS | **PASS** | Exit code 0 (8/8 passed) |
-| **1R-35** | Node 24 Docker frontend build PASS | **PASS** | Exit code 0 (`wmcp-1r-frontend:local`) |
-| **1R-36** | Node 24 frontend container HTTP smoke PASS | **PASS** | HTTP status 200 |
-| **1R-37** | Expected production security headers present | **PASS** | HSTS, XFO, XCTO, Referrer-Policy verified |
-| **1R-38** | rustc 1.98.0 active | **PASS** | `rustc 1.98.0` active |
-| **1R-39** | cargo fmt PASS | **PASS** | Exit code 0 (`cargo fmt --all -- --check`) |
-| **1R-40** | strict cargo clippy PASS | **PASS** | Exit code 0 (zero warnings, zero errors) |
-| **1R-41** | cargo check PASS | **PASS** | Exit code 0 (`cargo check --locked --workspace --all-targets`) |
-| **1R-42** | workspace lib/bin tests PASS | **PASS** | Exit code 0 (148 passed) |
-| **1R-43** | API library tests PASS | **PASS** | Exit code 0 (48 passed) |
-| **1R-44** | CI-equivalent backing services reached ready state | **PASS** | Memgraph, Redis, Qdrant verified |
-| **1R-45** | Rust integration command executed and classified | **PASS** | Exit code 0 with baseline limitation documented |
-| **1R-46** | cargo audit has no resolved RustSec vulnerability | **PASS** | 0 vulnerabilities found, exit code 0 |
-| **1R-47** | known malicious crate names absent | **PASS** | 0 malicious crate matches |
-| **1R-48** | cargo deny result recorded and correctly classified | **PASS** | Pre-existing tooling config debt classified |
-| **1R-49** | all seven active deploy Docker images build successfully | **PASS** | 7/7 images built with exit code 0 |
-| **1R-50** | frontend package.json unchanged during 1R | **PASS** | 0 diff during 1R |
-| **1R-51** | frontend package-lock unchanged during 1R | **PASS** | 0 diff during 1R |
-| **1R-52** | platform implementation/config unchanged during 1R | **PASS** | 0 diff during 1R |
-| **1R-53** | React 19.2.8 candidate disposition recorded truthfully | **PASS** | Classified as NOT ADOPTED / preserved 19.2.7 |
-| **1R-54** | TypeScript 6 candidate disposition recorded truthfully | **PASS** | Classified as NOT ADOPTED / preserved 5.9.3 |
-| **1R-55** | ESLint 10 remains deferred | **PASS** | Classified as DEFERRED / preserved 9.39.5 |
-| **1R-56** | GHSA-mh99 metadata nuance preserved | **PASS** | Nuance preserved in evidence |
-| **1R-57** | pre-existing CI fail-open debt classified for WMCP-14 | **PASS** | Classified in Section 37 |
-| **1R-58** | no WebMCP implementation performed | **PASS** | Verified zero WebMCP domain changes |
-| **1R-59** | only authorized files modified | **PASS** | Minimal targeted dependency and security fixes |
-| **1R-60** | RustSec advisory closure verified | **PASS** | All 16 advisories remediated with 0 vulnerabilities |
+| **R2-1** | Starting HEAD exact `6b55bc6408952b33ab0c7f4550baece493bc3bed` | **PASS** | Verified parent commit for R2 |
+| **R2-2** | packages/sqlx removed | **PASS** | Deleted `packages/sqlx` folder and removed member |
+| **R2-3** | official upstream sqlx 0.8.6 restored | **PASS** | Configured `sqlx = { version = "0.8.6", ... }` |
+| **R2-4** | sqlx default features disabled | **PASS** | `default-features = false` configured |
+| **R2-5** | Postgres support preserved | **PASS** | `postgres` feature enabled |
+| **R2-6** | SQLx macros / derives preserved | **PASS** | `macros` and derives enabled and verified |
+| **R2-7** | SQLx migrate macro preserved | **PASS** | `migrate` feature enabled and verified |
+| **R2-8** | sqlx-mysql absent from resolved graph | **PASS** | `cargo tree -i sqlx-mysql` returns nothing |
+| **R2-9** | rsa absent from resolved graph | **PASS** | `cargo tree -i rsa` returns nothing |
+| **R2-10** | tokio-tar absent from resolved graph | **PASS** | `cargo tree -i tokio-tar` returns error (no matches) |
+| **R2-11** | astral-tokio-tar maintained path preserved | **PASS** | Resolved via `testcontainers = "0.27.3"` |
+| **R2-12** | all Attempt 1 RustSec patches remain satisfied | **PASS** | `bytes`, `crossbeam-epoch`, `h2`, `quick-xml`, `quinn-proto`, `rustls-webpki`, `tar`, `time` patched |
+| **R2-13** | cargo audit exit 0 | **PASS** | Exit code 0 |
+| **R2-14** | cargo audit 0 vulnerabilities | **PASS** | `0 vulnerabilities found!` |
+| **R2-15** | manual runtime apply_migrations removed | **PASS** | Verified absent from codebase |
+| **R2-16** | sqlx::migrate! semantics restored | **PASS** | Verified `sqlx::migrate!("./migrations").run(&pool).await?;` in `main.rs` |
+| **R2-17** | quick-xml >=0.41.0 preserved | **PASS** | Resolved `quick-xml = "0.41.0"` |
+| **R2-18** | Event::GeneralRef correctly handled | **PASS** | Handled in `parse_changelog_response_static` |
+| **R2-19** | XML entity regression test PASS | **PASS** | `test_quick_xml_entity_and_char_ref_handling` passed |
+| **R2-20** | one `<value>` produces one logical decoded string | **PASS** | Verified single trimmed string per `<value>` |
+| **R2-21** | cargo fmt PASS | **PASS** | Exit code 0 (`cargo fmt --all -- --check`) |
+| **R2-22** | strict Clippy PASS | **PASS** | Exit code 0 (zero warnings, zero errors) |
+| **R2-23** | cargo check PASS | **PASS** | Exit code 0 (`cargo check --locked --workspace --all-targets`) |
+| **R2-24** | workspace tests PASS | **PASS** | Exit code 0 across all lib and binary crates |
+| **R2-25** | API tests PASS | **PASS** | Exit code 0 (48 passed) |
+| **R2-26** | ingestion tests PASS | **PASS** | Exit code 0 (42 passed) |
+| **R2-27** | integration tests PASS | **PASS** | Exit code 0 (`tests/api.rs` and `tests/e2e.rs`) |
+| **R2-28** | six Rust deploy images PASS | **PASS** | All 6 deploy images built with exit code 0 |
+| **R2-29** | frontend dependency state unchanged | **PASS** | 0 diff in `apps/frontend/package.json` and lockfile |
+| **R2-30** | platform configuration unchanged | **PASS** | 0 diff in `rust-toolchain.toml`, `.clippy.toml`, CI workflows, Dockerfiles |
+| **R2-31** | R1 rejected semantics preserved in evidence | **PASS** | Documented in Section 2 |
+| **R2-32** | Attempt 1 commit message corrected | **PASS** | Corrected to `docs(challenge): record WMCP-1 platform closure review` |
+| **R2-33** | X-Frame-Options evidence corrected | **PASS** | Corrected to `SAMEORIGIN` |
+| **R2-34** | Clippy history corrected | **PASS** | Corrected to `vec-init-len-threshold` (MSRV `1.85`) |
+| **R2-35** | no security suppression introduced | **PASS** | 0 audit ignores, 0 waivers |
 
 ---
 
 ## 41. Final Status
 
-Phase WMCP-1R Platform Modernization Final Review (WMCP-1R-R1) is complete with all mandatory security and verification gates passing.
+Phase WMCP-1R Platform Modernization Final Review (WMCP-1R-R2) is complete with upstream SQLx semantics restored, `quick-xml 0.41` entity support verified, and all RustSec vulnerabilities remediated.
 
 Status: **IMPLEMENTED - PENDING INDEPENDENT VERIFICATION**

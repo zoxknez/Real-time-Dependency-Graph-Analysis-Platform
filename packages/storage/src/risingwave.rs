@@ -231,62 +231,28 @@ impl RisingWaveClient {
 // ═══════════════════════════════════════════════════════════════
 
 /// Ecosystem statistics
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct EcosystemStats {
     pub ecosystem: String,
     pub package_count: i64,
     pub unique_packages: i64,
 }
 
-impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for EcosystemStats {
-    fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-        use sqlx::Row;
-        Ok(Self {
-            ecosystem: row.try_get("ecosystem")?,
-            package_count: row.try_get("package_count")?,
-            unique_packages: row.try_get("unique_packages")?,
-        })
-    }
-}
-
 /// Dependency count
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct DependencyCount {
     pub target_package_id: String,
     pub dependent_count: i64,
 }
 
-impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for DependencyCount {
-    fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-        use sqlx::Row;
-        Ok(Self {
-            target_package_id: row.try_get("target_package_id")?,
-            dependent_count: row.try_get("dependent_count")?,
-        })
-    }
-}
-
 /// Package event from Kafka
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct PackageEvent {
     pub package_id: String,
     pub version: String,
     pub ecosystem: String,
     pub event_type: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
-}
-
-impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for PackageEvent {
-    fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-        use sqlx::Row;
-        Ok(Self {
-            package_id: row.try_get("package_id")?,
-            version: row.try_get("version")?,
-            ecosystem: row.try_get("ecosystem")?,
-            event_type: row.try_get("event_type")?,
-            timestamp: row.try_get("timestamp")?,
-        })
-    }
 }
 
 #[cfg(test)]

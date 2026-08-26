@@ -9,12 +9,18 @@ use sqlx::{PgExecutor, PgPool, Postgres, Row, Transaction};
 use tracing::{debug, info, warn};
 
 /// Status of an outbox event
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, sqlx::Type)]
+#[sqlx(type_name = "text")]
 pub enum OutboxStatus {
+    #[sqlx(rename = "pending")]
     Pending,
+    #[sqlx(rename = "publishing")]
     Publishing,
+    #[sqlx(rename = "published")]
     Published,
+    #[sqlx(rename = "failed")]
     Failed,
+    #[sqlx(rename = "deadletter")]
     DeadLetter,
 }
 
@@ -42,7 +48,7 @@ pub struct OutboxEvent {
 }
 
 /// Outbox row as stored in database
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, sqlx::FromRow)]
 pub struct OutboxRow {
     pub id: i64,
     pub event_id: String,
@@ -59,29 +65,6 @@ pub struct OutboxRow {
     pub published_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub last_error: Option<String>,
-}
-
-impl<'r> sqlx::FromRow<'r, sqlx::postgres::PgRow> for OutboxRow {
-    fn from_row(row: &'r sqlx::postgres::PgRow) -> Result<Self, sqlx::Error> {
-        use sqlx::Row;
-        Ok(Self {
-            id: row.try_get("id")?,
-            event_id: row.try_get("event_id")?,
-            event_type: row.try_get("event_type")?,
-            topic: row.try_get("topic")?,
-            partition_key: row.try_get("partition_key")?,
-            payload: row.try_get("payload")?,
-            headers: row.try_get("headers")?,
-            status: row.try_get("status")?,
-            attempts: row.try_get("attempts")?,
-            next_retry_at: row.try_get("next_retry_at")?,
-            locked_by: row.try_get("locked_by")?,
-            locked_at: row.try_get("locked_at")?,
-            published_at: row.try_get("published_at")?,
-            created_at: row.try_get("created_at")?,
-            last_error: row.try_get("last_error")?,
-        })
-    }
 }
 
 /// Repository for outbox operations
