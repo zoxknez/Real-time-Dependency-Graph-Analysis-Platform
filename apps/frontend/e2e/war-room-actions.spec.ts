@@ -2,7 +2,7 @@
  * War Room Actions Application Boundary Tests
  *
  * Deterministic application verification tests executed using Playwright's TypeScript runner
- * without requiring browser / page fixtures (Section 77 & 78, WMCP-2B).
+ * without requiring browser / page fixtures (Section 49 & 55, WMCP-2B-R1).
  */
 
 import { test, expect } from "@playwright/test";
@@ -199,7 +199,7 @@ function createMockDependencies(
   return { deps, calls };
 }
 
-test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
+test.describe("War Room Actions Application Boundary (WMCP-2B-R1)", () => {
   test("1. initialize delegates APP_INITIALIZED", () => {
     const { deps } = createMockDependencies();
     const actions = createWarRoomActions(deps);
@@ -297,7 +297,104 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     expect(deps.statePort.getState().phase).toBe("IDLE");
   });
 
-  test("6. Authorization denial returns CAPABILITY_DENIED and prevents service execution", async () => {
+  test("6. SecurityContextPort unexpected throw is sanitized to INTERNAL_ERROR", async () => {
+    const { deps, calls } = createMockDependencies({
+      securityContextPort: {
+        async getSecurityContext() {
+          throw new Error("SECRET_SECURITY_CONTEXT_BACKEND_FAILURE");
+        },
+      },
+    });
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+
+    const result = await actions.openPackageGraph(
+      { channel: "HUMAN", capturedContextRevision: 1 },
+      { rootPackageId: "pkg-react" }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INTERNAL_ERROR");
+      expect(result.error.message).not.toContain("SECRET_SECURITY_CONTEXT_BACKEND_FAILURE");
+      expect(result.error.message).toBe("Unexpected War Room service failure");
+    }
+    expect(calls.authCalls).toBe(0);
+    expect(calls.graphLoadCalls).toBe(0);
+    expect(deps.statePort.getState().phase).toBe("IDLE");
+  });
+
+  test("7. SecurityContextPort AbortError maps to CANCELLED", async () => {
+    const abortErr = new Error("Aborted");
+    abortErr.name = "AbortError";
+
+    const { deps, calls } = createMockDependencies({
+      securityContextPort: {
+        async getSecurityContext() {
+          throw abortErr;
+        },
+      },
+    });
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+
+    const result = await actions.openPackageGraph(
+      { channel: "HUMAN", capturedContextRevision: 1 },
+      { rootPackageId: "pkg-react" }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("CANCELLED");
+    }
+    expect(calls.authCalls).toBe(0);
+  });
+
+  test("8. SecurityContextPort malformed identity is rejected as INTERNAL_ERROR", async () => {
+    const { deps } = createMockDependencies({
+      securityContextPort: {
+        async getSecurityContext() {
+          return { ok: true, data: { tenantId: "   ", userId: "valid-user" } as any };
+        },
+      },
+    });
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+
+    const result = await actions.searchPackages(
+      { channel: "HUMAN", capturedContextRevision: 1 },
+      { query: "react" }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INTERNAL_ERROR");
+    }
+  });
+
+  test("9. SecurityContextPort malformed userId is rejected as INTERNAL_ERROR", async () => {
+    const { deps } = createMockDependencies({
+      securityContextPort: {
+        async getSecurityContext() {
+          return { ok: true, data: { tenantId: "tenant-1", userId: "" } as any };
+        },
+      },
+    });
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+
+    const result = await actions.searchPackages(
+      { channel: "HUMAN", capturedContextRevision: 1 },
+      { query: "react" }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INTERNAL_ERROR");
+    }
+  });
+
+  test("10. Authorization denial returns CAPABILITY_DENIED and prevents service execution", async () => {
     const { deps, calls } = createMockDependencies({
       authorizationPort: {
         async authorize() {
@@ -323,7 +420,84 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     expect(deps.statePort.getState().phase).toBe("IDLE");
   });
 
-  test("7. Human and Agent security parity (both allowed with identical security context)", async () => {
+  test("11. AuthorizationPort unexpected throw is sanitized to INTERNAL_ERROR", async () => {
+    const { deps, calls } = createMockDependencies({
+      authorizationPort: {
+        async authorize() {
+          throw new Error("SECRET_AUTHORIZATION_POLICY_FAILURE");
+        },
+      },
+    });
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+
+    const result = await actions.openPackageGraph(
+      { channel: "AGENT", capturedContextRevision: 1 },
+      { rootPackageId: "pkg-react" }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INTERNAL_ERROR");
+      expect(result.error.message).not.toContain("SECRET_AUTHORIZATION_POLICY_FAILURE");
+      expect(result.error.message).toBe("Unexpected War Room service failure");
+    }
+    expect(calls.graphLoadCalls).toBe(0);
+  });
+
+  test("12. AuthorizationPort AbortError maps to CANCELLED", async () => {
+    const abortErr = new Error("Aborted");
+    abortErr.name = "AbortError";
+
+    const { deps, calls } = createMockDependencies({
+      authorizationPort: {
+        async authorize() {
+          throw abortErr;
+        },
+      },
+    });
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+
+    const result = await actions.openPackageGraph(
+      { channel: "AGENT", capturedContextRevision: 1 },
+      { rootPackageId: "pkg-react" }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("CANCELLED");
+    }
+    expect(calls.graphLoadCalls).toBe(0);
+  });
+
+  test("13. Error message containing 'abort' without AbortError name or signal is sanitized to INTERNAL_ERROR", async () => {
+    const { deps } = createMockDependencies({
+      packageCatalogPort: {
+        async searchPackages() {
+          throw new Error("Database transaction aborted by server");
+        },
+        async inspectPackage() {
+          return { ok: true, data: { package: mockGraphContext.rootPackage, directDependencyIds: [], directDependentIds: [] } };
+        },
+      },
+    });
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+
+    const result = await actions.searchPackages(
+      { channel: "HUMAN", capturedContextRevision: 1 },
+      { query: "react" }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INTERNAL_ERROR");
+      expect(result.error.message).toBe("Unexpected War Room service failure");
+    }
+  });
+
+  test("14. Human and Agent security parity (both allowed with identical security context)", async () => {
     const { deps } = createMockDependencies();
     const actions = createWarRoomActions(deps);
     actions.initialize();
@@ -344,7 +518,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     }
   });
 
-  test("8. Human and Agent security parity (both denied when unauthorized)", async () => {
+  test("15. Human and Agent security parity (both denied when unauthorized)", async () => {
     const { deps } = createMockDependencies({
       authorizationPort: {
         async authorize() {
@@ -372,7 +546,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     }
   });
 
-  test("9. Trusted tenant ID reaches PackageCatalogPort and service ports", async () => {
+  test("16. Trusted tenant ID reaches PackageCatalogPort and service ports", async () => {
     const { deps, calls } = createMockDependencies();
     const actions = createWarRoomActions(deps);
     actions.initialize();
@@ -385,7 +559,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     expect(calls.observedTenantIds).toContain("tenant-acme-corp");
   });
 
-  test("10. searchPackages succeeds without mutating canonical state", async () => {
+  test("17. searchPackages succeeds without mutating canonical state", async () => {
     const { deps } = createMockDependencies();
     const actions = createWarRoomActions(deps);
     actions.initialize();
@@ -401,7 +575,39 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     expect(deps.statePort.getState().phase).toBe("IDLE");
   });
 
-  test("11. inspectPackage explicit read succeeds", async () => {
+  test("18. searchPackages rejects invalid ecosystem with INVALID_INPUT", async () => {
+    const { deps } = createMockDependencies();
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+
+    const result = await actions.searchPackages(
+      { channel: "HUMAN", capturedContextRevision: 1 },
+      { query: "react", ecosystem: "INVALID_ECO" as any }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_INPUT");
+    }
+  });
+
+  test("19. searchPackages rejects invalid limit with INVALID_INPUT", async () => {
+    const { deps } = createMockDependencies();
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+
+    const result = await actions.searchPackages(
+      { channel: "HUMAN", capturedContextRevision: 1 },
+      { query: "react", limit: -5 }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_INPUT");
+    }
+  });
+
+  test("20. inspectPackage explicit read succeeds", async () => {
     const { deps } = createMockDependencies();
     const actions = createWarRoomActions(deps);
     actions.initialize();
@@ -417,7 +623,23 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     }
   });
 
-  test("12. traceDependencyPath explicit read succeeds", async () => {
+  test("21. inspectPackage rejects empty packageId with INVALID_INPUT", async () => {
+    const { deps } = createMockDependencies();
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+
+    const result = await actions.inspectPackage(
+      { channel: "HUMAN", capturedContextRevision: 1 },
+      { packageId: "   " }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_INPUT");
+    }
+  });
+
+  test("22. traceDependencyPath explicit read succeeds", async () => {
     const { deps } = createMockDependencies();
     const actions = createWarRoomActions(deps);
     actions.initialize();
@@ -433,7 +655,23 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     }
   });
 
-  test("13. Explicit-ID pure read completes even if canonical revision changes while pending", async () => {
+  test("23. traceDependencyPath rejects empty package IDs with INVALID_INPUT", async () => {
+    const { deps } = createMockDependencies();
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+
+    const result = await actions.traceDependencyPath(
+      { channel: "HUMAN", capturedContextRevision: 1 },
+      { fromPackageId: "", toPackageId: "pkg-react-dom" }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_INPUT");
+    }
+  });
+
+  test("24. Explicit-ID pure read completes even if canonical revision changes while pending", async () => {
     let resolveInspect: (val: any) => void;
     const inspectPromise = new Promise<any>((res) => {
       resolveInspect = res;
@@ -479,10 +717,112 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     const readResult = await pendingRead;
     expect(readResult.ok).toBe(true);
     expect(readResult.changed).toBe(false);
-    expect(readResult.contextRevision).toBe(2);
+    expect(readResult.contextRevision).toBe(2); // reports latest revision
   });
 
-  test("14. openPackageGraph commits returned graph and increments revision", async () => {
+  test("25. Pure read mid-flight cancellation maps to CANCELLED even if service returned data", async () => {
+    const controller = new AbortController();
+    const { deps } = createMockDependencies({
+      packageCatalogPort: {
+        async searchPackages() {
+          return { ok: true, data: { packages: [] } };
+        },
+        async inspectPackage() {
+          controller.abort(); // abort while service is resolving
+          return {
+            ok: true,
+            data: { package: mockGraphContext.rootPackage, directDependencyIds: [], directDependentIds: [] },
+          };
+        },
+      },
+    });
+
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+
+    const result = await actions.inspectPackage(
+      { channel: "HUMAN", capturedContextRevision: 1, signal: controller.signal },
+      { packageId: "pkg-react" }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("CANCELLED");
+    }
+  });
+
+  test("26. Pending security failure returns latest current revision", async () => {
+    let resolveSecurityPromise: (val: any) => void;
+    const secPromise = new Promise<any>((res) => {
+      resolveSecurityPromise = res;
+    });
+
+    const { deps } = createMockDependencies({
+      securityContextPort: {
+        async getSecurityContext() {
+          return secPromise;
+        },
+      },
+    });
+
+    const actions = createWarRoomActions(deps);
+    actions.initialize(); // rev = 1
+
+    const pendingAction = actions.searchPackages(
+      { channel: "HUMAN", capturedContextRevision: 1 },
+      { query: "react" }
+    );
+
+    // State changes while security is pending
+    deps.statePort.transition({ type: "GRAPH_OPENED", payload: { graph: mockGraphContext } }); // rev = 2
+
+    // Resolve security with failure
+    resolveSecurityPromise!({ ok: false, error: createDomainError("UNAVAILABLE", "Auth down") });
+
+    const result = await pendingAction;
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("UNAVAILABLE");
+    }
+    expect(result.contextRevision).toBe(2); // reports current revision
+  });
+
+  test("27. Pending authorization failure returns latest current revision", async () => {
+    let resolveAuthPromise: (val: any) => void;
+    const authPromise = new Promise<any>((res) => {
+      resolveAuthPromise = res;
+    });
+
+    const { deps } = createMockDependencies({
+      authorizationPort: {
+        async authorize() {
+          return authPromise;
+        },
+      },
+    });
+
+    const actions = createWarRoomActions(deps);
+    actions.initialize(); // rev = 1
+
+    const pendingAction = actions.searchPackages(
+      { channel: "HUMAN", capturedContextRevision: 1 },
+      { query: "react" }
+    );
+
+    // State changes while auth is pending
+    deps.statePort.transition({ type: "GRAPH_OPENED", payload: { graph: mockGraphContext } }); // rev = 2
+
+    resolveAuthPromise!({ ok: false, error: createDomainError("CAPABILITY_DENIED", "Denied") });
+
+    const result = await pendingAction;
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("CAPABILITY_DENIED");
+    }
+    expect(result.contextRevision).toBe(2); // reports current revision
+  });
+
+  test("28. openPackageGraph commits returned graph and increments revision", async () => {
     const { deps } = createMockDependencies();
     const actions = createWarRoomActions(deps);
     actions.initialize();
@@ -498,7 +838,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     expect(deps.statePort.getState().phase).toBe("GRAPH_READY");
   });
 
-  test("15. openPackageGraph async race rejects stale result with STALE_CONTEXT", async () => {
+  test("29. openPackageGraph async race rejects stale result with STALE_CONTEXT", async () => {
     let resolveGraph: (val: any) => void;
     const graphPromise = new Promise<any>((res) => {
       resolveGraph = res;
@@ -545,7 +885,22 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     expect(deps.statePort.getState().graph.id).toBe("graph-vue");
   });
 
-  test("16. selectPackage delegates to reducer and same-node selection is no-op", async () => {
+  test("30. Valid closeGraph transitions GRAPH_READY to IDLE", async () => {
+    const { deps, calls } = createMockDependencies();
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+    await actions.openPackageGraph({ channel: "HUMAN", capturedContextRevision: 1 }, { rootPackageId: "pkg-react" });
+    expect(deps.statePort.getState().phase).toBe("GRAPH_READY");
+
+    const result = await actions.closeGraph({ channel: "HUMAN", capturedContextRevision: 2 });
+    expect(result.ok).toBe(true);
+    expect(result.changed).toBe(true);
+    expect(result.contextRevision).toBe(3);
+    expect(deps.statePort.getState().phase).toBe("IDLE");
+    expect(calls.authCalls).toBeGreaterThan(0);
+  });
+
+  test("31. selectPackage delegates to reducer and same-node selection is no-op", async () => {
     const { deps } = createMockDependencies();
     const actions = createWarRoomActions(deps);
     actions.initialize();
@@ -571,7 +926,39 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     expect(res2.contextRevision).toBe(3);
   });
 
-  test("17. createScenario and changeScenarioPatch delegate to reducer", async () => {
+  test("32. selectPackage rejects invalid or empty package ID", async () => {
+    const { deps } = createMockDependencies();
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+    await actions.openPackageGraph({ channel: "HUMAN", capturedContextRevision: 1 }, { rootPackageId: "pkg-react" });
+
+    const result = await actions.selectPackage(
+      { channel: "HUMAN", capturedContextRevision: 2 },
+      { selection: { package: { id: "   ", name: "react", ecosystem: "NPM" } } }
+    );
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_INPUT");
+    }
+  });
+
+  test("33. Valid deselectPackage transitions NODE_SELECTED to GRAPH_READY", async () => {
+    const { deps } = createMockDependencies();
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+    await actions.openPackageGraph({ channel: "HUMAN", capturedContextRevision: 1 }, { rootPackageId: "pkg-react" });
+    await actions.selectPackage({ channel: "HUMAN", capturedContextRevision: 2 }, { selection: { package: mockGraphContext.rootPackage } });
+    expect(deps.statePort.getState().phase).toBe("NODE_SELECTED");
+
+    const result = await actions.deselectPackage({ channel: "HUMAN", capturedContextRevision: 3 });
+    expect(result.ok).toBe(true);
+    expect(result.changed).toBe(true);
+    expect(result.contextRevision).toBe(4);
+    expect(deps.statePort.getState().phase).toBe("GRAPH_READY");
+  });
+
+  test("34. createScenario and changeScenarioPatch delegate to reducer", async () => {
     const { deps } = createMockDependencies();
     const actions = createWarRoomActions(deps);
     actions.initialize();
@@ -602,7 +989,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     expect(resPatch.contextRevision).toBe(5);
   });
 
-  test("18. resetScenario respects SIMULATION_READY-only contract", async () => {
+  test("35. resetScenario respects SIMULATION_READY-only contract", async () => {
     const { deps } = createMockDependencies();
     const actions = createWarRoomActions(deps);
     actions.initialize();
@@ -623,7 +1010,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     }
   });
 
-  test("19. recalculateScenario commits valid analysis and rejects races", async () => {
+  test("36. recalculateScenario commits valid analysis and rejects races", async () => {
     let resolveAnalysis: (val: any) => void;
     const analysisPromise = new Promise<any>((res) => {
       resolveAnalysis = res;
@@ -671,16 +1058,15 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     }
   });
 
-  test("20. recalculateScenario rejects mismatched scenario ID and sourceContextRevision", async () => {
+  test("37. recalculateScenario rejects mismatched scenarioId with INVALID_INPUT", async () => {
     const { deps } = createMockDependencies({
       scenarioAnalysisPort: {
         async recalculateScenario(_sec, input) {
-          // Return wrong scenarioId
           return {
             ok: true,
             data: {
               id: "analysis-wrong-id",
-              scenarioId: "wrong-scenario-id",
+              scenarioId: "mismatched-scenario-id",
               sourceContextRevision: input.sourceContextRevision,
               affectedEntityIds: [],
             },
@@ -702,7 +1088,37 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     }
   });
 
-  test("21. attachHumanReview and changeHumanReview preserve technical analysis", async () => {
+  test("38. recalculateScenario rejects mismatched sourceContextRevision with INVALID_INPUT", async () => {
+    const { deps } = createMockDependencies({
+      scenarioAnalysisPort: {
+        async recalculateScenario() {
+          return {
+            ok: true,
+            data: {
+              id: "analysis-wrong-rev",
+              scenarioId: mockScenario.id,
+              sourceContextRevision: 999, // mismatched
+              affectedEntityIds: [],
+            },
+          };
+        },
+      },
+    });
+
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+    await actions.openPackageGraph({ channel: "HUMAN", capturedContextRevision: 1 }, { rootPackageId: "pkg-react" });
+    await actions.selectPackage({ channel: "HUMAN", capturedContextRevision: 2 }, { selection: { package: mockGraphContext.rootPackage } });
+    await actions.createScenario({ channel: "HUMAN", capturedContextRevision: 3 }, { scenario: mockScenario });
+
+    const result = await actions.recalculateScenario({ channel: "HUMAN", capturedContextRevision: 4 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_INPUT");
+    }
+  });
+
+  test("39. attachHumanReview and changeHumanReview preserve technical analysis", async () => {
     const { deps } = createMockDependencies();
     const actions = createWarRoomActions(deps);
     actions.initialize();
@@ -728,7 +1144,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     expect(deps.statePort.getState().phase).toBe("HUMAN_REVIEW");
   });
 
-  test("22. generateMigrationPlan commits valid plan, rejects races, and resetMigrationPlan returns to HUMAN_REVIEW", async () => {
+  test("40. generateMigrationPlan commits valid plan, rejects races, and resetMigrationPlan returns to HUMAN_REVIEW", async () => {
     let resolvePlan: (val: any) => void;
     const planPromise = new Promise<any>((res) => {
       resolvePlan = res;
@@ -796,7 +1212,103 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     expect(freshDeps.statePort.getState().phase).toBe("HUMAN_REVIEW");
   });
 
-  test("23. Already aborted invocation returns CANCELLED", async () => {
+  test("41. generateMigrationPlan rejects mismatched scenarioId with INVALID_INPUT", async () => {
+    const { deps } = createMockDependencies({
+      migrationPlanningPort: {
+        async generateMigrationPlan(_sec, input) {
+          return {
+            ok: true,
+            data: {
+              id: "plan-wrong-scenario",
+              scenarioId: "mismatched-scenario",
+              sourceReviewId: input.review.id,
+              sourceContextRevision: input.sourceContextRevision,
+            },
+          };
+        },
+      },
+    });
+
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+    await actions.openPackageGraph({ channel: "HUMAN", capturedContextRevision: 1 }, { rootPackageId: "pkg-react" });
+    await actions.selectPackage({ channel: "HUMAN", capturedContextRevision: 2 }, { selection: { package: mockGraphContext.rootPackage } });
+    await actions.createScenario({ channel: "HUMAN", capturedContextRevision: 3 }, { scenario: mockScenario });
+    await actions.recalculateScenario({ channel: "HUMAN", capturedContextRevision: 4 });
+    await actions.attachHumanReview({ channel: "HUMAN", capturedContextRevision: 5 }, { review: mockReview });
+
+    const result = await actions.generateMigrationPlan({ channel: "HUMAN", capturedContextRevision: 6 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_INPUT");
+    }
+  });
+
+  test("42. generateMigrationPlan rejects mismatched sourceReviewId with INVALID_INPUT", async () => {
+    const { deps } = createMockDependencies({
+      migrationPlanningPort: {
+        async generateMigrationPlan(_sec, input) {
+          return {
+            ok: true,
+            data: {
+              id: "plan-wrong-review",
+              scenarioId: input.scenario.id,
+              sourceReviewId: "mismatched-review",
+              sourceContextRevision: input.sourceContextRevision,
+            },
+          };
+        },
+      },
+    });
+
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+    await actions.openPackageGraph({ channel: "HUMAN", capturedContextRevision: 1 }, { rootPackageId: "pkg-react" });
+    await actions.selectPackage({ channel: "HUMAN", capturedContextRevision: 2 }, { selection: { package: mockGraphContext.rootPackage } });
+    await actions.createScenario({ channel: "HUMAN", capturedContextRevision: 3 }, { scenario: mockScenario });
+    await actions.recalculateScenario({ channel: "HUMAN", capturedContextRevision: 4 });
+    await actions.attachHumanReview({ channel: "HUMAN", capturedContextRevision: 5 }, { review: mockReview });
+
+    const result = await actions.generateMigrationPlan({ channel: "HUMAN", capturedContextRevision: 6 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_INPUT");
+    }
+  });
+
+  test("43. generateMigrationPlan rejects mismatched sourceContextRevision with INVALID_INPUT", async () => {
+    const { deps } = createMockDependencies({
+      migrationPlanningPort: {
+        async generateMigrationPlan(_sec, input) {
+          return {
+            ok: true,
+            data: {
+              id: "plan-wrong-rev",
+              scenarioId: input.scenario.id,
+              sourceReviewId: input.review.id,
+              sourceContextRevision: 999, // mismatched
+            },
+          };
+        },
+      },
+    });
+
+    const actions = createWarRoomActions(deps);
+    actions.initialize();
+    await actions.openPackageGraph({ channel: "HUMAN", capturedContextRevision: 1 }, { rootPackageId: "pkg-react" });
+    await actions.selectPackage({ channel: "HUMAN", capturedContextRevision: 2 }, { selection: { package: mockGraphContext.rootPackage } });
+    await actions.createScenario({ channel: "HUMAN", capturedContextRevision: 3 }, { scenario: mockScenario });
+    await actions.recalculateScenario({ channel: "HUMAN", capturedContextRevision: 4 });
+    await actions.attachHumanReview({ channel: "HUMAN", capturedContextRevision: 5 }, { review: mockReview });
+
+    const result = await actions.generateMigrationPlan({ channel: "HUMAN", capturedContextRevision: 6 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("INVALID_INPUT");
+    }
+  });
+
+  test("44. Already aborted invocation returns CANCELLED", async () => {
     const { deps, calls } = createMockDependencies();
     const actions = createWarRoomActions(deps);
     actions.initialize();
@@ -816,7 +1328,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     expect(calls.graphLoadCalls).toBe(0);
   });
 
-  test("24. Abort before commit prevents state mutation", async () => {
+  test("45. Abort before commit prevents state mutation", async () => {
     const controller = new AbortController();
     const { deps } = createMockDependencies({
       graphQueryPort: {
@@ -846,7 +1358,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     expect(deps.statePort.getState().phase).toBe("IDLE"); // uncommitted
   });
 
-  test("25. Typed service error preserves error code", async () => {
+  test("46. Typed service error preserves error code", async () => {
     const { deps } = createMockDependencies({
       packageCatalogPort: {
         async searchPackages() {
@@ -872,7 +1384,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     }
   });
 
-  test("26. Unexpected service throw becomes sanitized INTERNAL_ERROR without leaking raw details", async () => {
+  test("47. Unexpected service throw becomes sanitized INTERNAL_ERROR without leaking raw details", async () => {
     const { deps } = createMockDependencies({
       graphQueryPort: {
         async loadPackageGraph() {
@@ -900,7 +1412,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     }
   });
 
-  test("27. Action request DTOs contain no tenant or credential fields (Static scan)", () => {
+  test("48. Action request DTOs contain no tenant or credential fields (Static scan)", () => {
     const typesFilePath = path.resolve(__dirname, "../src/lib/war-room/application/types.ts");
     const content = fs.readFileSync(typesFilePath, "utf8");
 
@@ -920,7 +1432,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     }
   });
 
-  test("28. Application layer has no GraphQL, Apollo, React, or WebMCP imports (Static scan)", () => {
+  test("49. Application layer has no GraphQL, Apollo, React, or WebMCP imports (Static scan)", () => {
     const appDir = path.resolve(__dirname, "../src/lib/war-room/application");
     const files = fs.readdirSync(appDir).filter((f) => f.endsWith(".ts"));
 
@@ -947,7 +1459,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     }
   });
 
-  test("29. Application layer has no newly implemented business calculation engines (Static scan)", () => {
+  test("50. Application layer has no newly implemented business calculation engines (Static scan)", () => {
     const appDir = path.resolve(__dirname, "../src/lib/war-room/application");
     const files = fs.readdirSync(appDir).filter((f) => f.endsWith(".ts"));
 
@@ -967,7 +1479,7 @@ test.describe("War Room Actions Application Boundary (WMCP-2B)", () => {
     }
   });
 
-  test("30. Canonical state remains JSON serializable after all action mutations", async () => {
+  test("51. Canonical state remains JSON serializable after all action mutations", async () => {
     const { deps } = createMockDependencies();
     const actions = createWarRoomActions(deps);
     actions.initialize();

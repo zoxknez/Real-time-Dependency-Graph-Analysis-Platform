@@ -1,7 +1,7 @@
 /**
  * War Room Action & Service Output Runtime Validation
  *
- * Enforces runtime shape integrity on public action inputs and service outputs (Section 39, 54).
+ * Enforces runtime shape integrity on public action inputs and service outputs (Section 39, 54, WMCP-2B-R1).
  */
 
 import { WarRoomGraphContext } from "../domain/types";
@@ -11,12 +11,16 @@ import {
   createDomainError,
 } from "../domain/errors";
 import {
+  WarRoomSecurityContext,
   WarRoomInvocationContext,
   SearchPackagesRequest,
   InspectPackageRequest,
   TraceDependencyPathRequest,
   OpenPackageGraphRequest,
+  SelectPackageRequest,
 } from "./types";
+
+const CANONICAL_ECOSYSTEMS = new Set(["NPM", "PY_PI", "CARGO", "MAVEN", "NU_GET", "GO"]);
 
 export function validateInvocationContext(
   invocation: WarRoomInvocationContext
@@ -40,6 +44,30 @@ export function validateInvocationContext(
   return null;
 }
 
+export function validateSecurityContextOutput(
+  sec: WarRoomSecurityContext
+): WarRoomDomainError | null {
+  if (!sec || typeof sec !== "object") {
+    return createDomainError("INTERNAL_ERROR", "Trusted security context must be an object");
+  }
+
+  if (typeof sec.tenantId !== "string" || sec.tenantId.trim() === "") {
+    return createDomainError("INTERNAL_ERROR", "Trusted security context returned invalid tenant ID");
+  }
+
+  if (typeof sec.userId !== "string" || sec.userId.trim() === "") {
+    return createDomainError("INTERNAL_ERROR", "Trusted security context returned invalid user ID");
+  }
+
+  if (sec.organizationId !== undefined) {
+    if (typeof sec.organizationId !== "string" || sec.organizationId.trim() === "") {
+      return createDomainError("INTERNAL_ERROR", "Trusted security context returned invalid organization ID");
+    }
+  }
+
+  return null;
+}
+
 export function validateSearchPackagesRequest(
   request: SearchPackagesRequest
 ): WarRoomDomainError | null {
@@ -49,6 +77,12 @@ export function validateSearchPackagesRequest(
 
   if (!request.query || request.query.trim() === "") {
     return invalidInputError("Search query must not be empty");
+  }
+
+  if (request.ecosystem !== undefined) {
+    if (!CANONICAL_ECOSYSTEMS.has(request.ecosystem)) {
+      return invalidInputError(`Invalid package ecosystem: ${request.ecosystem}`);
+    }
   }
 
   if (request.limit !== undefined) {
@@ -113,6 +147,27 @@ export function validateOpenPackageGraphRequest(
     if (typeof request.depth !== "number" || !Number.isInteger(request.depth) || request.depth <= 0) {
       return invalidInputError("Graph depth must be a positive integer");
     }
+  }
+
+  return null;
+}
+
+export function validateSelectPackageRequest(
+  request: SelectPackageRequest
+): WarRoomDomainError | null {
+  if (!request || typeof request !== "object") {
+    return invalidInputError("Selection request must be an object");
+  }
+
+  if (!request.selection || typeof request.selection !== "object" || !request.selection.package) {
+    return invalidInputError("Selection request must contain package selection");
+  }
+
+  if (
+    typeof request.selection.package.id !== "string" ||
+    request.selection.package.id.trim() === ""
+  ) {
+    return invalidInputError("Selected package ID must be a non-empty string");
   }
 
   return null;
