@@ -24,7 +24,8 @@ All functionality classified as pre-existing in WMCP-0A existed at or before: `8
 - **WMCP-1R (Platform Modernization Final Review):** CLOSED at `5ad4585b858f99edb33de19bca70f5bfa8012c11`
 - **WMCP-2A (Canonical War Room Domain State Kernel):** CLOSED at `01c47c35a597916dceb0360c34e745c0ad9184fc`
 - **WMCP-2B (Shared WarRoomActions Application Boundary):** CLOSED at `02c32ecb06733033fe08b2c0e5f12077695e4366`
-- **WMCP-2C (Human UI Integration Through WarRoomActions):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
+- **WMCP-2C (Human UI Integration Through WarRoomActions):** CLOSED at `da09d62371d83e6d49d37c32f1ab947b2a3d0fe6`
+- **WMCP-2R (War Room Domain & Action Layer Final Review):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
 
 ---
 
@@ -40,7 +41,8 @@ The WebMCP Challenge execution follows an evidence-based phased architecture.
 - **WMCP-1R** executes holistic multi-crate and full-stack platform verification across the entire WMCP-1 modernized baseline.
 - **WMCP-2A** established the canonical War Room domain state kernel, state machine, and state port.
 - **WMCP-2B** established the shared `WarRoomActions` application boundary with trusted security and query ports.
-- **WMCP-2C** connects the human interactive graph UI directly to the shared action boundary with isolated non-canonical render projections.
+- **WMCP-2C** connected the human interactive graph UI directly to the shared action boundary with isolated non-canonical render projections.
+- **WMCP-2R** executes holistic multi-layer architectural review and regression verification across the entire WMCP-2 domain and action layer.
 
 ---
 
@@ -90,7 +92,8 @@ Every capability in the baseline evaluation is categorized into exactly one of t
 ### Platform Modernization Final Review (WMCP-1R)
 18. [`WMCP-1R-PLATFORM-CLOSURE.md`](WMCP-1R-PLATFORM-CLOSURE.md): Authoritative holistic synthesis and verification of the complete WMCP-1 platform modernization track.
 
-### War Room Domain State & Action Layer (WMCP-2A, WMCP-2B, WMCP-2C)
+### War Room Domain State & Action Layer (WMCP-2A, WMCP-2B, WMCP-2C, WMCP-2R)
 19. [`WMCP-2A-WAR-ROOM-DOMAIN-RESULTS.md`](WMCP-2A-WAR-ROOM-DOMAIN-RESULTS.md): Canonical War Room domain types, pure transition reducer, stale-context guard, and state port verification.
 20. [`WMCP-2B-WAR-ROOM-ACTIONS-RESULTS.md`](WMCP-2B-WAR-ROOM-ACTIONS-RESULTS.md): Shared WarRoomActions application boundary, trusted security/auth ports, and context-bound execution results.
 21. [`WMCP-2C-HUMAN-UI-INTEGRATION-RESULTS.md`](WMCP-2C-HUMAN-UI-INTEGRATION-RESULTS.md): Human UI migration on `/graph`, non-canonical graph projection store, Apollo client adapters, and E2E workflow verification.
+22. [`WMCP-2R-WAR-ROOM-CLOSURE.md`](WMCP-2R-WAR-ROOM-CLOSURE.md): Holistic forensic review of WMCP-2 domain, state, action, security, integration, race-safety, and human UI architecture.
