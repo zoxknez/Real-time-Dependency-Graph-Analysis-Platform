@@ -9,7 +9,7 @@
 
 ## 1. Purpose
 
-WMCP-3A establishes the type-safe browser capability and platform detection boundary for WebMCP (Web Model Context Protocol). It defines conservative local TypeScript compatibility declarations, an isolated `WebMcpPlatformAdapter` abstraction, and lazy SSR-safe feature detection without modifying closed domain/state/application kernels or registering real War Room tools.
+WMCP-3A establishes the type-safe browser capability and platform detection boundary for WebMCP (Web Model Context Protocol). It defines conservative local TypeScript compatibility declarations, an isolated `WebMcpPlatformAdapter` abstraction, generic tool registration variance, and lazy SSR-safe feature detection without modifying closed domain/state/application kernels or registering real War Room tools.
 
 ---
 
@@ -78,7 +78,7 @@ Chrome documentation details experimental browser behaviors:
 | :--- | :--- | :--- | :--- |
 | **`document.modelContext`** | Primary IDL attribute | Primary active property | **Adopted as primary boundary** |
 | **`navigator.modelContext`** | Not present | Deprecated since Chrome 150 | **Strictly FORBIDDEN** |
-| **`registerTool()`** | `Promise<undefined>` | Supported | **Platform primitive (deferred to 3B)** |
+| **`registerTool()`** | `Promise<undefined>` | Supported | **Generic platform primitive (deferred to 3B)** |
 | **`getTools()`** | `Promise<sequence<RegisteredTool>>` | Supported | **Diagnostic & discovery foundation** |
 | **`toolchange` event** | Normative event | Supported | **Lifecycle event (deferred to 3B/4)** |
 | **Registration `signal`** | `ModelContextRegisterToolOptions.signal` | Supported | **Registration lifetime control** |
@@ -87,7 +87,7 @@ Chrome documentation details experimental browser behaviors:
 | **`RegisteredTool.inputSchema`** | `DOMString` (string) | Supported | **Modeled as string (serialized schema)** |
 | **`executeTool()`** | Not in CG IDL | Documented in Chrome | **Excluded from platform contract** |
 | **Execution `signal`** | `(input)` only in CG IDL | `(input, { signal })` in Chrome | **Optional 2nd argument in types** |
-| **Permissions Policy** | `tools` default `'self'` | Enforces origin isolation | **Documented; separate from origin-keying** |
+| **Permissions Policy** | `tools` default `'self'` | Cross-origin iframe requires explicit delegation | **Same-origin scope; distinct from origin-keying** |
 
 ---
 
@@ -164,12 +164,12 @@ Local ambient declarations are isolated in `apps/frontend/src/types/webmcp.d.ts`
 Declarations model the low-level browser surface:
 - `WebMcpBrowserToolAnnotations`
 - `WebMcpBrowserChromeExecutionContext`
-- `WebMcpBrowserToolExecuteCallback`
-- `WebMcpBrowserTool`
+- `WebMcpBrowserToolExecuteCallback<TInput extends object = Record<string, unknown>, TOutput = unknown>`
+- `WebMcpBrowserTool<TInput extends object = Record<string, unknown>, TOutput = unknown>`
 - `WebMcpBrowserRegisteredToolMetadata` (safe metadata subset omitting raw `Window`; `inputSchema?: string`)
 - `WebMcpBrowserRegisterOptions` (`signal?: AbortSignal`, `exposedTo?: readonly string[]`)
 - `WebMcpBrowserGetToolsOptions` (`fromOrigins?: readonly string[]`)
-- `WebMcpBrowserModelContext`
+- `WebMcpBrowserModelContext` (generic `registerTool<TInput extends object, TOutput>`)
 
 ---
 
@@ -286,10 +286,10 @@ Adaptive tool surfaces and state-dependent schema registration remain deferred t
 
 ---
 
-## 34. WMCP-3A Independent Review
+## 34. WMCP-3A Corrective Review History
 
+### 34.1 WMCP-3A Initial Review
 - **Reviewed Commit:** `8013ec7d13e474b30bd6e7af357b298234961c23`
-- **Executor Status:** PASS
 - **Independent Status:** `PASS WITH CORRECTIONS - NOT CLOSED`
 - **Findings Identified & Corrected (WMCP-3A-R1):**
   1. *`getTools()` Options:* Replaced erroneous `signal?: AbortSignal` with normative `fromOrigins?: readonly string[]`.
@@ -297,14 +297,21 @@ Adaptive tool surfaces and state-dependent schema registration remain deferred t
   3. *`registerTool()` Return Type:* Narrowed from `Promise<void> | void` to strict `Promise<void>` matching normative `Promise<undefined>`.
   4. *`document.modelContext` Evidence Precision:* Clarified that normative WebIDL defines a non-optional attribute, while our local ambient declaration uses `?` for progressive enhancement.
   5. *Permissions Policy vs Origin-Keying:* Clarified that `tools` Permissions Policy and origin-keyed agent clusters are distinct security gates.
-- **Review Confirmation:** Zero War Room domain, state, application, or integration regressions. Corrections strictly confined to WebMCP browser types and evidence precision.
+
+### 34.2 WMCP-3A-R1 Independent Review
+- **Reviewed Commit:** `85bcd1b4dd59745ef43ca9bd5f101ed3479f30b6`
+- **Independent Status:** `PASS WITH CORRECTIONS - NOT CLOSED`
+- **Findings Identified & Corrected (WMCP-3A-R2):**
+  1. *Generic `registerTool` Boundary:* Converted `registerTool` into a generic method `registerTool<TInput extends object, TOutput>(tool: WebMcpBrowserTool<TInput, TOutput>, options?)` to prevent TypeScript strict function variance errors when registering concretely typed tools.
+  2. *Object Constraint on `TInput`:* Constrained `TInput extends object = Record<string, unknown>` to enforce the normative WebIDL callback contract `Promise<any> (object input)`, statically rejecting primitive inputs.
+  3. *Permissions Policy Wording:* Refined the divergence matrix to remove any implication that Permissions Policy itself enforces origin-keyed agent clusters.
 
 ---
 
 ## 35. Test Inventory
 
-- **Platform Spec:** `apps/frontend/e2e/war-room-webmcp-platform.spec.ts` (**34 passed**)
-- Total Logical Tests across all suites: **156 tests** (28 2A + 51 2B + 30 2C + 5 Human UI + 8 Homepage + 34 3A).
+- **Platform Spec:** `apps/frontend/e2e/war-room-webmcp-platform.spec.ts` (**38 passed**)
+- Total Logical Tests across all suites: **160 tests** (28 2A + 51 2B + 30 2C + 5 Human UI + 8 Homepage + 38 3A).
 
 ---
 
@@ -317,8 +324,8 @@ Adaptive tool surfaces and state-dependent schema registration remain deferred t
 | **WMCP-2C Integration Layer** | 30 | 30 | **PASS** |
 | **WMCP-2C Human UI E2E** | 5 | 5 | **PASS** |
 | **Homepage Smoke & Accessibility** | 8 | 8 | **PASS** |
-| **WMCP-3A Platform Boundary** | 34 | 34 | **PASS** |
-| **Total Automated Matrix** | **156** | **156** | **100% PASS** |
+| **WMCP-3A Platform Boundary** | 38 | 38 | **PASS** |
+| **Total Automated Matrix** | **160** | **160** | **100% PASS** |
 
 ---
 
@@ -369,44 +376,49 @@ Adaptive tool surfaces and state-dependent schema registration remain deferred t
 
 | Gate | Description | Status |
 | :--- | :--- | :---: |
-| **3A-R1-1** | Starting HEAD exact `8013ec7d13e474b30bd6e7af357b298234961c23` | **PASS** |
-| **3A-R1-2** | Current public CG IDL reverified | **PASS** |
-| **3A-R1-3** | `getTools` options uses `fromOrigins` | **PASS** |
-| **3A-R1-4** | `getTools` options has no `signal` | **PASS** |
-| **3A-R1-5** | `registerTool` options `signal` preserved | **PASS** |
-| **3A-R1-6** | `registerTool` options `exposedTo` preserved | **PASS** |
-| **3A-R1-7** | `RegisteredTool` discovered `inputSchema` modeled as string | **PASS** |
-| **3A-R1-8** | Registration `ModelContextTool` `inputSchema` remains object | **PASS** |
-| **3A-R1-9** | `registerTool` return `Promise<void>` only | **PASS** |
-| **3A-R1-10** | Document normative/local optional distinction documented | **PASS** |
-| **3A-R1-11** | Permissions Policy separated from origin-keyed requirement | **PASS** |
-| **3A-R1-12** | Chrome `executeTool` divergence preserved | **PASS** |
-| **3A-R1-13** | Chrome execution-signal divergence preserved | **PASS** |
-| **3A-R1-14** | `navigator.modelContext` remains forbidden | **PASS** |
-| **3A-R1-15** | No real registration | **PASS** |
-| **3A-R1-16** | No `ToolRegistry` | **PASS** |
-| **3A-R1-17** | No adaptive lifecycle | **PASS** |
-| **3A-R1-18** | No `WarRoomActions` bridge | **PASS** |
-| **3A-R1-19** | Browser adapter detection unchanged | **PASS** |
-| **3A-R1-20** | SSR safety preserved | **PASS** |
-| **3A-R1-21** | Snapshot boundary preserved | **PASS** |
-| **3A-R1-22** | Platform tests PASS | **PASS** |
-| **3A-R1-23** | >=32 meaningful platform tests (34 tests) | **PASS** |
-| **3A-R1-24** | 2A regression PASS (28/28) | **PASS** |
-| **3A-R1-25** | 2B regression PASS (51/51) | **PASS** |
-| **3A-R1-26** | 2C integration PASS (30/30) | **PASS** |
-| **3A-R1-27** | 2C human UI PASS (5/5) | **PASS** |
-| **3A-R1-28** | Homepage PASS (8/8) | **PASS** |
-| **3A-R1-29** | TypeScript PASS (0 errors) | **PASS** |
-| **3A-R1-30** | ESLint PASS (0 errors, 0 warnings) | **PASS** |
-| **3A-R1-31** | Next build PASS (15/15 static pages) | **PASS** |
-| **3A-R1-32** | npm audit 0 vulnerabilities | **PASS** |
-| **3A-R1-33** | Closed WMCP-2 unchanged | **PASS** |
-| **3A-R1-34** | `next.config.js` unchanged | **PASS** |
-| **3A-R1-35** | Package manifests unchanged | **PASS** |
-| **3A-R1-36** | README remains pending independent verification | **PASS** |
-| **3A-R1-37** | Independent review history recorded | **PASS** |
-| **3A-R1-38** | Only scope-valid files staged | **PASS** |
+| **3A-R2-1** | Starting HEAD exact `85bcd1b4dd59745ef43ca9bd5f101ed3479f30b6` | **PASS** |
+| **3A-R2-2** | Current CG IDL reverified | **PASS** |
+| **3A-R2-3** | `registerTool` is generic over concrete tool input/output | **PASS** |
+| **3A-R2-4** | Typed `WebMcpBrowserTool<{query:string}, Result>` registers without cast | **PASS** |
+| **3A-R2-5** | `TInput` constrained to `object` | **PASS** |
+| **3A-R2-6** | Primitive `string` input rejected at compile time | **PASS** |
+| **3A-R2-7** | Primitive `number` input rejected at compile time | **PASS** |
+| **3A-R2-8** | `registerTool` remains Promise-only | **PASS** |
+| **3A-R2-9** | `getTools` `fromOrigins` preserved | **PASS** |
+| **3A-R2-10** | `getTools` `signal` remains absent | **PASS** |
+| **3A-R2-11** | Registration `signal` preserved | **PASS** |
+| **3A-R2-12** | `exposedTo` preserved | **PASS** |
+| **3A-R2-13** | Discovered `inputSchema` string preserved | **PASS** |
+| **3A-R2-14** | Safe `RegisteredTool` metadata subset documented truthfully | **PASS** |
+| **3A-R2-15** | Chrome optional execution signal preserved | **PASS** |
+| **3A-R2-16** | `navigator` remains forbidden | **PASS** |
+| **3A-R2-17** | `executeTool` remains excluded | **PASS** |
+| **3A-R2-18** | Permissions Policy no longer described as enforcing origin isolation | **PASS** |
+| **3A-R2-19** | Origin-keyed requirement documented separately | **PASS** |
+| **3A-R2-20** | Browser detection unchanged | **PASS** |
+| **3A-R2-21** | SSR safety preserved | **PASS** |
+| **3A-R2-22** | Zero detection side effects preserved | **PASS** |
+| **3A-R2-23** | Zero real tool registration | **PASS** |
+| **3A-R2-24** | No `ToolRegistry` | **PASS** |
+| **3A-R2-25** | No adaptive lifecycle | **PASS** |
+| **3A-R2-26** | No `WarRoomActions` bridge | **PASS** |
+| **3A-R2-27** | Platform tests PASS | **PASS** |
+| **3A-R2-28** | >=37 meaningful platform tests (38 tests) | **PASS** |
+| **3A-R2-29** | 2A regression PASS (28/28) | **PASS** |
+| **3A-R2-30** | 2B regression PASS (51/51) | **PASS** |
+| **3A-R2-31** | 2C integration PASS (30/30) | **PASS** |
+| **3A-R2-32** | 2C human UI PASS (5/5) | **PASS** |
+| **3A-R2-33** | Homepage PASS (8/8) | **PASS** |
+| **3A-R2-34** | TypeScript PASS (0 errors) | **PASS** |
+| **3A-R2-35** | ESLint PASS (0 errors, 0 warnings) | **PASS** |
+| **3A-R2-36** | Next build PASS (15/15 static pages) | **PASS** |
+| **3A-R2-37** | npm audit 0 vulnerabilities | **PASS** |
+| **3A-R2-38** | Closed WMCP-2 unchanged | **PASS** |
+| **3A-R2-39** | `next.config.js` unchanged | **PASS** |
+| **3A-R2-40** | Package manifests unchanged | **PASS** |
+| **3A-R2-41** | README remains pending independent verification | **PASS** |
+| **3A-R2-42** | R1 independent review recorded | **PASS** |
+| **3A-R2-43** | Only scope-valid files committed | **PASS** |
 
 ---
 

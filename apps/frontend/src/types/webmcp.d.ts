@@ -1,5 +1,5 @@
 /**
- * WebMCP Browser Compatibility Declarations (WMCP-3A-R1)
+ * WebMCP Browser Compatibility Declarations (WMCP-3A-R2)
  *
  * Conservative local type definitions based on the Web Machine Learning Community Group
  * WebMCP Draft Community Group Report (26 August 2026) and experimental Chrome documentation.
@@ -17,12 +17,18 @@ export interface WebMcpBrowserChromeExecutionContext {
   readonly signal?: AbortSignal;
 }
 
-export type WebMcpBrowserToolExecuteCallback<TInput = unknown, TOutput = unknown> = (
+export type WebMcpBrowserToolExecuteCallback<
+  TInput extends object = Record<string, unknown>,
+  TOutput = unknown
+> = (
   input: TInput,
   chromeExecutionContext?: WebMcpBrowserChromeExecutionContext
 ) => Promise<TOutput>;
 
-export interface WebMcpBrowserTool<TInput = unknown, TOutput = unknown> {
+export interface WebMcpBrowserTool<
+  TInput extends object = Record<string, unknown>,
+  TOutput = unknown
+> {
   readonly name: string;
   readonly title?: string;
   readonly description: string;
@@ -56,8 +62,11 @@ export interface WebMcpBrowserGetToolsOptions {
 }
 
 export interface WebMcpBrowserModelContext extends EventTarget {
-  registerTool(
-    tool: WebMcpBrowserTool<unknown, unknown>,
+  registerTool<
+    TInput extends object = Record<string, unknown>,
+    TOutput = unknown
+  >(
+    tool: WebMcpBrowserTool<TInput, TOutput>,
     options?: WebMcpBrowserRegisterOptions
   ): Promise<void>;
 

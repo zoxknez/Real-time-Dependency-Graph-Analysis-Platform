@@ -1,8 +1,9 @@
 /**
- * WebMCP Platform Contract & Capability Detection Tests (WMCP-3A-R1)
+ * WebMCP Platform Contract & Capability Detection Tests (WMCP-3A-R2)
  *
  * Deterministic test suite verifying platform detection rules, snapshot serializability,
- * SSR safety, canonical state isolation, normative WebIDL alignment, and zero premature tool registration.
+ * SSR safety, canonical state isolation, normative WebIDL alignment, typed tool registration variance,
+ * and zero premature tool registration.
  */
 
 import { test, expect } from "@playwright/test";
@@ -21,7 +22,7 @@ import type {
   WebMcpBrowserModelContext,
 } from "../src/types/webmcp";
 
-test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A-R1)", () => {
+test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A-R2)", () => {
   // ─── 1. Core Feature Detection Rules ───
 
   test("1. No document -> UNAVAILABLE", () => {
@@ -477,19 +478,18 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A-R1)", ()
     expect(a3.getSnapshot().secureContext).toBeNull();
   });
 
-  // ─── 5. Normative WebIDL Type Contract Verification (WMCP-3A-R1) ───
+  // ─── 5. Normative WebIDL Type Contract Verification (WMCP-3A-R1 & R2) ───
 
-  test("27. WebMcpBrowserGetToolsOptions accurately models fromOrigins and excludes signal (WMCP-3A-R1)", () => {
+  test("27. WebMcpBrowserGetToolsOptions accurately models fromOrigins and excludes signal", () => {
     const getToolsOptions: WebMcpBrowserGetToolsOptions = {
       fromOrigins: ["https://example.com"],
     };
 
     expect(getToolsOptions.fromOrigins).toEqual(["https://example.com"]);
-    // Static verify: signal must not exist on getToolsOptions
     expect("signal" in getToolsOptions).toBe(false);
   });
 
-  test("28. WebMcpBrowserRegisterOptions accurately models signal and exposedTo (WMCP-3A-R1)", () => {
+  test("28. WebMcpBrowserRegisterOptions accurately models signal and exposedTo", () => {
     const controller = new AbortController();
     const registerOptions: WebMcpBrowserRegisterOptions = {
       signal: controller.signal,
@@ -500,7 +500,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A-R1)", ()
     expect(registerOptions.exposedTo).toEqual(["https://partner.example.com"]);
   });
 
-  test("29. RegisteredTool metadata inputSchema is modeled as serialized string (DOMString) (WMCP-3A-R1)", () => {
+  test("29. RegisteredTool metadata inputSchema is modeled as serialized string (DOMString)", () => {
     const registered: WebMcpBrowserRegisteredToolMetadata = {
       name: "search_packages",
       description: "Search package catalog",
@@ -512,7 +512,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A-R1)", ()
     expect(registered.name).toBe("search_packages");
   });
 
-  test("30. Registration ModelContextTool inputSchema is modeled as object / Record (WMCP-3A-R1)", () => {
+  test("30. Registration ModelContextTool inputSchema is modeled as object / Record", () => {
     const toolDef: WebMcpBrowserTool = {
       name: "test_tool",
       description: "Test tool description",
@@ -524,7 +524,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A-R1)", ()
     expect(toolDef.inputSchema).not.toBeNull();
   });
 
-  test("31. registerTool return type is strictly Promise<void> (WMCP-3A-R1)", async () => {
+  test("31. registerTool return type is strictly Promise<void>", async () => {
     let called = false;
     const mockContext: WebMcpBrowserModelContext = {
       addEventListener: () => {},
@@ -539,7 +539,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A-R1)", ()
     const res = mockContext.registerTool({
       name: "t",
       description: "d",
-      execute: async () => {},
+      execute: async () => ({}),
     });
 
     expect(res instanceof Promise).toBe(true);
@@ -547,13 +547,13 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A-R1)", ()
     expect(called).toBe(true);
   });
 
-  test("32. executeTool is completely absent from the application platform adapter interface (WMCP-3A-R1)", () => {
+  test("32. executeTool is completely absent from the application platform adapter interface", () => {
     const adapter = createBrowserWebMcpPlatformAdapter();
     expect(adapter).not.toHaveProperty("executeTool");
     expect(typeof (adapter as any).executeTool).toBe("undefined");
   });
 
-  test("33. WebMcpPlatformSnapshot contains zero DOM or Window references (WMCP-3A-R1)", () => {
+  test("33. WebMcpPlatformSnapshot contains zero DOM or Window references", () => {
     const adapter = createBrowserWebMcpPlatformAdapter({
       customGlobal: {
         document: {
@@ -573,11 +573,113 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A-R1)", ()
     expect(snapshot).not.toHaveProperty("modelContext");
   });
 
-  test("34. Local type declarations do NOT augment Navigator with modelContext (WMCP-3A-R1)", () => {
+  test("34. Local type declarations do NOT augment Navigator with modelContext", () => {
     const typesFilePath = path.resolve(__dirname, "../src/types/webmcp.d.ts");
     const content = fs.readFileSync(typesFilePath, "utf8");
 
     expect(content).not.toContain("interface Navigator");
     expect(content).toContain("interface Document");
+  });
+
+  // ─── 6. Typed Tool Registration Variance & Negative Type Tests (WMCP-3A-R2) ───
+
+  test("35. Concrete typed WebMcpBrowserTool<{ query: string }, SearchResult> registers directly without casts (WMCP-3A-R2)", async () => {
+    interface SearchInput {
+      query: string;
+      limit?: number;
+    }
+    interface SearchResult {
+      packages: string[];
+      totalCount: number;
+    }
+
+    let receivedInput: SearchInput | null = null;
+    const searchTool: WebMcpBrowserTool<SearchInput, SearchResult> = {
+      name: "search_packages",
+      title: "Search Packages",
+      description: "Searches package catalog",
+      inputSchema: { type: "object" },
+      execute: async (input) => {
+        receivedInput = input;
+        return { packages: ["npm:react"], totalCount: 1 };
+      },
+    };
+
+    let registeredToolName = "";
+    const mockContext: WebMcpBrowserModelContext = {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => true,
+      registerTool: async (tool) => {
+        registeredToolName = tool.name;
+        // Verify execution preserves typed input
+        await (tool.execute as any)({ query: "react", limit: 10 });
+      },
+      getTools: async () => [],
+    };
+
+    // Direct invocation without casts (compilation proves strictFunctionTypes compatibility)
+    await mockContext.registerTool(searchTool);
+
+    expect(registeredToolName).toBe("search_packages");
+    expect(receivedInput).toEqual({ query: "react", limit: 10 });
+  });
+
+  test("36. Generic registerTool preserves both TInput and TOutput contracts across registration (WMCP-3A-R2)", async () => {
+    interface GraphInput {
+      rootPackageId: string;
+      depth: number;
+    }
+    interface GraphResult {
+      graphId: string;
+      nodeCount: number;
+    }
+
+    const graphTool: WebMcpBrowserTool<GraphInput, GraphResult> = {
+      name: "open_package_graph",
+      description: "Opens package graph",
+      execute: async (input) => ({
+        graphId: `graph:${input.rootPackageId}`,
+        nodeCount: 1,
+      }),
+    };
+
+    const registeredTools: WebMcpBrowserTool<any, any>[] = [];
+    const mockContext: WebMcpBrowserModelContext = {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => true,
+      registerTool: async (tool) => {
+        registeredTools.push(tool);
+      },
+      getTools: async () => [],
+    };
+
+    await mockContext.registerTool(graphTool);
+    expect(registeredTools.length).toBe(1);
+    expect(registeredTools[0]?.name).toBe("open_package_graph");
+  });
+
+  test("37. Negative type contract: primitive string and number inputs are statically rejected (WMCP-3A-R2)", () => {
+    // Negative compile-time test: ToolExecuteCallback requires TInput extends object.
+    // The following expressions verify that primitive types cause a compile-time type error.
+    // @ts-expect-error Type 'string' does not satisfy the constraint 'object'.
+    type InvalidStringTool = WebMcpBrowserTool<string, unknown>;
+
+    // @ts-expect-error Type 'number' does not satisfy the constraint 'object'.
+    type InvalidNumberTool = WebMcpBrowserTool<number, unknown>;
+
+    // Type checking placeholder assertion to ensure types are evaluated by tsc
+    const checkType = true;
+    expect(checkType).toBe(true);
+  });
+
+  test("38. Static scan: WebMcpBrowserTool and WebMcpBrowserModelContext enforce generic object constraints (WMCP-3A-R2)", () => {
+    const typesFilePath = path.resolve(__dirname, "../src/types/webmcp.d.ts");
+    const content = fs.readFileSync(typesFilePath, "utf8");
+
+    expect(content).toContain("TInput extends object = Record<string, unknown>");
+    expect(content).toContain("registerTool<");
+    expect(content).not.toContain("tool: WebMcpBrowserTool<unknown, unknown>");
   });
 });
