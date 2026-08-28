@@ -31,11 +31,16 @@ WMCP-3A strictly depends on the independently verified, closed WMCP-2 architectu
 
 ---
 
-## 4. Current Public Sources Reviewed
+## 4. Upstream Contract Pin
 
-1. **Web Machine Learning Community Group WebMCP Draft Community Group Report (26 August 2026)**
-2. **Chrome WebMCP Overview (August 2026)**
-3. **Chrome Imperative WebMCP API Documentation (August 2026)**
+- **Repository:** `webmachinelearning/webmcp`
+- **Branch:** `main`
+- **Observed SHA:** `41d12f057167ccf5954dbcf49d99502cb6c84491`
+- **Observation Date:** `2026-08-28`
+- **Source File:** `index.bs`
+- **Specification Status:** Draft Community Group Report (CG-DRAFT)
+
+*Rationale:* The WebMCP specification is an active Community Group draft under rapid development. To eliminate ambiguity arising from cached or lagging rendered HTML reports, the local TypeScript compatibility boundary is explicitly pinned to the normative WebIDL and algorithms defined in upstream commit `41d12f057167ccf5954dbcf49d99502cb6c84491`.
 
 ---
 
@@ -45,49 +50,51 @@ WebMCP is currently published as a **Draft Community Group Report** by the Web M
 
 ---
 
-## 6. Current Community Group API Surface
+## 6. Current Upstream API Surface
 
-The normative WebIDL surface defined in the 26 August 2026 draft includes:
+The normative WebIDL surface defined in upstream `index.bs` (commit `41d12f05`) includes:
 - `document.modelContext`: `[SecureContext, SameObject] readonly attribute ModelContext modelContext;`
 - `modelContext.registerTool(tool, options)`: Returns `Promise<undefined>`.
 - `modelContext.getTools(options)`: Takes optional `ModelContextGetToolOptions` (with `fromOrigins`) and returns `Promise<sequence<RegisteredTool>>`.
+- `modelContext.executeTool(tool, inputObject, options)`: Returns `Promise<DOMString>` (stringified tool result).
 - `modelContext.ontoolchange` / `toolchange` event: Emitted on tool registration/deregistration.
+- `ToolExecuteCallback`: `Promise<any> (object inputObject, ToolExecuteCallbackOptions options)`.
+- `ToolExecuteCallbackOptions`: `required AbortSignal signal;`.
 - `ModelContextRegisterToolOptions`: `signal` (registration lifetime), `exposedTo` (origin exposure).
-- `ModelContextGetToolOptions`: `fromOrigins` (sequence of origins). Note: contains NO `signal`.
+- `ModelContextGetToolOptions`: `fromOrigins` (sequence of origins).
+- `ModelContextExecuteToolOptions`: `signal` (caller execution cancellation).
 - `ModelContextTool.inputSchema`: `object` at registration time.
-- `RegisteredTool.inputSchema`: `DOMString` (serialized JSON schema string) on discovery.
-- `ToolAnnotations`: `readOnlyHint`, `untrustedContentHint`.
+- `RegisteredTool`: `name`, `title`, `description`, `inputSchema` (`object`), `window` (`Window`), `origin` (`USVString`), `annotations`.
 - `Permissions Policy`: `tools` directive with default allowlist `'self'`.
 
 ---
 
-## 7. Chrome Implementation Surface
+## 7. Chrome Implementation Alignment
 
 Chrome documentation details experimental browser behaviors:
 - `document.modelContext`: Primary active property (origin trial / experimental flag).
-- `navigator.modelContext`: Deprecated since Chrome 150; marked for removal.
-- `executeTool()`: In-page debugging/invocation utility (Chrome extension, not in CG IDL).
-- `ToolExecuteCallback`: Passes `(input, context)` where `context.signal` is an execution-level `AbortSignal`.
+- `navigator.modelContext`: Deprecated since Chrome 150; marked for removal and strictly forbidden in challenge code.
+- `executeTool()`: Supported in Chrome and now normative in upstream WebMCP CG IDL.
+- `ToolExecuteCallback`: Passes `(input, { signal })` matching normative upstream `ToolExecuteCallbackOptions`.
 - Chrome 153 Lifecycle Note: Unregistering a tool no longer aborts currently in-flight executions.
 
 ---
 
-## 8. Spec vs Chrome Divergence Matrix
+## 8. Spec & Implementation Contract Matrix
 
-| Capability | CG Draft Report (Aug 2026) | Chrome Docs / Behavior | WMCP Architectural Decision |
+| Capability | Upstream CG Report (`41d12f05`) | Chrome Docs / Implementation | WMCP Architectural Decision |
 | :--- | :--- | :--- | :--- |
 | **`document.modelContext`** | Primary IDL attribute | Primary active property | **Adopted as primary boundary** |
 | **`navigator.modelContext`** | Not present | Deprecated since Chrome 150 | **Strictly FORBIDDEN** |
 | **`registerTool()`** | `Promise<undefined>` | Supported | **Generic platform primitive (deferred to 3B)** |
 | **`getTools()`** | `Promise<sequence<RegisteredTool>>` | Supported | **Diagnostic & discovery foundation** |
+| **`executeTool()`** | `Promise<DOMString>` | Supported | **Modeled in browser types; excluded from app adapter** |
 | **`toolchange` event** | Normative event | Supported | **Lifecycle event (deferred to 3B/4)** |
 | **Registration `signal`** | `ModelContextRegisterToolOptions.signal` | Supported | **Registration lifetime control** |
-| **Registration `exposedTo`** | `ModelContextRegisterToolOptions.exposedTo` | Supported | **Modeled in types; not used (same-origin)** |
-| **`getTools` options** | `fromOrigins` only | Supported | **`fromOrigins` modeled; `signal` excluded** |
-| **`RegisteredTool.inputSchema`** | `DOMString` (string) | Supported | **Modeled as string (serialized schema)** |
-| **`executeTool()`** | Not in CG IDL | Documented in Chrome | **Excluded from platform contract** |
-| **Execution `signal`** | `(input)` only in CG IDL | `(input, { signal })` in Chrome | **Optional 2nd argument in types** |
-| **Permissions Policy** | `tools` default `'self'` | Cross-origin iframe requires explicit delegation | **Same-origin scope; distinct from origin-keying** |
+| **Execution `signal`** | `ToolExecuteCallbackOptions.signal` (required) | Supported | **Tool execution cancellation token** |
+| **`executeTool` `signal`** | `ModelContextExecuteToolOptions.signal` | Supported | **Caller execution cancellation token** |
+| **`RegisteredTool.inputSchema`** | `object` (deep-copy) | Supported | **Modeled as object in registered tool** |
+| **Permissions Policy** | `tools` default `'self'` | Cross-origin iframe requires delegation | **Same-origin scope; distinct from origin-keying** |
 
 ---
 
@@ -127,31 +134,28 @@ The War Room application operates as a single-origin, top-level application. Cro
 
 ---
 
-## 15. Registration Signal Semantics
+## 15. Tri-Context Cancellation Signal Semantics
 
-The `signal` option passed to `registerTool(tool, { signal })` controls the registration lifetime of the tool (automatic unregistration when aborted). It is orthogonal to per-execution cancellation.
-
----
-
-## 16. Execution Signal Divergence
-
-While the Community Group IDL defines `execute(input)`, experimental Chrome supplies an optional second argument `{ signal?: AbortSignal }`. The local TypeScript declaration models `chromeExecutionContext?: { signal?: AbortSignal }` as an optional parameter, ensuring compatibility across standards-compliant and experimental runtimes.
+The specification distinguishes three separate cancellation contexts:
+1. **Registration Signal (`registerTool(tool, { signal })`):** Controls the registration lifetime of the tool (automatic unregistration when aborted).
+2. **Execution Callback Signal (`execute(input, { signal })`):** Required `AbortSignal` passed to the tool callback to observe mid-flight execution cancellation.
+3. **ExecuteTool Signal (`executeTool(tool, input, { signal })`):** Optional `AbortSignal` passed by the in-page caller to abort an in-flight tool invocation.
 
 ---
 
-## 17. Chrome 153 Lifecycle Note
+## 16. Chrome 153 Lifecycle Note
 
 In Chrome 153+, unregistering a tool does not cancel in-flight executions. The War Room architecture accounts for this by retaining execution-level `AbortController` management in the action layer, decoupling registration lifecycles from execution lifecycles.
 
 ---
 
-## 18. Local TypeScript Compatibility Strategy
+## 17. Local TypeScript Compatibility Strategy
 
 Local ambient declarations are isolated in `apps/frontend/src/types/webmcp.d.ts` using distinct `WebMcpBrowser*` prefixes without installing third-party npm packages.
 
 ---
 
-## 19. Document Augmentation
+## 18. Document Augmentation
 
 `Document` is augmented conservatively with `readonly modelContext?: WebMcpBrowserModelContext`. `Navigator` is NOT augmented.
 - **Normative WebIDL:** `[SecureContext, SameObject] readonly attribute ModelContext modelContext;`
@@ -159,21 +163,22 @@ Local ambient declarations are isolated in `apps/frontend/src/types/webmcp.d.ts`
 
 ---
 
-## 20. Browser Compatibility Types
+## 19. Browser Compatibility Types
 
 Declarations model the low-level browser surface:
 - `WebMcpBrowserToolAnnotations`
-- `WebMcpBrowserChromeExecutionContext`
-- `WebMcpBrowserToolExecuteCallback<TInput extends object = Record<string, unknown>, TOutput = unknown>`
-- `WebMcpBrowserTool<TInput extends object = Record<string, unknown>, TOutput = unknown>`
-- `WebMcpBrowserRegisteredToolMetadata` (safe metadata subset omitting raw `Window`; `inputSchema?: string`)
+- `WebMcpBrowserToolExecuteOptions` (`signal: AbortSignal`)
+- `WebMcpBrowserToolExecuteCallback<TInput extends object, TOutput>`
+- `WebMcpBrowserTool<TInput extends object, TOutput>`
+- `WebMcpBrowserRegisteredTool` (`inputSchema?: Record<string, unknown>`, `window: Window`, `origin: string`)
 - `WebMcpBrowserRegisterOptions` (`signal?: AbortSignal`, `exposedTo?: readonly string[]`)
 - `WebMcpBrowserGetToolsOptions` (`fromOrigins?: readonly string[]`)
-- `WebMcpBrowserModelContext` (generic `registerTool<TInput extends object, TOutput>`)
+- `WebMcpBrowserExecuteToolOptions` (`signal?: AbortSignal`)
+- `WebMcpBrowserModelContext` (`registerTool`, `getTools`, `executeTool`, `ontoolchange`)
 
 ---
 
-## 21. Application Platform Types
+## 20. Application Platform Types
 
 Application-owned types in `apps/frontend/src/lib/webmcp/platform/types.ts`:
 - `WebMcpAvailability`: `"AVAILABLE" | "UNAVAILABLE"`
@@ -182,7 +187,7 @@ Application-owned types in `apps/frontend/src/lib/webmcp/platform/types.ts`:
 
 ---
 
-## 22. `WebMcpAvailability`
+## 21. `WebMcpAvailability`
 
 Discrete binary status:
 - `"AVAILABLE"`: `document.modelContext` is present with callable `registerTool` and `getTools` functions.
@@ -190,7 +195,7 @@ Discrete binary status:
 
 ---
 
-## 23. `WebMcpPlatformSnapshot`
+## 22. `WebMcpPlatformSnapshot`
 
 JSON-serializable snapshot:
 ```typescript
@@ -205,7 +210,7 @@ export interface WebMcpPlatformSnapshot {
 
 ---
 
-## 24. `WebMcpPlatformAdapter`
+## 23. `WebMcpPlatformAdapter`
 
 ```typescript
 export interface WebMcpPlatformAdapter {
@@ -216,7 +221,7 @@ export interface WebMcpPlatformAdapter {
 
 ---
 
-## 25. Browser Adapter
+## 24. Browser Adapter
 
 `createBrowserWebMcpPlatformAdapter(options?: { customGlobal?: unknown })`:
 - Lazy scope access (zero module-scope DOM evaluation).
@@ -225,7 +230,7 @@ export interface WebMcpPlatformAdapter {
 
 ---
 
-## 26. Feature Detection Algorithm
+## 25. Feature Detection Algorithm
 
 ```
 function detect():
@@ -241,25 +246,25 @@ Detection performs ZERO invocations of `registerTool()` or `getTools()`.
 
 ---
 
-## 27. SSR Safety
+## 26. SSR Safety
 
 Platform modules can be evaluated and imported in Node.js server environments without `ReferenceError: document is not defined`.
 
 ---
 
-## 28. Progressive Enhancement
+## 27. Progressive Enhancement
 
 Standard browser workflows (e.g. human UI on `/graph`) continue operating without any WebMCP dependency or errors.
 
 ---
 
-## 29. Canonical State Isolation
+## 28. Canonical State Isolation
 
 Platform capability detection has ZERO interaction with `WarRoomState`. Calling detection produces zero state transitions and zero `contextRevision` increments.
 
 ---
 
-## 30. Explicit Non-Goals
+## 29. Explicit Non-Goals
 
 - Real tool registration (deferred to WMCP-3B / WMCP-4).
 - Adaptive tool registry and generations (deferred to WMCP-4).
@@ -268,54 +273,63 @@ Platform capability detection has ZERO interaction with `WarRoomState`. Calling 
 
 ---
 
-## 31. No Tool Registration Confirmation
+## 30. No Tool Registration Confirmation
 
 Static scans and runtime assertions confirm zero production calls to `document.modelContext.registerTool()` in WMCP-3A.
 
 ---
 
-## 32. No Tool Registry Confirmation
+## 31. No Tool Registry Confirmation
 
 No `ToolRegistry`, `RegistrationManager`, or lifecycle states (`REGISTERING`, `ACTIVE`, `RETIRING`) exist in production code.
 
 ---
 
-## 33. No Adaptive Surface Confirmation
+## 32. No Adaptive Surface Confirmation
 
 Adaptive tool surfaces and state-dependent schema registration remain deferred to WMCP-4.
 
 ---
 
-## 34. WMCP-3A Corrective Review History
+## 33. WMCP-3A Corrective Review History
 
-### 34.1 WMCP-3A Initial Review
+### 33.1 WMCP-3A Initial Review
 - **Reviewed Commit:** `8013ec7d13e474b30bd6e7af357b298234961c23`
 - **Independent Status:** `PASS WITH CORRECTIONS - NOT CLOSED`
-- **Findings Identified & Corrected (WMCP-3A-R1):**
-  1. *`getTools()` Options:* Replaced erroneous `signal?: AbortSignal` with normative `fromOrigins?: readonly string[]`.
-  2. *`RegisteredTool.inputSchema`:* Replaced object schema with `inputSchema?: string` (DOMString serialized JSON schema).
-  3. *`registerTool()` Return Type:* Narrowed from `Promise<void> | void` to strict `Promise<void>` matching normative `Promise<undefined>`.
-  4. *`document.modelContext` Evidence Precision:* Clarified that normative WebIDL defines a non-optional attribute, while our local ambient declaration uses `?` for progressive enhancement.
-  5. *Permissions Policy vs Origin-Keying:* Clarified that `tools` Permissions Policy and origin-keyed agent clusters are distinct security gates.
+- **Findings (WMCP-3A-R1):**
+  1. *`getTools()` Options:* Corrected from erroneous `signal` to `fromOrigins`.
+  2. *`RegisteredTool.inputSchema`:* Replaced object with serialized string (stale rendered draft).
+  3. *`registerTool()` Return Type:* Narrowed to `Promise<void>`.
+  4. *`document.modelContext` Precision:* Distinguished normative attribute from optional local ambient type.
+  5. *Permissions Policy:* Separated from origin-keyed agent cluster gate.
 
-### 34.2 WMCP-3A-R1 Independent Review
+### 33.2 WMCP-3A-R1 Independent Review
 - **Reviewed Commit:** `85bcd1b4dd59745ef43ca9bd5f101ed3479f30b6`
 - **Independent Status:** `PASS WITH CORRECTIONS - NOT CLOSED`
-- **Findings Identified & Corrected (WMCP-3A-R2):**
-  1. *Generic `registerTool` Boundary:* Converted `registerTool` into a generic method `registerTool<TInput extends object, TOutput>(tool: WebMcpBrowserTool<TInput, TOutput>, options?)` to prevent TypeScript strict function variance errors when registering concretely typed tools.
-  2. *Object Constraint on `TInput`:* Constrained `TInput extends object = Record<string, unknown>` to enforce the normative WebIDL callback contract `Promise<any> (object input)`, statically rejecting primitive inputs.
-  3. *Permissions Policy Wording:* Refined the divergence matrix to remove any implication that Permissions Policy itself enforces origin-keyed agent clusters.
+- **Findings (WMCP-3A-R2):**
+  1. *Generic `registerTool`:* Converted `registerTool` into a generic method to support strict function variance without casts.
+  2. *`TInput` Object Constraint:* Added `TInput extends object` to match `Promise<any> (object input)`.
+  3. *Permissions Policy Matrix:* Removed erroneous "enforces origin isolation" phrase.
+
+### 33.3 WMCP-3A-R2 Independent Review
+- **Reviewed Commit:** `d4c601fbb9a1370f4a0916a4391d2fee48876573`
+- **Independent Status:** `PASS WITH CORRECTIONS - NOT CLOSED`
+- **Findings (WMCP-3A-R3):**
+  1. *Upstream Source Alignment:* Aligned directly with `webmachinelearning/webmcp` main (`41d12f05`), incorporating normative `executeTool()` and required `ToolExecuteCallbackOptions.signal`.
+  2. *`RegisteredTool.inputSchema`:* Updated to normative `object` (deep-copy) shape.
+  3. *Cast-Free Test Boundary:* Eliminated all `as any` and `WebMcpBrowserTool<any, any>` from platform test source.
+  4. *Upstream SHA Pinning:* Established explicit upstream repository SHA pin (`41d12f05`) to prevent draft drift.
 
 ---
 
-## 35. Test Inventory
+## 34. Test Inventory
 
-- **Platform Spec:** `apps/frontend/e2e/war-room-webmcp-platform.spec.ts` (**38 passed**)
-- Total Logical Tests across all suites: **160 tests** (28 2A + 51 2B + 30 2C + 5 Human UI + 8 Homepage + 38 3A).
+- **Platform Spec:** `apps/frontend/e2e/war-room-webmcp-platform.spec.ts` (**42 passed**)
+- Total Logical Tests across all suites: **164 tests** (28 2A + 51 2B + 30 2C + 5 Human UI + 8 Homepage + 42 3A).
 
 ---
 
-## 36. WMCP-2 Regression Results
+## 35. WMCP-2 Regression Results
 
 | Test Suite | Logical Count | Passed | Result |
 | :--- | :---: | :---: | :---: |
@@ -324,47 +338,47 @@ Adaptive tool surfaces and state-dependent schema registration remain deferred t
 | **WMCP-2C Integration Layer** | 30 | 30 | **PASS** |
 | **WMCP-2C Human UI E2E** | 5 | 5 | **PASS** |
 | **Homepage Smoke & Accessibility** | 8 | 8 | **PASS** |
-| **WMCP-3A Platform Boundary** | 38 | 38 | **PASS** |
-| **Total Automated Matrix** | **160** | **160** | **100% PASS** |
+| **WMCP-3A Platform Boundary** | 42 | 42 | **PASS** |
+| **Total Automated Matrix** | **164** | **164** | **100% PASS** |
 
 ---
 
-## 37. TypeScript Compilation
+## 36. TypeScript Compilation
 
 - **Command:** `npx tsc --noEmit -p apps/frontend/tsconfig.json`
 - **Result:** **PASS** (0 errors, exit 0)
 
 ---
 
-## 38. ESLint
+## 37. ESLint
 
 - **Command:** `npm run lint`
 - **Result:** **PASS** (0 errors, 0 warnings, exit 0)
 
 ---
 
-## 39. Next Production Build
+## 38. Next Production Build
 
 - **Command:** `npm run build`
 - **Result:** **PASS** (15/15 static routes generated, exit 0)
 
 ---
 
-## 40. npm Audit
+## 39. npm Audit
 
 - **Command:** `npm audit --json`
 - **Result:** **PASS** (0 vulnerabilities, exit 0)
 
 ---
 
-## 41. Package Invariants
+## 40. Package Invariants
 
 - `apps/frontend/package.json`: UNCHANGED (0 diff)
 - `apps/frontend/package-lock.json`: UNCHANGED (0 diff)
 
 ---
 
-## 42. Platform Invariants
+## 41. Platform Invariants
 
 - `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `.clippy.toml`: UNCHANGED (0 diff)
 - `apps/frontend/next.config.js`: UNCHANGED (0 diff)
@@ -372,56 +386,63 @@ Adaptive tool surfaces and state-dependent schema registration remain deferred t
 
 ---
 
-## 43. Acceptance Gate Matrix
+## 42. Acceptance Gate Matrix
 
 | Gate | Description | Status |
 | :--- | :--- | :---: |
-| **3A-R2-1** | Starting HEAD exact `85bcd1b4dd59745ef43ca9bd5f101ed3479f30b6` | **PASS** |
-| **3A-R2-2** | Current CG IDL reverified | **PASS** |
-| **3A-R2-3** | `registerTool` is generic over concrete tool input/output | **PASS** |
-| **3A-R2-4** | Typed `WebMcpBrowserTool<{query:string}, Result>` registers without cast | **PASS** |
-| **3A-R2-5** | `TInput` constrained to `object` | **PASS** |
-| **3A-R2-6** | Primitive `string` input rejected at compile time | **PASS** |
-| **3A-R2-7** | Primitive `number` input rejected at compile time | **PASS** |
-| **3A-R2-8** | `registerTool` remains Promise-only | **PASS** |
-| **3A-R2-9** | `getTools` `fromOrigins` preserved | **PASS** |
-| **3A-R2-10** | `getTools` `signal` remains absent | **PASS** |
-| **3A-R2-11** | Registration `signal` preserved | **PASS** |
-| **3A-R2-12** | `exposedTo` preserved | **PASS** |
-| **3A-R2-13** | Discovered `inputSchema` string preserved | **PASS** |
-| **3A-R2-14** | Safe `RegisteredTool` metadata subset documented truthfully | **PASS** |
-| **3A-R2-15** | Chrome optional execution signal preserved | **PASS** |
-| **3A-R2-16** | `navigator` remains forbidden | **PASS** |
-| **3A-R2-17** | `executeTool` remains excluded | **PASS** |
-| **3A-R2-18** | Permissions Policy no longer described as enforcing origin isolation | **PASS** |
-| **3A-R2-19** | Origin-keyed requirement documented separately | **PASS** |
-| **3A-R2-20** | Browser detection unchanged | **PASS** |
-| **3A-R2-21** | SSR safety preserved | **PASS** |
-| **3A-R2-22** | Zero detection side effects preserved | **PASS** |
-| **3A-R2-23** | Zero real tool registration | **PASS** |
-| **3A-R2-24** | No `ToolRegistry` | **PASS** |
-| **3A-R2-25** | No adaptive lifecycle | **PASS** |
-| **3A-R2-26** | No `WarRoomActions` bridge | **PASS** |
-| **3A-R2-27** | Platform tests PASS | **PASS** |
-| **3A-R2-28** | >=37 meaningful platform tests (38 tests) | **PASS** |
-| **3A-R2-29** | 2A regression PASS (28/28) | **PASS** |
-| **3A-R2-30** | 2B regression PASS (51/51) | **PASS** |
-| **3A-R2-31** | 2C integration PASS (30/30) | **PASS** |
-| **3A-R2-32** | 2C human UI PASS (5/5) | **PASS** |
-| **3A-R2-33** | Homepage PASS (8/8) | **PASS** |
-| **3A-R2-34** | TypeScript PASS (0 errors) | **PASS** |
-| **3A-R2-35** | ESLint PASS (0 errors, 0 warnings) | **PASS** |
-| **3A-R2-36** | Next build PASS (15/15 static pages) | **PASS** |
-| **3A-R2-37** | npm audit 0 vulnerabilities | **PASS** |
-| **3A-R2-38** | Closed WMCP-2 unchanged | **PASS** |
-| **3A-R2-39** | `next.config.js` unchanged | **PASS** |
-| **3A-R2-40** | Package manifests unchanged | **PASS** |
-| **3A-R2-41** | README remains pending independent verification | **PASS** |
-| **3A-R2-42** | R1 independent review recorded | **PASS** |
-| **3A-R2-43** | Only scope-valid files committed | **PASS** |
+| **3A-R3-1** | Starting HEAD exact `d4c601fbb9a1370f4a0916a4391d2fee48876573` | **PASS** |
+| **3A-R3-2** | Current upstream GitHub main HEAD recorded (`41d12f05`) | **PASS** |
+| **3A-R3-3** | Current `index.bs` inspected directly | **PASS** |
+| **3A-R3-4** | `executeTool` current upstream status recorded truthfully | **PASS** |
+| **3A-R3-5** | `ToolExecuteCallback` current second argument recorded truthfully | **PASS** |
+| **3A-R3-6** | `ToolExecuteCallback` signal requiredness recorded truthfully | **PASS** |
+| **3A-R3-7** | `RegisteredTool.inputSchema` current type recorded truthfully | **PASS** |
+| **3A-R3-8** | `ModelContextExecuteToolOptions` modeled if normative | **PASS** |
+| **3A-R3-9** | Low-level `WebMcpBrowserModelContext` includes `executeTool` | **PASS** |
+| **3A-R3-10** | Application `WebMcpPlatformAdapter` remains minimal | **PASS** |
+| **3A-R3-11** | Generic `registerTool` preserved | **PASS** |
+| **3A-R3-12** | `TInput` object constraint preserved | **PASS** |
+| **3A-R3-13** | Typed registration requires no cast | **PASS** |
+| **3A-R3-14** | Typed execution requires no cast | **PASS** |
+| **3A-R3-15** | Platform tests contain no `as any` | **PASS** |
+| **3A-R3-16** | Platform tests contain no `WebMcpBrowserTool<any, any>` | **PASS** |
+| **3A-R3-17** | Only deliberate negative `@ts-expect-error` remains allowed | **PASS** |
+| **3A-R3-18** | `getTools` `fromOrigins` preserved | **PASS** |
+| **3A-R3-19** | `getTools` `signal` absent | **PASS** |
+| **3A-R3-20** | Registration `signal` preserved | **PASS** |
+| **3A-R3-21** | Execution callback signal distinct from registration signal | **PASS** |
+| **3A-R3-22** | `executeTool` cancellation signal distinct from both | **PASS** |
+| **3A-R3-23** | `navigator.modelContext` remains forbidden | **PASS** |
+| **3A-R3-24** | Permissions Policy remains separate from origin-keying | **PASS** |
+| **3A-R3-25** | Detection algorithm unchanged | **PASS** |
+| **3A-R3-26** | SSR safety preserved | **PASS** |
+| **3A-R3-27** | Snapshot remains browser-object free | **PASS** |
+| **3A-R3-28** | Zero real registration | **PASS** |
+| **3A-R3-29** | No `ToolRegistry` | **PASS** |
+| **3A-R3-30** | No adaptive lifecycle | **PASS** |
+| **3A-R3-31** | No `WarRoomActions` bridge | **PASS** |
+| **3A-R3-32** | Platform suite PASS | **PASS** |
+| **3A-R3-33** | >=42 meaningful platform tests (42 tests) | **PASS** |
+| **3A-R3-34** | 2A regression PASS (28/28) | **PASS** |
+| **3A-R3-35** | 2B regression PASS (51/51) | **PASS** |
+| **3A-R3-36** | 2C integration PASS (30/30) | **PASS** |
+| **3A-R3-37** | 2C human UI PASS (5/5) | **PASS** |
+| **3A-R3-38** | Homepage PASS (8/8) | **PASS** |
+| **3A-R3-39** | TypeScript PASS (0 errors) | **PASS** |
+| **3A-R3-40** | ESLint PASS (0 errors, 0 warnings) | **PASS** |
+| **3A-R3-41** | Next build PASS (15/15 static pages) | **PASS** |
+| **3A-R3-42** | npm audit 0 vulnerabilities | **PASS** |
+| **3A-R3-43** | Closed WMCP-2 unchanged | **PASS** |
+| **3A-R3-44** | `next.config.js` unchanged | **PASS** |
+| **3A-R3-45** | Package manifests unchanged | **PASS** |
+| **3A-R3-46** | README remains pending verification | **PASS** |
+| **3A-R3-47** | R2 independent review recorded | **PASS** |
+| **3A-R3-48** | Upstream source SHA pin recorded | **PASS** |
+| **3A-R3-49** | Final upstream re-check performed | **PASS** |
+| **3A-R3-50** | Only scope-valid files committed | **PASS** |
 
 ---
 
-## 44. Final Status
+## 43. Final Status
 
 **IMPLEMENTED - PENDING INDEPENDENT VERIFICATION**

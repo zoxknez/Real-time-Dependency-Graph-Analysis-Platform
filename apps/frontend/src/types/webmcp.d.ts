@@ -1,8 +1,8 @@
 /**
- * WebMCP Browser Compatibility Declarations (WMCP-3A-R2)
+ * WebMCP Browser Compatibility Declarations (WMCP-3A-R3)
  *
- * Conservative local type definitions based on the Web Machine Learning Community Group
- * WebMCP Draft Community Group Report (26 August 2026) and experimental Chrome documentation.
+ * Conservative local type definitions aligned directly with upstream `webmachinelearning/webmcp`
+ * repository main branch (commit: 41d12f057167ccf5954dbcf49d99502cb6c84491, 2026-08-28).
  *
  * NOTE: These are local application compatibility declarations, NOT a claim that WebMCP
  * is a finalized W3C standard or part of default lib.dom.
@@ -13,8 +13,8 @@ export interface WebMcpBrowserToolAnnotations {
   readonly untrustedContentHint?: boolean;
 }
 
-export interface WebMcpBrowserChromeExecutionContext {
-  readonly signal?: AbortSignal;
+export interface WebMcpBrowserToolExecuteOptions {
+  readonly signal: AbortSignal;
 }
 
 export type WebMcpBrowserToolExecuteCallback<
@@ -22,7 +22,7 @@ export type WebMcpBrowserToolExecuteCallback<
   TOutput = unknown
 > = (
   input: TInput,
-  chromeExecutionContext?: WebMcpBrowserChromeExecutionContext
+  options: WebMcpBrowserToolExecuteOptions
 ) => Promise<TOutput>;
 
 export interface WebMcpBrowserTool<
@@ -38,16 +38,24 @@ export interface WebMcpBrowserTool<
 }
 
 /**
- * Safe metadata subset of RegisteredTool returned by getTools().
- * Note: Normative WebIDL RegisteredTool dictionary contains a `window` (Window) member.
- * We intentionally model a clean metadata subset to prevent leaking raw Window instances into application snapshots.
- * The `inputSchema` property in RegisteredTool is a serialized DOMString (string), distinct from the registration-time object.
+ * Normative RegisteredTool dictionary returned by getTools().
+ * Corresponds to current upstream WebIDL:
+ * dictionary RegisteredTool {
+ *   DOMString name;
+ *   DOMString? title;
+ *   DOMString description;
+ *   object inputSchema;
+ *   Window window;
+ *   USVString origin;
+ *   ToolAnnotations? annotations;
+ * };
  */
-export interface WebMcpBrowserRegisteredToolMetadata {
+export interface WebMcpBrowserRegisteredTool {
   readonly name: string;
   readonly title?: string;
   readonly description: string;
-  readonly inputSchema?: string;
+  readonly inputSchema?: Record<string, unknown>;
+  readonly window: Window;
   readonly origin: string;
   readonly annotations?: WebMcpBrowserToolAnnotations;
 }
@@ -61,6 +69,10 @@ export interface WebMcpBrowserGetToolsOptions {
   readonly fromOrigins?: readonly string[];
 }
 
+export interface WebMcpBrowserExecuteToolOptions {
+  readonly signal?: AbortSignal;
+}
+
 export interface WebMcpBrowserModelContext extends EventTarget {
   registerTool<
     TInput extends object = Record<string, unknown>,
@@ -72,7 +84,13 @@ export interface WebMcpBrowserModelContext extends EventTarget {
 
   getTools(
     options?: WebMcpBrowserGetToolsOptions
-  ): Promise<readonly WebMcpBrowserRegisteredToolMetadata[]>;
+  ): Promise<readonly WebMcpBrowserRegisteredTool[]>;
+
+  executeTool(
+    tool: WebMcpBrowserRegisteredTool,
+    inputObject?: object,
+    options?: WebMcpBrowserExecuteToolOptions
+  ): Promise<string>;
 
   ontoolchange?: ((this: WebMcpBrowserModelContext, ev: Event) => any) | null;
 }
