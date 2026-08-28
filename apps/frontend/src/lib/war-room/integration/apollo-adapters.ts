@@ -1,8 +1,8 @@
 /**
  * War Room Apollo Client Integration Adapters
  *
- * Implements PackageCatalogPort and GraphQueryPort using existing Apollo queries (WMCP-2C-R1).
- * Enforces strict Apollo error normalization, canonical ecosystem validation, and staged projection lifecycle.
+ * Implements PackageCatalogPort and GraphQueryPort using existing Apollo queries (WMCP-2C-R2).
+ * Enforces strict Apollo error normalization, strict canonical ecosystem validation, and staged projection lifecycle.
  */
 
 import {
@@ -62,24 +62,21 @@ export function hasApolloExecutionError(result: WarRoomApolloQueryResult<unknown
   return false;
 }
 
+/**
+ * Strict canonical ecosystem parser (WMCP-2C-R2).
+ * Accepts ONLY exact canonical GraphQL enum strings.
+ * Disallows normalization, lowercasing, whitespace trimming, or aliases.
+ */
 export function parsePackageEcosystem(value: unknown): PackageEcosystem | null {
   if (typeof value !== "string") return null;
-  const normalized = value.trim().toUpperCase().replace(/-/g, "_");
-  switch (normalized) {
+  switch (value) {
     case "NPM":
-      return "NPM";
-    case "PYPI":
     case "PY_PI":
-      return "PY_PI";
     case "CARGO":
-      return "CARGO";
     case "MAVEN":
-      return "MAVEN";
-    case "NUGET":
     case "NU_GET":
-      return "NU_GET";
     case "GO":
-      return "GO";
+      return value;
     default:
       return null;
   }

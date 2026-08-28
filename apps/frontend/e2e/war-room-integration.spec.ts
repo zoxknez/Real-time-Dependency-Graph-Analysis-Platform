@@ -1,7 +1,7 @@
 /**
- * War Room Integration Layer Verification Tests (WMCP-2C-R1)
+ * War Room Integration Layer Verification Tests (WMCP-2C-R2)
  *
- * Deterministic test suite covering Apollo error normalization, canonical ecosystem mapping,
+ * Deterministic test suite covering Apollo error normalization, strict canonical ecosystem contract,
  * two-phase projection staging/activation lifecycle, sequence guards, and security isolation.
  */
 
@@ -42,8 +42,8 @@ function createMockApolloClient(
   return { client, queriedOptions };
 }
 
-test.describe("War Room Integration Layer (WMCP-2C-R1)", () => {
-  // ─── 1. Apollo Result Failure Helper & Ecosystem Parsing ───
+test.describe("War Room Integration Layer (WMCP-2C-R2)", () => {
+  // ─── 1. Apollo Result Failure Helper & Strict Ecosystem Parsing ───
   test("1. hasApolloExecutionError correctly identifies both error and errors[] shapes", () => {
     expect(hasApolloExecutionError({ error: new Error("Network error") })).toBe(true);
     expect(hasApolloExecutionError({ errors: [{ message: "GraphQL resolver error" }] })).toBe(true);
@@ -51,21 +51,27 @@ test.describe("War Room Integration Layer (WMCP-2C-R1)", () => {
     expect(hasApolloExecutionError({ data: { test: true } })).toBe(false);
   });
 
-  test("2. parsePackageEcosystem accepts all canonical ecosystems and rejects invalid values", () => {
-    expect(parsePackageEcosystem("npm")).toBe("NPM");
+  test("2. parsePackageEcosystem accepts ONLY exact canonical enum values and rejects all lowercase/alias/untrimmed strings (WMCP-2C-R2)", () => {
+    // Exact accepted values
     expect(parsePackageEcosystem("NPM")).toBe("NPM");
-    expect(parsePackageEcosystem("pypi")).toBe("PY_PI");
     expect(parsePackageEcosystem("PY_PI")).toBe("PY_PI");
-    expect(parsePackageEcosystem("cargo")).toBe("CARGO");
-    expect(parsePackageEcosystem("maven")).toBe("MAVEN");
-    expect(parsePackageEcosystem("nuget")).toBe("NU_GET");
+    expect(parsePackageEcosystem("CARGO")).toBe("CARGO");
+    expect(parsePackageEcosystem("MAVEN")).toBe("MAVEN");
     expect(parsePackageEcosystem("NU_GET")).toBe("NU_GET");
-    expect(parsePackageEcosystem("go")).toBe("GO");
+    expect(parsePackageEcosystem("GO")).toBe("GO");
 
-    // Invalid & Unknown
+    // Rejected: Lowercase, aliases, untrimmed, hyphens, and unknown
+    expect(parsePackageEcosystem("npm")).toBeNull();
+    expect(parsePackageEcosystem("pypi")).toBeNull();
+    expect(parsePackageEcosystem("PYPI")).toBeNull();
+    expect(parsePackageEcosystem("cargo")).toBeNull();
+    expect(parsePackageEcosystem("nuget")).toBeNull();
+    expect(parsePackageEcosystem("NUGET")).toBeNull();
+    expect(parsePackageEcosystem("go")).toBeNull();
+    expect(parsePackageEcosystem(" CARGO ")).toBeNull();
+    expect(parsePackageEcosystem("py-pi")).toBeNull();
     expect(parsePackageEcosystem("UNKNOWN")).toBeNull();
     expect(parsePackageEcosystem("unknown")).toBeNull();
-    expect(parsePackageEcosystem("invalid_eco")).toBeNull();
     expect(parsePackageEcosystem(null)).toBeNull();
     expect(parsePackageEcosystem(undefined)).toBeNull();
     expect(parsePackageEcosystem(123)).toBeNull();
@@ -85,7 +91,7 @@ test.describe("War Room Integration Layer (WMCP-2C-R1)", () => {
     }
   });
 
-  test("4. searchPackages: Apollo errors[] array returns UNAVAILABLE (Finding 1 Closure)", async () => {
+  test("4. searchPackages: Apollo errors[] array returns UNAVAILABLE", async () => {
     const { client } = createMockApolloClient(async () => ({
       errors: [{ message: "Search service unavailable" }],
     }));
@@ -111,12 +117,12 @@ test.describe("War Room Integration Layer (WMCP-2C-R1)", () => {
     }
   });
 
-  test("6. searchPackages: malformed edge node (bad ecosystem/id) returns INTERNAL_ERROR", async () => {
+  test("6. searchPackages: non-canonical ecosystem (e.g. lowercase npm, PYPI alias) returns INTERNAL_ERROR", async () => {
     const { client } = createMockApolloClient(async () => ({
       data: {
         searchPackages: {
           edges: [
-            { node: { id: "npm:react", name: "react", ecosystem: "UNKNOWN_ECOSYSTEM" } },
+            { node: { id: "npm:react", name: "react", ecosystem: "npm" } }, // lowercase forbidden
           ],
           totalCount: 1,
         },
@@ -150,12 +156,12 @@ test.describe("War Room Integration Layer (WMCP-2C-R1)", () => {
     }
   });
 
-  test("8. searchPackages: valid DTOs map to canonical WarRoomPackageRef", async () => {
+  test("8. searchPackages: valid exact canonical DTOs map to WarRoomPackageRef", async () => {
     const { client } = createMockApolloClient(async () => ({
       data: {
         searchPackages: {
           edges: [
-            { node: { id: "npm:react", name: "react", ecosystem: "npm" } },
+            { node: { id: "npm:react", name: "react", ecosystem: "NPM" } },
             { node: { id: "cargo:tokio", name: "tokio", ecosystem: "CARGO" } },
           ],
           totalCount: 2,
@@ -213,12 +219,12 @@ test.describe("War Room Integration Layer (WMCP-2C-R1)", () => {
     }
   });
 
-  test("12. GET_PACKAGE: malformed payload returns INTERNAL_ERROR", async () => {
+  test("12. GET_PACKAGE: non-canonical root ecosystem (e.g. cargo lowercase) returns INTERNAL_ERROR", async () => {
     const { client } = createMockApolloClient(async () => ({
-      data: { package: { id: "npm:react", name: "" } }, // missing ecosystem
+      data: { package: { id: "cargo:tokio", name: "tokio", ecosystem: "cargo" } }, // lowercase forbidden
     }));
     const graphPort = createApolloGraphQueryPort(client);
-    const res = await graphPort.loadPackageGraph({ tenantId: "public", userId: "public" }, { rootPackageId: "npm:react" });
+    const res = await graphPort.loadPackageGraph({ tenantId: "public", userId: "public" }, { rootPackageId: "cargo:tokio" });
 
     expect(res.ok).toBe(false);
     if (!res.ok) {
@@ -240,7 +246,7 @@ test.describe("War Room Integration Layer (WMCP-2C-R1)", () => {
     }
   });
 
-  test("14. GET_REVERSE_DEPENDENTS: Apollo error returns UNAVAILABLE (Finding 2 Closure)", async () => {
+  test("14. GET_REVERSE_DEPENDENTS: Apollo error returns UNAVAILABLE even with partial data", async () => {
     const { client } = createMockApolloClient(async (opt) => {
       const op = getOperationName(opt.query);
       if (op === "GetPackage" || ("id" in (opt.variables || {}))) {
@@ -261,16 +267,16 @@ test.describe("War Room Integration Layer (WMCP-2C-R1)", () => {
     }
   });
 
-  test("15. GET_REVERSE_DEPENDENTS: malformed dependent ecosystem returns INTERNAL_ERROR", async () => {
+  test("15. GET_REVERSE_DEPENDENTS: non-canonical dependent ecosystem (e.g. NUGET alias) returns INTERNAL_ERROR", async () => {
     const { client } = createMockApolloClient(async (opt) => {
       const op = getOperationName(opt.query);
       if (op === "GetPackage" || ("id" in (opt.variables || {}))) {
-        return { data: { package: { id: "npm:react", name: "react", ecosystem: "NPM" } } };
+        return { data: { package: { id: "nuget:pkg", name: "pkg", ecosystem: "NU_GET" } } };
       }
       return {
         data: {
           reverseDependents: {
-            edges: [{ node: { id: "npm:dep", name: "dep", ecosystem: "INVALID_ECO" } }],
+            edges: [{ node: { id: "nuget:dep", name: "dep", ecosystem: "NUGET" } }], // alias forbidden
             totalCount: 1,
           },
         },
@@ -278,7 +284,7 @@ test.describe("War Room Integration Layer (WMCP-2C-R1)", () => {
     });
 
     const graphPort = createApolloGraphQueryPort(client);
-    const res = await graphPort.loadPackageGraph({ tenantId: "public", userId: "public" }, { rootPackageId: "npm:react" });
+    const res = await graphPort.loadPackageGraph({ tenantId: "public", userId: "public" }, { rootPackageId: "nuget:pkg" });
 
     expect(res.ok).toBe(false);
     if (!res.ok) {
