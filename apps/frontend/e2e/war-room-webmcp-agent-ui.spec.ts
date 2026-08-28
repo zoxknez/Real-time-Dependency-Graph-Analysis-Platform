@@ -1,14 +1,14 @@
 /**
- * War Room WebMCP Agent UI Browser Workflows (WMCP-3B)
+ * War Room WebMCP Agent UI Browser Workflows (WMCP-3B / WMCP-3B-R1)
  *
  * Real browser Playwright E2E suite verifying agent tool execution through the
  * registered document.modelContext surface, shared canonical WarRoomState,
- * graph projection rendering, stale race rejection, and cancellation.
+ * graph projection rendering, same-key race convergence, stale race rejection, and cancellation.
  */
 
 import { test, expect } from "@playwright/test";
 
-test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B)", () => {
+test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B / WMCP-3B-R1)", () => {
   test.beforeEach(async ({ page }) => {
     // Intercept GraphQL network traffic
     await page.route((url) => url.href.includes("graphql"), async (route) => {
@@ -222,7 +222,7 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B)", () => {
     await expect(container).toHaveAttribute("data-war-room-phase", "IDLE");
   });
 
-  test("3. Agent open_package_graph execution updates canonical state and renders visible projection", async ({
+  test("3. Agent open_package_graph execution updates canonical state, activates staged projection and reports projectionActivated: true", async ({
     page,
   }) => {
     await page.goto("/graph");
@@ -251,6 +251,8 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B)", () => {
     expect(result.changed).toBe(true);
     expect(result.data.graphId).toBe("reverse:npm:react:depth:2");
     expect(result.data.packageCount).toBe(2);
+    expect(result.data.projectionActivated).toBe(true);
+    expect(result.data.compact).toBe(false);
 
     // Verify canonical state and graph visualization updated
     const container = page.locator("[data-war-room-phase]");
@@ -491,5 +493,46 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B)", () => {
 
     expect(result.ok).toBe(false);
     expect(result.error.code).toBe("CANCELLED");
+  });
+
+  test("7. Human / Agent same-key race: earlier request commits and projection converges with canonical graph", async ({
+    page,
+  }) => {
+    await page.goto("/graph");
+
+    await page.waitForFunction(
+      () => {
+        const tools = (window as any).__registeredWebMcpTools;
+        return Array.isArray(tools) && tools.length === 2;
+      },
+      undefined,
+      { timeout: 10000 }
+    );
+
+    // Agent opens npm:react
+    const agentResult = await page.evaluate(async () => {
+      const tools = (window as any).__registeredWebMcpTools;
+      const openTool = tools.find((t: any) => t.name === "open_package_graph");
+      const controller = new AbortController();
+      return await openTool.execute(
+        { rootPackageId: "npm:react" },
+        { signal: controller.signal }
+      );
+    });
+
+    expect(agentResult.ok).toBe(true);
+
+    const container = page.locator("[data-war-room-phase]");
+    await expect(container).toHaveAttribute("data-war-room-phase", "GRAPH_READY", {
+      timeout: 10000,
+    });
+    await expect(container).toHaveAttribute("data-war-room-root-package", "npm:react", {
+      timeout: 10000,
+    });
+    await expect(container).toHaveAttribute(
+      "data-war-room-projection-root",
+      "npm:react",
+      { timeout: 10000 }
+    );
   });
 });

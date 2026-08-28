@@ -1,7 +1,7 @@
 /**
- * WebMCP Output Envelope & Budget Formatter (WMCP-3B / WMCP-INV-011)
+ * WebMCP Output Envelope & Budget Formatter (WMCP-3B / WMCP-3B-R1 / WMCP-INV-011)
  *
- * Enforces strict character budgeting (<= 1500 characters, target <= 1400),
+ * Enforces strict hard character budgeting (<= 1500 characters, target <= 1400),
  * whole-record package truncation, and clean error sanitization without leaking
  * stacks, causes, raw DOMExceptions, or internal details.
  */
@@ -11,12 +11,13 @@ import {
   WebMcpOpenGraphResultData,
   WebMcpSearchPackagesResultData,
   WebMcpToolFailureEnvelope,
+  WebMcpToolOutputEnvelope,
   WebMcpToolSuccessEnvelope,
 } from "./types";
 
-const MAX_TOTAL_OUTPUT_CHARS = 1500;
-const TARGET_INTERNAL_BUDGET_CHARS = 1400;
-const MAX_ERROR_MESSAGE_CHARS = 240;
+export const MAX_TOTAL_OUTPUT_CHARS = 1500;
+export const TARGET_INTERNAL_BUDGET_CHARS = 1400;
+export const MAX_ERROR_MESSAGE_CHARS = 240;
 
 export function sanitizeErrorMessage(message: string): string {
   const trimmed = message.trim();
@@ -26,12 +27,47 @@ export function sanitizeErrorMessage(message: string): string {
   return trimmed.slice(0, MAX_ERROR_MESSAGE_CHARS - 3) + "...";
 }
 
+export function formatToolFailure(
+  tool: string,
+  contextRevision: number,
+  code: WarRoomErrorCode,
+  message: string
+): WebMcpToolFailureEnvelope {
+  const sanitized = sanitizeErrorMessage(message);
+  const envelope: WebMcpToolFailureEnvelope = {
+    ok: false,
+    tool,
+    changed: false,
+    contextRevision,
+    error: {
+      code,
+      message: sanitized,
+    },
+  };
+
+  if (JSON.stringify(envelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+    return envelope;
+  }
+
+  // Fallback minimal error envelope guaranteed to fit within budget
+  return {
+    ok: false,
+    tool,
+    changed: false,
+    contextRevision,
+    error: {
+      code,
+      message: "Operation failed",
+    },
+  };
+}
+
 export function formatToolSuccess<TData>(
   tool: string,
   changed: boolean,
   contextRevision: number,
   data: TData
-): WebMcpToolSuccessEnvelope<TData> {
+): WebMcpToolOutputEnvelope<TData> {
   const envelope: WebMcpToolSuccessEnvelope<TData> = {
     ok: true,
     tool,
@@ -45,27 +81,13 @@ export function formatToolSuccess<TData>(
     return envelope;
   }
 
-  // Safety fallback if serialized exceeds budget
-  return envelope;
-}
-
-export function formatToolFailure(
-  tool: string,
-  contextRevision: number,
-  code: WarRoomErrorCode,
-  message: string
-): WebMcpToolFailureEnvelope {
-  const sanitized = sanitizeErrorMessage(message);
-  return {
-    ok: false,
+  // Hard budget fail-closed: return small structured INTERNAL_ERROR if generic data exceeds budget
+  return formatToolFailure(
     tool,
-    changed: false,
     contextRevision,
-    error: {
-      code,
-      message: sanitized,
-    },
-  };
+    "INTERNAL_ERROR",
+    "Tool result exceeded the safe output budget"
+  );
 }
 
 /**
@@ -77,17 +99,22 @@ export function buildBudgetedSearchOutput(
   contextRevision: number,
   allPackages: readonly WarRoomPackageRef[],
   totalCount?: number
-): WebMcpToolSuccessEnvelope<WebMcpSearchPackagesResultData> {
+): WebMcpToolOutputEnvelope<WebMcpSearchPackagesResultData> {
   const budgetedPackages: WarRoomPackageRef[] = [];
   let isTruncated = false;
+  const effectiveTotalCount =
+    totalCount !== undefined ? totalCount : allPackages.length;
 
   for (const pkg of allPackages) {
     const candidatePackages = [...budgetedPackages, pkg];
     const candidateData: WebMcpSearchPackagesResultData = {
       packages: candidatePackages,
       returnedCount: candidatePackages.length,
-      totalCount: totalCount !== undefined ? totalCount : allPackages.length,
-      truncated: isTruncated || candidatePackages.length < allPackages.length,
+      totalCount: effectiveTotalCount,
+      truncated:
+        isTruncated ||
+        candidatePackages.length < allPackages.length ||
+        candidatePackages.length < effectiveTotalCount,
     };
 
     const candidateEnvelope: WebMcpToolSuccessEnvelope<WebMcpSearchPackagesResultData> = {
@@ -109,60 +136,90 @@ export function buildBudgetedSearchOutput(
   const finalData: WebMcpSearchPackagesResultData = {
     packages: budgetedPackages,
     returnedCount: budgetedPackages.length,
-    totalCount: totalCount !== undefined ? totalCount : allPackages.length,
-    truncated: isTruncated || budgetedPackages.length < allPackages.length,
+    totalCount: effectiveTotalCount,
+    truncated:
+      isTruncated ||
+      budgetedPackages.length < allPackages.length ||
+      budgetedPackages.length < effectiveTotalCount,
   };
 
-  return {
+  const finalEnvelope: WebMcpToolSuccessEnvelope<WebMcpSearchPackagesResultData> = {
     ok: true,
     tool,
     changed: false,
     contextRevision,
     data: finalData,
   };
+
+  if (JSON.stringify(finalEnvelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+    return finalEnvelope;
+  }
+
+  // Hard fail-closed fallback
+  return formatToolFailure(
+    tool,
+    contextRevision,
+    "INTERNAL_ERROR",
+    "Tool result exceeded the safe output budget"
+  );
 }
 
 export function buildBudgetedOpenGraphOutput(
   tool: string,
   contextRevision: number,
+  changed: boolean,
   graphId: string,
   rootPackage: WarRoomPackageRef,
-  packageCount: number
-): WebMcpToolSuccessEnvelope<WebMcpOpenGraphResultData> {
+  packageCount: number,
+  projectionActivated: boolean
+): WebMcpToolOutputEnvelope<WebMcpOpenGraphResultData> {
+  // 1. Full representation
   const fullData: WebMcpOpenGraphResultData = {
     graphId,
     rootPackage,
     packageCount,
+    compact: false,
+    projectionActivated,
   };
 
-  const envelope: WebMcpToolSuccessEnvelope<WebMcpOpenGraphResultData> = {
+  const fullEnvelope: WebMcpToolSuccessEnvelope<WebMcpOpenGraphResultData> = {
     ok: true,
     tool,
-    changed: true,
+    changed,
     contextRevision,
     data: fullData,
   };
 
-  if (JSON.stringify(envelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
-    return envelope;
+  if (JSON.stringify(fullEnvelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+    return fullEnvelope;
   }
 
-  // Minimal fallback if package ref properties somehow caused overflow
-  const minimalData: WebMcpOpenGraphResultData = {
+  // 2. Compact fallback (omits unbounded external name/version)
+  const compactData: WebMcpOpenGraphResultData = {
     graphId,
-    rootPackage: {
-      id: rootPackage.id,
-      name: rootPackage.name,
-      ecosystem: rootPackage.ecosystem,
-    },
+    rootPackageId: rootPackage.id,
     packageCount,
+    compact: true,
+    projectionActivated,
   };
 
-  return {
+  const compactEnvelope: WebMcpToolSuccessEnvelope<WebMcpOpenGraphResultData> = {
     ok: true,
     tool,
-    changed: true,
+    changed,
     contextRevision,
-    data: minimalData,
+    data: compactData,
   };
+
+  if (JSON.stringify(compactEnvelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+    return compactEnvelope;
+  }
+
+  // 3. Hard fail-closed fallback if even compact representation exceeds 1500 chars
+  return formatToolFailure(
+    tool,
+    contextRevision,
+    "INTERNAL_ERROR",
+    "Tool result exceeded the safe output budget"
+  );
 }

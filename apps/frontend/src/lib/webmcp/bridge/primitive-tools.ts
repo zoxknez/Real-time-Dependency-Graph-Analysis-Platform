@@ -1,5 +1,5 @@
 /**
- * WebMCP Primitive Tool Definitions (WMCP-3B)
+ * WebMCP Primitive Tool Definitions (WMCP-3B / WMCP-3B-R1)
  *
  * Defines the two primitive tools (`search_packages` and `open_package_graph`),
  * connecting browser AI invocations to the shared `WarRoomActions` boundary,
@@ -125,19 +125,17 @@ export function createPrimitiveTools(
           validation.value
         );
 
-        const currentRevision = context.statePort.getState().contextRevision;
-
         if (actionResult.ok) {
           return buildBudgetedSearchOutput(
             "search_packages",
-            currentRevision,
+            actionResult.contextRevision,
             actionResult.data.packages,
             actionResult.data.totalCount
           );
         } else {
           return formatToolFailure(
             "search_packages",
-            currentRevision,
+            actionResult.contextRevision,
             actionResult.error.code,
             actionResult.error.message
           );
@@ -200,21 +198,21 @@ export function createPrimitiveTools(
           validation.value
         );
 
-        const currentRevision = context.statePort.getState().contextRevision;
-
         if (actionResult.ok) {
           // Shared projection activation contract: activate staged projection only on successful action
-          context.projectionStore.activateProjection(
+          const projectionActivated = context.projectionStore.activateProjection(
             execContext.signal,
             actionResult.data.id
           );
 
           return buildBudgetedOpenGraphOutput(
             "open_package_graph",
-            currentRevision,
+            actionResult.contextRevision,
+            actionResult.changed,
             actionResult.data.id,
             actionResult.data.rootPackage,
-            actionResult.data.packageIds.length
+            actionResult.data.packageIds.length,
+            projectionActivated
           );
         } else {
           // Discard staged projection on action failure (e.g. STALE_CONTEXT, NOT_FOUND, UNAVAILABLE)
@@ -222,7 +220,7 @@ export function createPrimitiveTools(
 
           return formatToolFailure(
             "open_package_graph",
-            currentRevision,
+            actionResult.contextRevision,
             actionResult.error.code,
             actionResult.error.message
           );

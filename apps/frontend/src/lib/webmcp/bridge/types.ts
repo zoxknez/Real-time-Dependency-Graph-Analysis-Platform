@@ -1,5 +1,5 @@
 /**
- * WebMCP Tool Execution Bridge Types (WMCP-3B)
+ * WebMCP Tool Execution Bridge Types (WMCP-3B / WMCP-3B-R1)
  *
  * Concise, structured envelopes and data contracts for WebMCP tool invocations.
  */
@@ -36,8 +36,18 @@ export interface WebMcpSearchPackagesResultData {
   readonly truncated: boolean;
 }
 
-export interface WebMcpOpenGraphResultData {
-  readonly graphId: string;
-  readonly rootPackage: WarRoomPackageRef;
-  readonly packageCount: number;
-}
+export type WebMcpOpenGraphResultData =
+  | {
+      readonly graphId: string;
+      readonly rootPackage: WarRoomPackageRef;
+      readonly packageCount: number;
+      readonly compact: false;
+      readonly projectionActivated: boolean;
+    }
+  | {
+      readonly graphId: string;
+      readonly rootPackageId: string;
+      readonly packageCount: number;
+      readonly compact: true;
+      readonly projectionActivated: boolean;
+    };

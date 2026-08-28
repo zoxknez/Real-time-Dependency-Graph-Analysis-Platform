@@ -465,8 +465,8 @@ test.describe("War Room Integration Layer (WMCP-2C-R2)", () => {
     }
   });
 
-  // ─── 7. Two-Phase Staging & Sequence Guard Rules (Findings 2 & 3) ───
-  test("25. Latest-request sequence rule: older request cannot become visible even if it finishes first", () => {
+  // ─── 7. Two-Phase Staging & Sequence Guard Rules (Canonical Authority Model) ───
+  test("25. Canonical commit authority & monotonic committed sequence: first valid commit activates and older sequence cannot replace newer", () => {
     const projectionStore = createGraphProjectionStore();
     const graphKey = "reverse:npm:react:depth:2";
 
@@ -476,7 +476,7 @@ test.describe("War Room Integration Layer (WMCP-2C-R2)", () => {
     const seqA = projectionStore.nextSequence(graphKey); // 1
     const seqB = projectionStore.nextSequence(graphKey); // 2
 
-    // Request A finishes first and stages seq 1
+    // Request A finishes first, stages seq 1
     projectionStore.stageProjection(
       ctrlA.signal,
       {
@@ -492,12 +492,12 @@ test.describe("War Room Integration Layer (WMCP-2C-R2)", () => {
       seqA
     );
 
-    // Attempt to activate A -> must FAIL because seqA (1) !== latestRequested (2)
+    // Under canonical commit authority: A canonical commit finishes first and activates A
     const activatedA = projectionStore.activateProjection(ctrlA.signal, graphKey);
-    expect(activatedA).toBe(false);
-    expect(projectionStore.getProjection(graphKey)).toBeNull();
+    expect(activatedA).toBe(true);
+    expect(projectionStore.getProjection(graphKey)?.loadedCount).toBe(1);
 
-    // Request B finishes and stages seq 2
+    // Later request B stages seq 2 and activates
     projectionStore.stageProjection(
       ctrlB.signal,
       {
@@ -516,9 +516,28 @@ test.describe("War Room Integration Layer (WMCP-2C-R2)", () => {
       seqB
     );
 
-    // Activate B -> succeeds
     const activatedB = projectionStore.activateProjection(ctrlB.signal, graphKey);
     expect(activatedB).toBe(true);
+    expect(projectionStore.getProjection(graphKey)?.loadedCount).toBe(2);
+
+    // Attempting to activate an older sequence (seqA < latestCommitted) now fails
+    const ctrlOld = new AbortController();
+    projectionStore.stageProjection(
+      ctrlOld.signal,
+      {
+        graphId: graphKey,
+        rootPackageId: "npm:react",
+        depth: 2,
+        nodes: [{ id: "npm:react", name: "react", ecosystem: "NPM", depth: 0, isRoot: true }],
+        links: [],
+        loadedCount: 1,
+        totalCount: 1,
+        truncated: false,
+      },
+      seqA
+    );
+    const activatedOld = projectionStore.activateProjection(ctrlOld.signal, graphKey);
+    expect(activatedOld).toBe(false);
     expect(projectionStore.getProjection(graphKey)?.loadedCount).toBe(2);
   });
 

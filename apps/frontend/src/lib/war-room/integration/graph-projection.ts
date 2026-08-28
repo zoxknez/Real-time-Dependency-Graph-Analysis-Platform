@@ -93,22 +93,12 @@ export function createGraphProjectionStore(): WarRoomGraphProjectionStore {
         return false;
       }
 
-      if (signal.aborted) {
-        return false;
-      }
-
       const { projection, sequence } = staged;
       if (projection.graphId !== expectedGraphId) {
         return false;
       }
 
-      // Latest Request Rule: candidate must match the latest requested sequence for this graph key
-      const latestReq = latestRequestedSequence.get(projection.graphId) || 0;
-      if (sequence !== latestReq) {
-        return false;
-      }
-
-      // Monotonic commit sequence check
+      // Monotonic commit sequence check: an older sequence cannot overwrite a newer committed sequence
       const latestCom = latestCommittedSequence.get(projection.graphId) || 0;
       if (sequence < latestCom) {
         return false;
