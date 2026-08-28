@@ -1,7 +1,8 @@
 /**
  * War Room Apollo Client Integration Adapters
  *
- * Implements PackageCatalogPort and GraphQueryPort using existing Apollo queries (WMCP-2C).
+ * Implements PackageCatalogPort and GraphQueryPort using existing Apollo queries (WMCP-2C-R1).
+ * Enforces strict Apollo error normalization, canonical ecosystem validation, and staged projection lifecycle.
  */
 
 import {
@@ -28,11 +29,15 @@ import {
   createDomainError,
   notFoundError,
 } from "../domain/errors";
-import { WarRoomApolloClient } from "./apollo-client-port";
+import {
+  WarRoomApolloClient,
+  WarRoomApolloQueryResult,
+} from "./apollo-client-port";
 import {
   WarRoomGraphProjectionStore,
   WarRoomProjectionNode,
   WarRoomProjectionLink,
+  WarRoomGraphProjection,
 } from "./graph-projection";
 import {
   GET_PACKAGE,
@@ -46,6 +51,39 @@ import {
   GetDependencyPathResponse,
   SearchPackagesResponse,
 } from "../../graphql/types";
+
+export function hasApolloExecutionError(result: WarRoomApolloQueryResult<unknown>): boolean {
+  if (result.error != null) {
+    return true;
+  }
+  if (Array.isArray(result.errors) && result.errors.length > 0) {
+    return true;
+  }
+  return false;
+}
+
+export function parsePackageEcosystem(value: unknown): PackageEcosystem | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toUpperCase().replace(/-/g, "_");
+  switch (normalized) {
+    case "NPM":
+      return "NPM";
+    case "PYPI":
+    case "PY_PI":
+      return "PY_PI";
+    case "CARGO":
+      return "CARGO";
+    case "MAVEN":
+      return "MAVEN";
+    case "NUGET":
+    case "NU_GET":
+      return "NU_GET";
+    case "GO":
+      return "GO";
+    default:
+      return null;
+  }
+}
 
 function isAbortError(err: unknown): boolean {
   return (
@@ -85,31 +123,57 @@ export function createApolloPackageCatalogPort(
           return { ok: false, error: createDomainError("CANCELLED", "Search operation was cancelled") };
         }
 
-        if (result.error && !result.data?.searchPackages) {
+        if (hasApolloExecutionError(result)) {
           return {
             ok: false,
             error: createDomainError("UNAVAILABLE", "Package search service encountered transport error"),
           };
         }
 
-        const edges = result.data?.searchPackages?.edges || [];
-        const packages: WarRoomPackageRef[] = [];
+        if (!result.data || typeof result.data !== "object" || !result.data.searchPackages || typeof result.data.searchPackages !== "object") {
+          return {
+            ok: false,
+            error: createDomainError("INTERNAL_ERROR", "Search packages response missing or malformed"),
+          };
+        }
 
+        const edges = result.data.searchPackages.edges;
+        if (!Array.isArray(edges)) {
+          return {
+            ok: false,
+            error: createDomainError("INTERNAL_ERROR", "Search packages edges field is not an array"),
+          };
+        }
+
+        const packages: WarRoomPackageRef[] = [];
         for (const edge of edges) {
-          if (edge?.node?.id && edge.node.name) {
-            packages.push({
-              id: edge.node.id,
-              name: edge.node.name,
-              ecosystem: (edge.node.ecosystem || "UNKNOWN") as PackageEcosystem,
-            });
+          const node = edge?.node;
+          if (!node || typeof node !== "object") {
+            return {
+              ok: false,
+              error: createDomainError("INTERNAL_ERROR", "Search packages edge contains malformed node"),
+            };
           }
+
+          const id = typeof node.id === "string" ? node.id.trim() : "";
+          const name = typeof node.name === "string" ? node.name.trim() : "";
+          const ecosystem = parsePackageEcosystem(node.ecosystem);
+
+          if (!id || !name || !ecosystem) {
+            return {
+              ok: false,
+              error: createDomainError("INTERNAL_ERROR", "Search packages node has invalid identity or ecosystem"),
+            };
+          }
+
+          packages.push({ id, name, ecosystem });
         }
 
         return {
           ok: true,
           data: {
             packages,
-            totalCount: result.data?.searchPackages?.totalCount ?? packages.length,
+            totalCount: result.data.searchPackages.totalCount ?? packages.length,
           },
         };
       } catch (err: unknown) {
@@ -166,14 +230,41 @@ export function createApolloGraphQueryPort(
           return { ok: false, error: createDomainError("CANCELLED", "Graph query cancelled") };
         }
 
-        if (!rootRes.data?.package || !rootRes.data.package.id || !rootRes.data.package.name) {
+        if (hasApolloExecutionError(rootRes)) {
+          return {
+            ok: false,
+            error: createDomainError("UNAVAILABLE", "Root package service encountered transport error"),
+          };
+        }
+
+        if (rootRes.data?.package === null) {
           return { ok: false, error: notFoundError(`Root package ${request.rootPackageId} not found`) };
         }
 
+        if (!rootRes.data || typeof rootRes.data !== "object" || !rootRes.data.package || typeof rootRes.data.package !== "object") {
+          return { ok: false, error: createDomainError("INTERNAL_ERROR", "Root package payload missing or malformed") };
+        }
+
+        const rawRoot = rootRes.data.package;
+        const rootId = typeof rawRoot.id === "string" ? rawRoot.id.trim() : "";
+        const rootName = typeof rawRoot.name === "string" ? rawRoot.name.trim() : "";
+        const rootEcosystem = parsePackageEcosystem(rawRoot.ecosystem);
+
+        if (!rootId || !rootName || !rootEcosystem) {
+          return { ok: false, error: createDomainError("INTERNAL_ERROR", "Root package has invalid identity or ecosystem") };
+        }
+
+        if (rootId !== request.rootPackageId.trim()) {
+          return {
+            ok: false,
+            error: createDomainError("INTERNAL_ERROR", "Returned root package ID does not match requested root package ID"),
+          };
+        }
+
         const rootPackage: WarRoomPackageRef = {
-          id: rootRes.data.package.id,
-          name: rootRes.data.package.name,
-          ecosystem: (rootRes.data.package.ecosystem || "UNKNOWN") as PackageEcosystem,
+          id: rootId,
+          name: rootName,
+          ecosystem: rootEcosystem,
         };
 
         // 2. Query reverse dependents
@@ -192,18 +283,36 @@ export function createApolloGraphQueryPort(
           return { ok: false, error: createDomainError("CANCELLED", "Graph query cancelled") };
         }
 
-        if (revRes.error && !revRes.data?.reverseDependents) {
+        // Strict partial-data rule: if Apollo reports ANY execution error, reject entire reverse dependents
+        if (hasApolloExecutionError(revRes)) {
           return {
             ok: false,
             error: createDomainError("UNAVAILABLE", "Failed to retrieve reverse dependents from graph service"),
           };
         }
 
-        const edges = revRes.data?.reverseDependents?.edges || [];
-        const totalCount = revRes.data?.reverseDependents?.totalCount ?? edges.length;
+        if (!revRes.data || typeof revRes.data !== "object" || !revRes.data.reverseDependents || typeof revRes.data.reverseDependents !== "object") {
+          return {
+            ok: false,
+            error: createDomainError("INTERNAL_ERROR", "Reverse dependents response missing or malformed"),
+          };
+        }
+
+        const edges = revRes.data.reverseDependents.edges;
+        if (!Array.isArray(edges)) {
+          return {
+            ok: false,
+            error: createDomainError("INTERNAL_ERROR", "Reverse dependents edges field is not an array"),
+          };
+        }
+
+        const totalCount = typeof revRes.data.reverseDependents.totalCount === "number"
+          ? revRes.data.reverseDependents.totalCount
+          : edges.length;
 
         // 3. Build canonical package IDs & projection
         const packageIdSet = new Set<string>([rootPackage.id]);
+        const dependentIdSet = new Set<string>();
         const nodesMap = new Map<string, WarRoomProjectionNode>();
         const links: WarRoomProjectionLink[] = [];
 
@@ -217,44 +326,63 @@ export function createApolloGraphQueryPort(
 
         for (const edge of edges) {
           const node = edge?.node;
-          if (node?.id && node.name) {
-            packageIdSet.add(node.id);
+          if (!node || typeof node !== "object") {
+            return {
+              ok: false,
+              error: createDomainError("INTERNAL_ERROR", "Reverse dependents edge contains malformed node"),
+            };
+          }
 
-            if (!nodesMap.has(node.id)) {
-              nodesMap.set(node.id, {
-                id: node.id,
-                name: node.name,
-                ecosystem: (node.ecosystem || "UNKNOWN") as PackageEcosystem,
-                depth: edge.depth || 1,
-                isRoot: false,
-              });
-            }
+          const nodeId = typeof node.id === "string" ? node.id.trim() : "";
+          const nodeName = typeof node.name === "string" ? node.name.trim() : "";
+          const nodeEcosystem = parsePackageEcosystem(node.ecosystem);
 
-            links.push({
-              source: node.id,
-              target: rootPackage.id,
-              kind: "REVERSE_REACHABILITY",
+          if (!nodeId || !nodeName || !nodeEcosystem) {
+            return {
+              ok: false,
+              error: createDomainError("INTERNAL_ERROR", "Reverse dependents node has invalid identity or ecosystem"),
+            };
+          }
+
+          packageIdSet.add(nodeId);
+          if (nodeId !== rootPackage.id) {
+            dependentIdSet.add(nodeId);
+          }
+
+          if (!nodesMap.has(nodeId)) {
+            nodesMap.set(nodeId, {
+              id: nodeId,
+              name: nodeName,
+              ecosystem: nodeEcosystem,
+              depth: edge.depth || 1,
+              isRoot: false,
             });
           }
+
+          links.push({
+            source: nodeId,
+            target: rootPackage.id,
+            kind: "REVERSE_REACHABILITY",
+          });
         }
 
         const projectionNodes = Array.from(nodesMap.values());
+        const loadedCount = dependentIdSet.size;
 
-        // 4. Update projection store if provided
-        if (projectionStore) {
-          projectionStore.setProjection(
-            {
-              graphId,
-              rootPackageId: rootPackage.id,
-              depth,
-              nodes: projectionNodes,
-              links,
-              loadedCount: projectionNodes.length,
-              totalCount,
-              truncated: totalCount > projectionNodes.length,
-            },
-            sequence
-          );
+        const projection: WarRoomGraphProjection = {
+          graphId,
+          rootPackageId: rootPackage.id,
+          depth,
+          nodes: projectionNodes,
+          links,
+          loadedCount,
+          totalCount,
+          truncated: totalCount > loadedCount,
+        };
+
+        // 4. STAGE projection candidate if signal is provided (No immediate publication!)
+        if (signal && projectionStore) {
+          projectionStore.stageProjection(signal, projection, sequence);
         }
 
         // 5. Return canonical WarRoomGraphContext
@@ -298,7 +426,21 @@ export function createApolloGraphQueryPort(
           return { ok: false, error: createDomainError("CANCELLED", "Dependency path query cancelled") };
         }
 
-        if (!res.data?.dependencyPath || !res.data.dependencyPath.found) {
+        if (hasApolloExecutionError(res)) {
+          return {
+            ok: false,
+            error: createDomainError("UNAVAILABLE", "Dependency path service encountered transport error"),
+          };
+        }
+
+        if (!res.data || typeof res.data !== "object" || !res.data.dependencyPath || typeof res.data.dependencyPath !== "object") {
+          return {
+            ok: false,
+            error: createDomainError("INTERNAL_ERROR", "Dependency path response missing or malformed"),
+          };
+        }
+
+        if (res.data.dependencyPath.found === false) {
           return {
             ok: false,
             error: notFoundError(`Dependency path from ${request.fromPackageId} to ${request.toPackageId} not found`),
@@ -306,9 +448,24 @@ export function createApolloGraphQueryPort(
         }
 
         const pathData = res.data.dependencyPath;
-        const packageIds = (pathData.packages || [])
-          .map((p: { id?: string | null } | null) => p?.id)
-          .filter((id: string | null | undefined): id is string => typeof id === "string");
+        if (!Array.isArray(pathData.packages)) {
+          return {
+            ok: false,
+            error: createDomainError("INTERNAL_ERROR", "Dependency path packages field is not an array"),
+          };
+        }
+
+        const packageIds: string[] = [];
+        for (const pkg of pathData.packages) {
+          const pkgId = typeof pkg?.id === "string" ? pkg.id.trim() : "";
+          if (!pkgId) {
+            return {
+              ok: false,
+              error: createDomainError("INTERNAL_ERROR", "Dependency path package item has invalid ID"),
+            };
+          }
+          packageIds.push(pkgId);
+        }
 
         return {
           ok: true,

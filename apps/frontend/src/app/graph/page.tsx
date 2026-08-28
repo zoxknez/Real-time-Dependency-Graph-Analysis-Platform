@@ -3,7 +3,7 @@
 /**
  * Dependency Graph Page
  *
- * Migrated to route human graph interactions through shared WarRoomActions (WMCP-2C).
+ * Migrated to route human graph interactions through shared WarRoomActions (WMCP-2C-R1).
  * Enforces dual Human-Agent parity (WMCP-INV-003, WMCP-INV-004).
  */
 
@@ -40,10 +40,10 @@ import {
   useWarRoomSelector,
   useHumanWarRoomInvocation,
   useWarRoomGraphProjection,
+  useWarRoomProjectionLifecycle,
 } from "@/components/providers/war-room-provider";
 import {
   WarRoomState,
-  PackageEcosystem,
   WarRoomProjectionNode,
   WarRoomProjectionLink,
 } from "@/lib/war-room";
@@ -88,9 +88,10 @@ function GraphPageContent() {
   const initialPkg = searchParams.get("pkg") || "";
   const { theme } = useTheme();
 
-  // War Room Actions & Canonical State
+  // War Room Actions, Projection Lifecycle & Canonical State
   const actions = useWarRoomActions();
   const createHumanInvocation = useHumanWarRoomInvocation();
+  const projectionLifecycle = useWarRoomProjectionLifecycle();
 
   const canonicalPhase = useWarRoomSelector((s: WarRoomState) => s.phase);
   const canonicalRevision = useWarRoomSelector((s: WarRoomState) => s.contextRevision);
@@ -223,7 +224,8 @@ function GraphPageContent() {
       ecosystemCount: ecosystems.size,
       ecosystems: Array.from(ecosystems),
       depthCounts,
-      totalCount: graphProjection?.totalCount ?? graphData.nodes.length,
+      loadedCount: graphProjection?.loadedCount ?? 0,
+      totalCount: graphProjection?.totalCount ?? 0,
       truncated: graphProjection?.truncated ?? false,
     };
   }, [graphData, graphProjection]);
@@ -251,12 +253,18 @@ function GraphPageContent() {
           depth,
         });
 
-        if (!result.ok) {
+        if (result.ok) {
+          // Activate the staged projection matching this signal and graph ID
+          projectionLifecycle.activate(controller.signal, result.data.id);
+        } else {
+          // Discard staged candidate on any failure or stale context
+          projectionLifecycle.discard(controller.signal);
           if (result.error.code !== "CANCELLED" && result.error.code !== "STALE_CONTEXT") {
             setUiError(result.error.message || "Failed to load dependency graph");
           }
         }
       } catch {
+        projectionLifecycle.discard(controller.signal);
         setUiError("Unexpected error loading graph");
       } finally {
         if (activeControllerRef.current === controller) {
@@ -265,7 +273,7 @@ function GraphPageContent() {
         }
       }
     },
-    [actions, createHumanInvocation]
+    [actions, createHumanInvocation, projectionLifecycle]
   );
 
   // Initial ?pkg= load when WarRoom store reaches IDLE
@@ -346,6 +354,11 @@ function GraphPageContent() {
   const handleNodeClick = useCallback(
     async (node: NodeObject) => {
       const graphNode = node as GraphNode;
+      const rootPkg = canonicalGraph?.rootPackage;
+      const currentEcosystem = (rootPkg && rootPkg.id === graphNode.id)
+        ? rootPkg.ecosystem
+        : (graphProjection?.nodes.find((n) => n.id === graphNode.id)?.ecosystem || rootPkg?.ecosystem || "NPM");
+
       const invocation = createHumanInvocation();
 
       const result = await actions.selectPackage(invocation, {
@@ -353,7 +366,7 @@ function GraphPageContent() {
           package: {
             id: graphNode.id,
             name: graphNode.name,
-            ecosystem: (graphNode.ecosystem || "UNKNOWN") as PackageEcosystem,
+            ecosystem: currentEcosystem,
           },
         },
       });
@@ -374,7 +387,7 @@ function GraphPageContent() {
         );
       }
     },
-    [actions, createHumanInvocation]
+    [actions, canonicalGraph, graphProjection, createHumanInvocation]
   );
 
   // Deselect from panel: invokes WarRoomActions.deselectPackage
@@ -491,6 +504,8 @@ function GraphPageContent() {
       data-war-room-revision={canonicalRevision}
       data-war-room-root-package={activePackageId || undefined}
       data-war-room-selected-package={selectedPackageId || undefined}
+      data-war-room-projection-graph={graphProjection?.graphId || undefined}
+      data-war-room-projection-root={graphProjection?.rootPackageId || undefined}
     >
       {/* Header */}
       <motion.div
@@ -681,7 +696,7 @@ function GraphPageContent() {
               <span>Graph Statistics</span>
               {graphStats.truncated && (
                 <span className="text-[10px] text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded font-mono">
-                  Showing {graphStats.nodeCount} of {graphStats.totalCount}
+                  Showing {graphStats.loadedCount} of {graphStats.totalCount} reverse dependents
                 </span>
               )}
             </div>

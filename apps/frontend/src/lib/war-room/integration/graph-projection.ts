@@ -1,14 +1,16 @@
 /**
- * War Room Graph Projection Model and Store
+ * Non-Canonical Graph Projection Store & Staging Lifecycle
  *
- * Provides non-canonical render projection data and async race safety outside
- * the canonical domain state kernel (Section 28, 31, 32, WMCP-2C).
+ * Manages render projections isolated from canonical WarRoomState (WMCP-2C-R1).
+ * Enforces latest-request sequence validation and two-phase staging/activation lifecycle.
  */
+
+import { PackageEcosystem } from "../domain/types";
 
 export interface WarRoomProjectionNode {
   readonly id: string;
   readonly name: string;
-  readonly ecosystem: string;
+  readonly ecosystem: PackageEcosystem;
   readonly depth: number;
   readonly isRoot: boolean;
 }
@@ -25,23 +27,31 @@ export interface WarRoomGraphProjection {
   readonly depth: number;
   readonly nodes: readonly WarRoomProjectionNode[];
   readonly links: readonly WarRoomProjectionLink[];
-  readonly loadedCount: number;
-  readonly totalCount: number;
-  readonly truncated: boolean;
+  readonly loadedCount: number; // Unique loaded reverse dependents (excluding root)
+  readonly totalCount: number;  // Total reverse dependents reported by backend
+  readonly truncated: boolean;  // totalCount > loadedCount
+}
+
+interface StagedEntry {
+  readonly projection: WarRoomGraphProjection;
+  readonly sequence: number;
 }
 
 export interface WarRoomGraphProjectionStore {
-  getProjection(graphId?: string): WarRoomGraphProjection | null;
-  setProjection(projection: WarRoomGraphProjection, sequence: number): void;
-  nextSequence(graphKey: string): number;
-  getLatestSequence(graphKey: string): number;
+  getProjection(graphId: string): WarRoomGraphProjection | null;
+  getLatestRequestedSequence(graphId: string): number;
+  nextSequence(graphId: string): number;
+  stageProjection(signal: AbortSignal, projection: WarRoomGraphProjection, sequence: number): void;
+  activateProjection(signal: AbortSignal, expectedGraphId: string): boolean;
+  discardProjection(signal: AbortSignal): void;
   subscribe(listener: () => void): () => void;
 }
 
 export function createGraphProjectionStore(): WarRoomGraphProjectionStore {
-  const projections = new Map<string, WarRoomGraphProjection>();
-  const sequences = new Map<string, number>();
-  const committedSequences = new Map<string, number>();
+  const visibleProjections = new Map<string, WarRoomGraphProjection>();
+  const latestRequestedSequence = new Map<string, number>();
+  const latestCommittedSequence = new Map<string, number>();
+  const stagedBySignal = new Map<AbortSignal, StagedEntry>();
   const listeners = new Set<() => void>();
 
   function notify() {
@@ -49,40 +59,69 @@ export function createGraphProjectionStore(): WarRoomGraphProjectionStore {
       try {
         listener();
       } catch (e) {
-        console.error("Error in graph projection store listener", e);
+        console.error("[GraphProjectionStore] Subscriber error:", e);
       }
     }
   }
 
   return {
-    getProjection(graphId?: string): WarRoomGraphProjection | null {
-      if (!graphId) return null;
-      return projections.get(graphId) ?? null;
+    getProjection(graphId: string): WarRoomGraphProjection | null {
+      return visibleProjections.get(graphId) || null;
     },
 
-    nextSequence(graphKey: string): number {
-      const current = sequences.get(graphKey) || 0;
+    getLatestRequestedSequence(graphId: string): number {
+      return latestRequestedSequence.get(graphId) || 0;
+    },
+
+    nextSequence(graphId: string): number {
+      const current = latestRequestedSequence.get(graphId) || 0;
       const next = current + 1;
-      sequences.set(graphKey, next);
+      latestRequestedSequence.set(graphId, next);
       return next;
     },
 
-    getLatestSequence(graphKey: string): number {
-      return sequences.get(graphKey) || 0;
+    stageProjection(signal: AbortSignal, projection: WarRoomGraphProjection, sequence: number): void {
+      if (signal.aborted) return;
+      stagedBySignal.set(signal, { projection, sequence });
     },
 
-    setProjection(projection: WarRoomGraphProjection, sequence: number): void {
-      const graphKey = projection.graphId;
-      const latestCommitted = committedSequences.get(graphKey) || 0;
+    activateProjection(signal: AbortSignal, expectedGraphId: string): boolean {
+      const staged = stagedBySignal.get(signal);
+      stagedBySignal.delete(signal);
 
-      // Only allow monotonic / newer sequence for the same graph key to commit
-      if (sequence < latestCommitted) {
-        return;
+      if (!staged) {
+        return false;
       }
 
-      committedSequences.set(graphKey, sequence);
-      projections.set(projection.graphId, projection);
+      if (signal.aborted) {
+        return false;
+      }
+
+      const { projection, sequence } = staged;
+      if (projection.graphId !== expectedGraphId) {
+        return false;
+      }
+
+      // Latest Request Rule: candidate must match the latest requested sequence for this graph key
+      const latestReq = latestRequestedSequence.get(projection.graphId) || 0;
+      if (sequence !== latestReq) {
+        return false;
+      }
+
+      // Monotonic commit sequence check
+      const latestCom = latestCommittedSequence.get(projection.graphId) || 0;
+      if (sequence < latestCom) {
+        return false;
+      }
+
+      latestCommittedSequence.set(projection.graphId, sequence);
+      visibleProjections.set(projection.graphId, projection);
       notify();
+      return true;
+    },
+
+    discardProjection(signal: AbortSignal): void {
+      stagedBySignal.delete(signal);
     },
 
     subscribe(listener: () => void): () => void {

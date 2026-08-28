@@ -3,7 +3,7 @@
 /**
  * War Room React Provider & Custom Hooks
  *
- * Integrates the canonical War Room runtime with React and Apollo Client (Section 8, 9, 10, 11, 12, WMCP-2C).
+ * Integrates the canonical War Room runtime with React and Apollo Client (Section 8, 9, 10, 11, 12, WMCP-2C-R1).
  */
 
 import React, {
@@ -139,6 +139,23 @@ export function useHumanWarRoomInvocation() {
       signal,
     });
   }, [statePort]);
+}
+
+/**
+ * Projection lifecycle hook.
+ * Allows activating or discarding staged candidate projections after canonical action resolution.
+ */
+export function useWarRoomProjectionLifecycle() {
+  const { projectionStore } = useWarRoomContext();
+
+  return useMemo(() => ({
+    activate(signal: AbortSignal, expectedGraphId: string): boolean {
+      return projectionStore.activateProjection(signal, expectedGraphId);
+    },
+    discard(signal: AbortSignal): void {
+      projectionStore.discardProjection(signal);
+    },
+  }), [projectionStore]);
 }
 
 /**
