@@ -941,7 +941,287 @@ test.describe("WebMCP Primitive Registration & Execution Bridge (WMCP-3B / WMCP-
     expect(result.contextRevision).toBe(2);
   });
 
-  test("33. Concurrent same-key Agent races converge canonical state and visible projection", async () => {
+  test("33. Real Agent same-key A-first race: A commits first and activates projection, B returns STALE_CONTEXT and preserves A state", async () => {
+    let unblockA: (() => void) | null = null;
+    const gateA = new Promise<void>((r) => {
+      unblockA = r;
+    });
+    let unblockB: (() => void) | null = null;
+    const gateB = new Promise<void>((r) => {
+      unblockB = r;
+    });
+
+    let arrivalCount = 0;
+    const arrivalOrder: string[] = [];
+
+    const raceGraphQueryPort: WarRoomGraphQueryPort = {
+      loadPackageGraph: async (_sec, request, signal) => {
+        arrivalCount++;
+        const currentArrival = arrivalCount;
+        const callerTag = currentArrival === 1 ? "A" : "B";
+        arrivalOrder.push(callerTag);
+
+        const graphId = `graph:${request.rootPackageId}`;
+        const seq = env.projectionStore.nextSequence(graphId);
+
+        if (signal) {
+          env.projectionStore.stageProjection(
+            signal,
+            {
+              graphId,
+              rootPackageId: request.rootPackageId,
+              depth: request.depth || 2,
+              nodes: [
+                {
+                  id: request.rootPackageId,
+                  name: `pkg-${callerTag}`,
+                  ecosystem: "NPM",
+                  depth: 0,
+                  isRoot: true,
+                },
+              ],
+              links: [],
+              loadedCount: 1,
+              totalCount: 1,
+              truncated: false,
+            },
+            seq
+          );
+        }
+
+        if (callerTag === "A") {
+          await gateA;
+        } else {
+          await gateB;
+        }
+
+        const graph: WarRoomGraphContext = {
+          id: graphId,
+          rootPackage: {
+            id: request.rootPackageId,
+            name: `pkg-${callerTag}`,
+            ecosystem: "NPM",
+          },
+          packageIds: [request.rootPackageId],
+          nodes: [{ id: request.rootPackageId, name: `pkg-${callerTag}`, ecosystem: "NPM" }],
+          edges: [],
+        };
+
+        return { ok: true, data: graph };
+      },
+      traceDependencyPath: async () => ({
+        ok: false,
+        error: { code: "UNAVAILABLE", message: "Not implemented" },
+      }),
+    };
+
+    const env = createMockEnvironment({ graphQueryPort: raceGraphQueryPort });
+    const [, openGraphTool] = createPrimitiveTools(env);
+
+    const initialRev = env.statePort.getState().contextRevision;
+
+    const ctrlA = new AbortController();
+    const ctrlB = new AbortController();
+
+    // Start A (captures initialRev)
+    const promiseA = openGraphTool.execute(
+      { rootPackageId: "npm:same-key@1.0.0", depth: 2 },
+      { signal: ctrlA.signal }
+    );
+
+    // Start B (captures initialRev)
+    const promiseB = openGraphTool.execute(
+      { rootPackageId: "npm:same-key@1.0.0", depth: 2 },
+      { signal: ctrlB.signal }
+    );
+
+    // Wait until both calls are in-flight in graphQueryPort
+    await new Promise((r) => setTimeout(r, 20));
+    expect(arrivalOrder).toEqual(["A", "B"]);
+
+    // Release A first -> A commits
+    if (unblockA) (unblockA as () => void)();
+
+    const resA = (await promiseA) as WebMcpToolOutputEnvelope<WebMcpOpenGraphResultData>;
+    assertWithinToolBudget(resA);
+    expect(resA.ok).toBe(true);
+    if (resA.ok) {
+      expect(resA.tool).toBe("open_package_graph");
+      expect(resA.changed).toBe(true);
+      expect(resA.contextRevision).toBe(initialRev + 1);
+      expect(resA.data.projectionActivated).toBe(true);
+      expect(resA.data.graphId).toBe("graph:npm:same-key@1.0.0");
+    }
+
+    // Verify canonical state and projection match A
+    const stateAfterA = env.statePort.getState();
+    expect(stateAfterA.phase).toBe("GRAPH_READY");
+    if (stateAfterA.phase === "GRAPH_READY") {
+      expect(stateAfterA.graph.rootPackage.name).toBe("pkg-A");
+    }
+    const projAfterA = env.projectionStore.getProjection("graph:npm:same-key@1.0.0");
+    expect(projAfterA).not.toBeNull();
+    expect(projAfterA?.nodes[0]?.name).toBe("pkg-A");
+
+    // Release B second -> must fail STALE_CONTEXT
+    if (unblockB) (unblockB as () => void)();
+
+    const resB = (await promiseB) as WebMcpToolOutputEnvelope<WebMcpOpenGraphResultData>;
+    assertWithinToolBudget(resB);
+    expect(resB.ok).toBe(false);
+    if (!resB.ok) {
+      expect(resB.error.code).toBe("STALE_CONTEXT");
+    }
+
+    // Final convergence: canonical state and visible projection remain A
+    const stateFinal = env.statePort.getState();
+    if (stateFinal.phase === "GRAPH_READY") {
+      expect(stateFinal.graph.rootPackage.name).toBe("pkg-A");
+    }
+    const projFinal = env.projectionStore.getProjection("graph:npm:same-key@1.0.0");
+    expect(projFinal?.nodes[0]?.name).toBe("pkg-A");
+  });
+
+  test("34. Real Agent same-key B-first race: B commits first and activates projection, A returns STALE_CONTEXT and preserves B state", async () => {
+    let unblockA: (() => void) | null = null;
+    const gateA = new Promise<void>((r) => {
+      unblockA = r;
+    });
+    let unblockB: (() => void) | null = null;
+    const gateB = new Promise<void>((r) => {
+      unblockB = r;
+    });
+
+    let arrivalCount = 0;
+    const arrivalOrder: string[] = [];
+
+    const raceGraphQueryPort: WarRoomGraphQueryPort = {
+      loadPackageGraph: async (_sec, request, signal) => {
+        arrivalCount++;
+        const currentArrival = arrivalCount;
+        const callerTag = currentArrival === 1 ? "A" : "B";
+        arrivalOrder.push(callerTag);
+
+        const graphId = `graph:${request.rootPackageId}`;
+        const seq = env.projectionStore.nextSequence(graphId);
+
+        if (signal) {
+          env.projectionStore.stageProjection(
+            signal,
+            {
+              graphId,
+              rootPackageId: request.rootPackageId,
+              depth: request.depth || 2,
+              nodes: [
+                {
+                  id: request.rootPackageId,
+                  name: `pkg-${callerTag}`,
+                  ecosystem: "NPM",
+                  depth: 0,
+                  isRoot: true,
+                },
+              ],
+              links: [],
+              loadedCount: 1,
+              totalCount: 1,
+              truncated: false,
+            },
+            seq
+          );
+        }
+
+        if (callerTag === "A") {
+          await gateA;
+        } else {
+          await gateB;
+        }
+
+        const graph: WarRoomGraphContext = {
+          id: graphId,
+          rootPackage: {
+            id: request.rootPackageId,
+            name: `pkg-${callerTag}`,
+            ecosystem: "NPM",
+          },
+          packageIds: [request.rootPackageId],
+          nodes: [{ id: request.rootPackageId, name: `pkg-${callerTag}`, ecosystem: "NPM" }],
+          edges: [],
+        };
+
+        return { ok: true, data: graph };
+      },
+      traceDependencyPath: async () => ({
+        ok: false,
+        error: { code: "UNAVAILABLE", message: "Not implemented" },
+      }),
+    };
+
+    const env = createMockEnvironment({ graphQueryPort: raceGraphQueryPort });
+    const [, openGraphTool] = createPrimitiveTools(env);
+
+    const initialRev = env.statePort.getState().contextRevision;
+
+    const ctrlA = new AbortController();
+    const ctrlB = new AbortController();
+
+    // Start A (captures initialRev)
+    const promiseA = openGraphTool.execute(
+      { rootPackageId: "npm:same-key-b@1.0.0", depth: 2 },
+      { signal: ctrlA.signal }
+    );
+
+    // Start B (captures initialRev)
+    const promiseB = openGraphTool.execute(
+      { rootPackageId: "npm:same-key-b@1.0.0", depth: 2 },
+      { signal: ctrlB.signal }
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(arrivalOrder).toEqual(["A", "B"]);
+
+    // Release B first -> B commits
+    if (unblockB) (unblockB as () => void)();
+
+    const resB = (await promiseB) as WebMcpToolOutputEnvelope<WebMcpOpenGraphResultData>;
+    assertWithinToolBudget(resB);
+    expect(resB.ok).toBe(true);
+    if (resB.ok) {
+      expect(resB.tool).toBe("open_package_graph");
+      expect(resB.changed).toBe(true);
+      expect(resB.contextRevision).toBe(initialRev + 1);
+      expect(resB.data.projectionActivated).toBe(true);
+      expect(resB.data.graphId).toBe("graph:npm:same-key-b@1.0.0");
+    }
+
+    // Verify canonical state and projection match B
+    const stateAfterB = env.statePort.getState();
+    expect(stateAfterB.phase).toBe("GRAPH_READY");
+    if (stateAfterB.phase === "GRAPH_READY") {
+      expect(stateAfterB.graph.rootPackage.name).toBe("pkg-B");
+    }
+    const projAfterB = env.projectionStore.getProjection("graph:npm:same-key-b@1.0.0");
+    expect(projAfterB?.nodes[0]?.name).toBe("pkg-B");
+
+    // Release A second -> must fail STALE_CONTEXT
+    if (unblockA) (unblockA as () => void)();
+
+    const resA = (await promiseA) as WebMcpToolOutputEnvelope<WebMcpOpenGraphResultData>;
+    assertWithinToolBudget(resA);
+    expect(resA.ok).toBe(false);
+    if (!resA.ok) {
+      expect(resA.error.code).toBe("STALE_CONTEXT");
+    }
+
+    // Final convergence: canonical state and visible projection remain B
+    const stateFinal = env.statePort.getState();
+    if (stateFinal.phase === "GRAPH_READY") {
+      expect(stateFinal.graph.rootPackage.name).toBe("pkg-B");
+    }
+    const projFinal = env.projectionStore.getProjection("graph:npm:same-key-b@1.0.0");
+    expect(projFinal?.nodes[0]?.name).toBe("pkg-B");
+  });
+
+  test("35. Projection store publishes committed sequence despite uncommitted newer sequence request", () => {
     const projectionStore = createGraphProjectionStore();
     const graphKey = "graph:npm:react@19.0.0";
 
@@ -951,7 +1231,7 @@ test.describe("WebMCP Primitive Registration & Execution Bridge (WMCP-3B / WMCP-
     const seqA = projectionStore.nextSequence(graphKey); // 1
     const seqB = projectionStore.nextSequence(graphKey); // 2
 
-    // Scenario A: A completes and commits first
+    // A completes and commits first
     projectionStore.stageProjection(
       ctrlA.signal,
       {
@@ -976,7 +1256,7 @@ test.describe("WebMCP Primitive Registration & Execution Bridge (WMCP-3B / WMCP-
     expect(projectionStore.getProjection(graphKey)?.rootPackageId).toBe("npm:react@19.0.0");
   });
 
-  test("34. Post-commit signal abort does not suppress projection activation of committed canonical graph", () => {
+  test("36. Post-commit signal abort does not suppress projection activation of committed canonical graph", () => {
     const projectionStore = createGraphProjectionStore();
     const graphKey = "graph:npm:react@19.0.0";
     const ctrl = new AbortController();
@@ -1007,7 +1287,7 @@ test.describe("WebMCP Primitive Registration & Execution Bridge (WMCP-3B / WMCP-
 
   // ─── 7. Static Architecture & Governance Scans ───
 
-  test("35. Zero 'as any' or broad any casts exist in production WebMCP bridge and platform code", () => {
+  test("37. Zero 'as any' or broad any casts exist in production WebMCP bridge and platform code", () => {
     const bridgeDir = path.resolve(__dirname, "../src/lib/webmcp/bridge");
     const platformDir = path.resolve(__dirname, "../src/lib/webmcp/platform");
     const dirs = [bridgeDir, platformDir];
@@ -1028,7 +1308,7 @@ test.describe("WebMCP Primitive Registration & Execution Bridge (WMCP-3B / WMCP-
     }
   });
 
-  test("36. WebMCP bridge does NOT access document.modelContext directly", () => {
+  test("38. WebMCP bridge does NOT access document.modelContext directly", () => {
     const bridgeDir = path.resolve(__dirname, "../src/lib/webmcp/bridge");
     const files = fs.readdirSync(bridgeDir);
 
@@ -1040,7 +1320,7 @@ test.describe("WebMCP Primitive Registration & Execution Bridge (WMCP-3B / WMCP-
     }
   });
 
-  test("37. WebMCP bridge contains zero Apollo/GraphQL/fetch/direct state mutations", () => {
+  test("39. WebMCP bridge contains zero Apollo/GraphQL/fetch/direct state mutations", () => {
     const bridgeDir = path.resolve(__dirname, "../src/lib/webmcp/bridge");
     const files = fs.readdirSync(bridgeDir);
 
@@ -1066,7 +1346,7 @@ test.describe("WebMCP Primitive Registration & Execution Bridge (WMCP-3B / WMCP-
     }
   });
 
-  test("38. WebMCP bridge contains zero ToolRegistry or generation lifecycle concepts", () => {
+  test("40. WebMCP bridge contains zero ToolRegistry or generation lifecycle concepts", () => {
     const bridgeDir = path.resolve(__dirname, "../src/lib/webmcp/bridge");
     const files = fs.readdirSync(bridgeDir);
 

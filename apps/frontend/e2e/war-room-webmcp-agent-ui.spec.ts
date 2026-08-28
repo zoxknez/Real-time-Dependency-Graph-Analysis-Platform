@@ -495,9 +495,99 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B / WMCP-3B-R1)", () =>
     expect(result.error.code).toBe("CANCELLED");
   });
 
-  test("7. Human / Agent same-key race: earlier request commits and projection converges with canonical graph", async ({
+  test("7. Real Human / Agent same-key race: concurrent requests for same package converge canonical state and visible projection", async ({
     page,
   }) => {
+    let unblockFirst: (() => void) | null = null;
+    const firstGate = new Promise<void>((r) => {
+      unblockFirst = r;
+    });
+    let unblockSecond: (() => void) | null = null;
+    const secondGate = new Promise<void>((r) => {
+      unblockSecond = r;
+    });
+
+    let networkArrivalCount = 0;
+
+    await page.route((url) => url.href.includes("graphql"), async (route) => {
+      const req = route.request();
+      const postData = req.postDataJSON();
+      const op = postData?.operationName;
+      const vars = postData?.variables || {};
+
+      if (op === "GetPackage" && (vars.id === "npm:same-package" || !vars.id)) {
+        networkArrivalCount++;
+        const currentArrival = networkArrivalCount;
+
+        if (currentArrival === 1) {
+          await firstGate;
+        } else if (currentArrival === 2) {
+          await secondGate;
+        }
+      }
+
+      if (op === "GetPackage") {
+        const pkgId = vars.id || "npm:same-package";
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            data: {
+              package: {
+                id: pkgId,
+                name: pkgId.replace("npm:", ""),
+                ecosystem: "NPM",
+                version: "1.0.0",
+                __typename: "Package",
+              },
+            },
+          }),
+        });
+      }
+
+      if (op === "GetReverseDependents") {
+        const pkgId = vars.packageId || "npm:same-package";
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            data: {
+              reverseDependents: {
+                edges: [
+                  {
+                    node: {
+                      id: "npm:same-package-dep",
+                      name: "same-package-dep",
+                      ecosystem: "NPM",
+                      __typename: "Package",
+                    },
+                    depth: 1,
+                    cursor: "c1",
+                    __typename: "PackageEdge",
+                  },
+                ],
+                pageInfo: {
+                  hasNextPage: false,
+                  hasPreviousPage: false,
+                  startCursor: "c1",
+                  endCursor: "c1",
+                  __typename: "PageInfo",
+                },
+                totalCount: 1,
+                __typename: "PackageConnection",
+              },
+            },
+          }),
+        });
+      }
+
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: null }),
+      });
+    });
+
     await page.goto("/graph");
 
     await page.waitForFunction(
@@ -509,29 +599,65 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B / WMCP-3B-R1)", () =>
       { timeout: 10000 }
     );
 
-    // Agent opens npm:react
-    const agentResult = await page.evaluate(async () => {
+    // 1. Agent starts opening npm:same-package (first arrival)
+    const agentPromise = page.evaluate(async () => {
       const tools = (window as any).__registeredWebMcpTools;
       const openTool = tools.find((t: any) => t.name === "open_package_graph");
       const controller = new AbortController();
       return await openTool.execute(
-        { rootPackageId: "npm:react" },
+        { rootPackageId: "npm:same-package", depth: 2 },
         { signal: controller.signal }
       );
     });
 
+    // Wait until Agent request has entered network gate
+    await new Promise((r) => setTimeout(r, 60));
+
+    // 2. Human triggers opening the EXACT SAME package via real UI input
+    const searchInput = page.getByTestId("graph-package-input");
+    await searchInput.fill("npm:same-package");
+    await page.getByTestId("render-graph-button").click();
+
+    // Wait until both requests have reached network barrier
+    await new Promise((r) => setTimeout(r, 60));
+
+    // 3. Release first caller (Agent) -> Agent wins canonical commit & projection
+    if (unblockFirst) {
+      (unblockFirst as () => void)();
+    }
+
+    const agentResult: any = await agentPromise;
     expect(agentResult.ok).toBe(true);
 
     const container = page.locator("[data-war-room-phase]");
     await expect(container).toHaveAttribute("data-war-room-phase", "GRAPH_READY", {
       timeout: 10000,
     });
-    await expect(container).toHaveAttribute("data-war-room-root-package", "npm:react", {
-      timeout: 10000,
-    });
+    await expect(container).toHaveAttribute(
+      "data-war-room-root-package",
+      "npm:same-package",
+      { timeout: 10000 }
+    );
     await expect(container).toHaveAttribute(
       "data-war-room-projection-root",
-      "npm:react",
+      "npm:same-package",
+      { timeout: 10000 }
+    );
+
+    // 4. Release second caller (Human) -> finishes gracefully
+    if (unblockSecond) {
+      (unblockSecond as () => void)();
+    }
+
+    // Final state remains converged and valid
+    await expect(container).toHaveAttribute(
+      "data-war-room-root-package",
+      "npm:same-package",
+      { timeout: 10000 }
+    );
+    await expect(container).toHaveAttribute(
+      "data-war-room-projection-root",
+      "npm:same-package",
       { timeout: 10000 }
     );
   });

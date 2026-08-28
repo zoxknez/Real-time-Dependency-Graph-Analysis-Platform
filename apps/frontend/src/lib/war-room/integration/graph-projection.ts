@@ -1,8 +1,9 @@
 /**
  * Non-Canonical Graph Projection Store & Staging Lifecycle
  *
- * Manages render projections isolated from canonical WarRoomState (WMCP-2C-R1).
- * Enforces latest-request sequence validation and two-phase staging/activation lifecycle.
+ * Manages render projections isolated from canonical WarRoomState (WMCP-2C-R1 / WMCP-3B-R1).
+ * Tracks request sequencing for staging correlation while projection publication
+ * is authorized by successful canonical commit and protected by monotonic committed sequence.
  */
 
 import { PackageEcosystem } from "../domain/types";
