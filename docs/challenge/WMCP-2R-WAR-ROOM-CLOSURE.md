@@ -57,7 +57,13 @@ The WMCP-2 implementation is strictly linear with zero merges and zero rebased p
 ## 5. WMCP-2 Corrective History
 
 1. **WMCP-2A (Canonical State Kernel):**
-   - Attempt 1 (`aaf68848`): PASS WITH CORRECTIONS. Identified Zustand store wrapper mutation, node-selection phase transition ambiguity, and scenario ID collision gaps.
+   - Attempt 1 (`aaf68848`): PASS WITH CORRECTIONS. Identified 6 specific contract gaps:
+     1. Node-selection semantics/clarification in deeper phases (same-node selection is no-op, different-node clears downstream).
+     2. `SCENARIO_RESET` accepted outside frozen scope (`SIMULATION_READY`).
+     3. Zustand `StoreApi` / `StatePort` runtime method collision (`Object.assign`).
+     4. Missing `ADD_REQUIRED_PARAMETER` vs `CHANGE_PARAMETER_TYPE` conflict detection.
+     5. Weak `ScenarioVisibility` typing.
+     6. Missing `sourceContextRevision` validation for analysis/plan evidence.
    - Closure R1 (`01c47c35`): PASS - CLOSED. Disentangled genuine Zustand StoreApi from StatePort adapter, enforced same-node selection no-op, and locked scenario operation validations.
 2. **WMCP-2B (Shared WarRoomActions Application Boundary):**
    - Attempt 1 (`df473ee3`): PASS WITH CORRECTIONS. Identified unhandled service port throw leakage and inconsistent error classification.
@@ -69,7 +75,22 @@ The WMCP-2 implementation is strictly linear with zero merges and zero rebased p
 
 ---
 
-## 6. Total WMCP-2 Diff Inventory
+## 6. WMCP-2R Independent Review
+
+- **Reviewed Commit:** `0fd902833f92be9182eb605fd91b1510063a3c5a`
+- **Executor Status:** PASS
+- **Independent Status:** `PASS WITH CORRECTIONS - NOT CLOSED`
+- **Findings Identified & Corrected:**
+  1. *Canonical Type Names:* Section 10 previously displayed non-existent `WarRoomTechnicalAnalysis` and `WarRoomMigrationPlan` types; corrected to exact implemented names `WarRoomAnalysisRef` and `WarRoomPlanRef`.
+  2. *PLAN_READY Truth:* Clarified that `PLAN_READY` represents a canonical lifecycle state holding a validated `WarRoomPlanRef` binding rather than claiming a synthesized, execution-ready plan (since production `WarRoomMigrationPlanningPort` remains `UNAVAILABLE`).
+  3. *HUMAN_REVIEW Truth:* Clarified that `analysis?: WarRoomAnalysisRef` is optional in the lifecycle contract and not a mandatory pre-condition for human review.
+  4. *WMCP-2A History:* Restored the exact 6 historical findings from `WMCP-2A-WAR-ROOM-DOMAIN-RESULTS.md`, eliminating the inaccurate "scenario ID collision" summary.
+  5. *Test Methodology Precision:* Removed the inaccurate phrase "property-based test suites" and accurately described test evidence as deterministic Playwright TypeScript domain tests and static boundary checks.
+- **Review Confirmation:** Zero production source or test regressions identified. Scope strictly confined to documentation precision.
+
+---
+
+## 7. Total WMCP-2 Diff Inventory
 
 The complete delta between `5ad4585b858f99edb33de19bca70f5bfa8012c11` and `da09d62371d83e6d49d37c32f1ab947b2a3d0fe6` spans 28 files (21 added, 7 modified):
 
@@ -111,7 +132,7 @@ The complete delta between `5ad4585b858f99edb33de19bca70f5bfa8012c11` and `da09d
 
 ---
 
-## 7. Authoritative Contracts Reviewed
+## 8. Authoritative Contracts Reviewed
 
 - `docs/challenge/WMCP-0B-CHALLENGE-CONTRACT.md`
 - `docs/challenge/ARCHITECTURE-INVARIANTS.md`
@@ -123,13 +144,13 @@ The complete delta between `5ad4585b858f99edb33de19bca70f5bfa8012c11` and `da09d
 
 ---
 
-## 8. Review Scope
+## 9. Review Scope
 
 Evaluation of the canonical domain state machine, pure transitions, JSON serializability, shared application orchestrator, context-bound admission, trusted security/authorization ports, fail-closed integration adapters, non-canonical projection store with two-phase commit, and human UI parity.
 
 ---
 
-## 9. Explicit Non-Goals (Deferred to WMCP-3+)
+## 10. Explicit Non-Goals (Deferred to WMCP-3+)
 
 The following capabilities are explicitly deferred to future phases and are confirmed ABSENT from WMCP-2:
 - WebMCP platform adapter (`WebMcpPlatformAdapter`, `ToolRegistry`, `document.modelContext`).
@@ -139,7 +160,7 @@ The following capabilities are explicitly deferred to future phases and are conf
 
 ---
 
-## 10. Canonical State Architecture
+## 11. Canonical State Architecture
 
 Canonical War Room state is modeled as an immutable, pure domain structure isolated from framework and transport internals:
 
@@ -152,15 +173,20 @@ Canonical Domain State:
 │ ├─ graph?: WarRoomGraphContext                         │
 │ ├─ selection?: WarRoomSelection                        │
 │ ├─ scenario?: WarRoomScenario                          │
-│ ├─ analysis?: WarRoomTechnicalAnalysis                 │
+│ ├─ analysis?: WarRoomAnalysisRef                       │
 │ ├─ review?: WarRoomHumanReview                         │
-│ └─ plan?: WarRoomMigrationPlan                         │
+│ └─ plan?: WarRoomPlanRef                               │
 └────────────────────────────────────────────────────────┘
 ```
 
+Phase-specific property bindings:
+- `SimulationReadyState`: `graph`, `selection`, `scenario`, `analysis?: WarRoomAnalysisRef`
+- `HumanReviewState`: `graph`, `selection`, `scenario`, `review: WarRoomHumanReview`, `analysis?: WarRoomAnalysisRef`
+- `PlanReadyState`: `graph`, `selection`, `scenario`, `review: WarRoomHumanReview`, `plan: WarRoomPlanRef`, `analysis?: WarRoomAnalysisRef`
+
 ---
 
-## 11. Seven-Phase State Machine
+## 12. Seven-Phase State Machine
 
 The state machine implements exactly 7 canonical phases:
 1. `BOOTSTRAP`: Initial uninitialized state (`contextRevision: 0`).
@@ -168,12 +194,12 @@ The state machine implements exactly 7 canonical phases:
 3. `GRAPH_READY`: Active dependency graph loaded.
 4. `NODE_SELECTED`: Specific package node selected within graph.
 5. `SIMULATION_READY`: Hypothetical API breaking changes configured.
-6. `HUMAN_REVIEW`: Technical analysis evaluated with human annotations.
-7. `PLAN_READY`: Migration plan synthesized and ready for execution.
+6. `HUMAN_REVIEW`: Human review context is attached to the active scenario; a deterministic analysis reference may be present when available.
+7. `PLAN_READY`: Canonical lifecycle state containing a validated migration-plan reference and its review/scenario binding. Actual production migration-plan synthesis remains deferred to WMCP-11.
 
 ---
 
-## 12. Context Revision Semantics
+## 13. Context Revision Semantics
 
 - `contextRevision` starts at `0` in `BOOTSTRAP` and increments monotonically with every valid semantic state transition.
 - `INITIALIZE` (`APP_INITIALIZED`) transitions `BOOTSTRAP` (0) -> `IDLE` (1).
@@ -183,40 +209,40 @@ The state machine implements exactly 7 canonical phases:
 
 ---
 
-## 13. Derived Invalidation Review
+## 14. Derived Invalidation Review
 
-- **New Graph:** Invalidation cascades clearing downstream selection, scenario, analysis, review, and plan.
-- **Different Node Selection:** Invalidation clears downstream scenario, analysis, review, and plan.
-- **Scenario Patch Modification:** Clears existing technical analysis and downstream plan.
-- **Scenario Recalculation (from `PLAN_READY`):** Invalidates plan and transitions to `HUMAN_REVIEW`.
-- **Annotation Modification:** Preserves technical analysis; invalidates plan if in `PLAN_READY`.
+- **New Graph:** Invalidation cascades clearing downstream selection, scenario, analysis reference, review, and plan reference.
+- **Different Node Selection:** Invalidation clears downstream scenario, analysis reference, review, and plan reference.
+- **Scenario Patch Modification:** Clears existing technical analysis reference and downstream plan reference.
+- **Scenario Recalculation (from `PLAN_READY`):** Invalidates plan reference and transitions to `HUMAN_REVIEW`.
+- **Annotation Modification:** Preserves technical analysis reference; invalidates plan reference if in `PLAN_READY`.
 - **Scenario Reset:** Valid exclusively from `SIMULATION_READY`.
 
 ---
 
-## 14. Stale Context Kernel
+## 15. Stale Context Kernel
 
 `commitContextBoundTransition` strictly verifies that `capturedContextRevision === currentState.contextRevision` BEFORE applying any state transition. In the event of a mismatch, it returns `STALE_CONTEXT` with `changed: false` and zero mutation.
 
 ---
 
-## 15. Serialization Boundary (`WMCP-INV-021`)
+## 16. Serialization Boundary (`WMCP-INV-021`)
 
-Static scans and property-based test suites verify that `WarRoomState` across all 7 phases is 100% JSON serializable (`JSON.parse(JSON.stringify(state))`). Canonical state contains zero:
+Deterministic Playwright TypeScript domain tests and static source checks verify that `WarRoomState` across all 7 phases is 100% JSON serializable (`JSON.parse(JSON.stringify(state))`). Canonical state contains zero:
 - `Date`, `Map`, `Set`, `WeakMap`, `WeakSet`, `BigInt`, `Function`, `Symbol`
 - `Promise`, `AbortController`, `AbortSignal`, `Error`
 - DOM nodes, React elements, Apollo cache instances, D3 simulation state, Three.js objects.
 
 ---
 
-## 16. Zustand Store vs StatePort Boundary
+## 17. Zustand Store vs StatePort Boundary
 
 - `createWarRoomStore()` returns an unadulterated vanilla Zustand `StoreApi<WarRoomStoreState>`.
 - `createWarRoomStatePort()` returns an independent `WarRoomStatePort` adapter wrapping the store without runtime property shadowing or `Object.assign` monkey-patching.
 
 ---
 
-## 17. Scenario Structural Contract
+## 18. Scenario Structural Contract
 
 - Supported patch operations: `REMOVE_SYMBOL`, `RENAME_SYMBOL`, `CHANGE_RETURN_TYPE`, `CHANGE_PARAMETER_TYPE`, `ADD_REQUIRED_PARAMETER`, `CHANGE_VISIBILITY`.
 - Visibility vocabulary: `"public" | "private" | "protected" | "internal" | "crate" | "super"`.
@@ -224,14 +250,14 @@ Static scans and property-based test suites verify that `WarRoomState` across al
 
 ---
 
-## 18. Error Taxonomy
+## 19. Error Taxonomy
 
 Standardized domain and service errors strictly align with `WMCP-0B`:
 `INVALID_INPUT`, `NOT_FOUND`, `INVALID_STATE`, `STALE_CONTEXT`, `UNAVAILABLE`, `UNSUPPORTED_ECOSYSTEM`, `SNAPSHOT_UNAVAILABLE`, `VERSION_RANGE_INVALID`, `SCENARIO_CONFLICT`, `CAPABILITY_DENIED`, `CANCELLED`, `INTERNAL_ERROR`.
 
 ---
 
-## 19. WarRoomActions Architecture (`WMCP-INV-004`)
+## 20. WarRoomActions Architecture (`WMCP-INV-004`)
 
 A single, unified application boundary orchestrates all domain actions:
 - `openPackageGraph`, `closeGraph`, `selectPackage`, `deselectPackage`
@@ -241,7 +267,7 @@ A single, unified application boundary orchestrates all domain actions:
 
 ---
 
-## 20. Trusted Security Context Boundary (`WMCP-INV-017`)
+## 21. Trusted Security Context Boundary (`WMCP-INV-017`)
 
 Public action request DTOs contain zero user/tenant parameters. Security identity is obtained exclusively from the trusted `WarRoomSecurityContextPort`:
 - `tenantId` (non-empty string)
@@ -250,13 +276,13 @@ Public action request DTOs contain zero user/tenant parameters. Security identit
 
 ---
 
-## 21. Authorization Channel Parity (`WMCP-INV-003`, `WMCP-INV-017`)
+## 22. Authorization Channel Parity (`WMCP-INV-003`, `WMCP-INV-017`)
 
 While `WarRoomInvocationContext` identifies the invocation channel (`HUMAN` vs `AGENT`), `WarRoomAuthorizationRequest` excludes the channel. Permissions are evaluated identically based on security context, action, and resource.
 
 ---
 
-## 22. Service Port Architecture
+## 23. Service Port Architecture
 
 Application orchestrator depends exclusively on typed abstraction ports:
 - `WarRoomSecurityContextPort`
@@ -268,7 +294,7 @@ Application orchestrator depends exclusively on typed abstraction ports:
 
 ---
 
-## 23. Universal Typed Failure Boundary
+## 24. Universal Typed Failure Boundary
 
 Every external port invocation is wrapped by `callPort()`:
 - Synchronous/asynchronous thrown exceptions are caught and sanitized to `INTERNAL_ERROR`.
@@ -277,73 +303,73 @@ Every external port invocation is wrapped by `callPort()`:
 
 ---
 
-## 24. Cancellation Semantics
+## 25. Cancellation Semantics
 
 Cancellation is verified strictly via `signal.aborted` or `err.name === "AbortError"`. Substring heuristics (e.g. `message.includes("abort")`) are strictly prohibited.
 
 ---
 
-## 25. Explicit-ID Read Semantics
+## 26. Explicit-ID Read Semantics
 
 Read operations (`searchPackages`, `inspectPackage`, `traceDependencyPath`) do not mutate canonical state and complete successfully even if `contextRevision` advances while pending.
 
 ---
 
-## 26. Context-Bound Async Commit Semantics
+## 27. Context-Bound Async Commit Semantics
 
 Asynchronous mutating operations (`openPackageGraph`, `recalculateScenario`, `generateMigrationPlan`) enforce admission revision checks before dispatch and commit revision checks after awaiting service ports.
 
 ---
 
-## 27. Public Workspace Composition
+## 28. Public Workspace Composition
 
 `createPublicWorkspaceSecurityContextPort` emits explicit sentinel `{ tenantId: "public", userId: "public" }` representing public workspace mode without injecting artificial claims into GraphQL variables or HTTP headers.
 
 ---
 
-## 28. Apollo Integration Boundary
+## 29. Apollo Integration Boundary
 
 Apollo Client dependencies (`@apollo/client`) are strictly confined to `apps/frontend/src/lib/war-room/integration/` and the React provider layer. Domain, State, and Application layers contain zero GraphQL or Apollo imports.
 
 ---
 
-## 29. Strict Ecosystem Contract
+## 30. Strict Ecosystem Contract
 
 `parsePackageEcosystem` implements a strict fail-closed contract accepting ONLY exact canonical enum strings: `"NPM" | "PY_PI" | "CARGO" | "MAVEN" | "NU_GET" | "GO"`. Lowercased, untrimmed, or aliased values return `null` and trigger `INTERNAL_ERROR`.
 
 ---
 
-## 30. Apollo Partial-Data Policy
+## 31. Apollo Partial-Data Policy
 
 If Apollo reports ANY execution error (`result.error != null` or `result.errors.length > 0`) on graph queries, the entire result is rejected as `UNAVAILABLE` without committing partial graph topologies.
 
 ---
 
-## 31. Package Inspection Truth
+## 32. Package Inspection Truth
 
 `createApolloPackageCatalogPort.inspectPackage` returns typed `UNAVAILABLE` because baseline GraphQL query surfaces do not expose full package inspection contracts.
 
 ---
 
-## 32. Unavailable Future Engine Ports
+## 33. Unavailable Future Engine Ports
 
 Production implementations for `WarRoomScenarioAnalysisPort` and `WarRoomMigrationPlanningPort` return truthful typed `UNAVAILABLE` errors without returning fake data.
 
 ---
 
-## 33. Graph Projection Boundary
+## 34. Graph Projection Boundary
 
 Non-canonical graph topologies are managed in `WarRoomGraphProjectionStore`, completely isolated from canonical state.
 
 ---
 
-## 34. Projection Evidence Semantics
+## 35. Projection Evidence Semantics
 
 Projection links are classified as `kind: "REVERSE_REACHABILITY"`, accurately reflecting GraphQL query evidence without claiming direct confirmed edges or Blast Radius.
 
 ---
 
-## 35. Projection Count Semantics
+## 36. Projection Count Semantics
 
 - `loadedCount`: Number of unique reverse dependents (excluding root).
 - `totalCount`: Total reverse dependents reported by backend.
@@ -352,62 +378,62 @@ Projection links are classified as `kind: "REVERSE_REACHABILITY"`, accurately re
 
 ---
 
-## 36. Two-Phase Projection Lifecycle
+## 37. Two-Phase Projection Lifecycle
 
 Projections are staged upon query completion (`stageProjection`) and activated into visibility (`activateProjection`) only after `WarRoomActions.openPackageGraph` successfully commits canonical state.
 
 ---
 
-## 37. Projection Race Safety
+## 38. Projection Race Safety
 
 - **Latest Request Rule:** A candidate projection can be activated only if `candidate.sequence === latestRequestedSequence`.
 - **Stale Context Isolation:** In stale reloads, the candidate projection is discarded and the existing visible projection remains intact.
 
 ---
 
-## 38. WarRoomProvider Architecture
+## 39. WarRoomProvider Architecture
 
 `WarRoomProvider` is mounted under `ApolloWrapper` in `layout.tsx`, creating a single runtime instance per provider mount across renders.
 
 ---
 
-## 39. HUMAN Invocation Architecture
+## 40. HUMAN Invocation Architecture
 
 `useHumanWarRoomInvocation` provides an invocation factory capturing `statePort.getState().contextRevision` dynamically at call time.
 
 ---
 
-## 40. `/graph` Human Action Migration
+## 41. `/graph` Human Action Migration
 
 All semantic interactions on `/graph` route through `WarRoomActions`. Direct Apollo query hooks (`useLazyQuery`) and manual state mutations are completely eliminated.
 
 ---
 
-## 41. Renderer-Local State
+## 42. Renderer-Local State
 
 UI-local state (`inputValue`, `isLoading`, `uiError`, `hoveredNode`, `isFullscreen`, `tooltipPos`) remains strictly presentation-local.
 
 ---
 
-## 42. Evidence Claim Audit
+## 43. Evidence Claim Audit
 
 Hard-coded `Impact: High` claims have been removed and replaced with truthful `Analysis: Not analyzed`.
 
 ---
 
-## 43. Progressive Enhancement Status
+## 44. Progressive Enhancement Status
 
 The human interactive workflow operates in standard browser environments with zero reliance on WebMCP APIs.
 
 ---
 
-## 44. WebMCP Non-Implementation Confirmation
+## 45. WebMCP Non-Implementation Confirmation
 
 Static code scans confirm that `document.modelContext`, `registerTool`, and `WebMcpPlatformAdapter` are 100% absent from WMCP-2 production code.
 
 ---
 
-## 45. Architecture Invariant Matrix
+## 46. Architecture Invariant Matrix
 
 | Invariant | Description | Review Status | Notes |
 | :--- | :--- | :---: | :--- |
@@ -421,94 +447,94 @@ Static code scans confirm that `document.modelContext`, `registerTool`, and `Web
 
 ---
 
-## 46. Test Inventory
+## 47. Test Inventory
 
 - Total Logical Cases: **122 tests**
 - Project-Expanded Tests: **342 executions** across Playwright projects.
 
 ---
 
-## 47. WMCP-2A Regression Results
+## 48. WMCP-2A Regression Results
 - **Command:** `npx playwright test e2e/war-room-domain.spec.ts --project=chromium`
 - **Result:** **28 passed** (0 failed, 1.5s, exit 0)
 
 ---
 
-## 48. WMCP-2B Regression Results
+## 49. WMCP-2B Regression Results
 - **Command:** `npx playwright test e2e/war-room-actions.spec.ts --project=chromium`
 - **Result:** **51 passed** (0 failed, 1.6s, exit 0)
 
 ---
 
-## 49. WMCP-2C Integration Results
+## 50. WMCP-2C Integration Results
 - **Command:** `npx playwright test e2e/war-room-integration.spec.ts --project=chromium`
 - **Result:** **30 passed** (0 failed, 1.4s, exit 0)
 
 ---
 
-## 50. WMCP-2C Human UI Results
+## 51. WMCP-2C Human UI Results
 - **Command:** `npm run test:e2e -- e2e/war-room-human-ui.spec.ts --project=chromium`
 - **Result:** **5 passed** (0 failed, 9.3s, exit 0)
 
 ---
 
-## 51. Homepage Regression
+## 52. Homepage Regression
 - **Command:** `npm run test:e2e -- e2e/homepage.spec.ts --project=chromium`
 - **Result:** **8 passed** (0 failed, 8.3s, exit 0)
 
 ---
 
-## 52. Consolidated Test Run
+## 53. Consolidated Test Run
 - **Command:** `npm run test:e2e -- e2e/war-room-domain.spec.ts e2e/war-room-actions.spec.ts e2e/war-room-integration.spec.ts e2e/war-room-human-ui.spec.ts e2e/homepage.spec.ts --project=chromium`
 - **Result:** **122 passed** (0 failed, 15.5s, exit 0)
 
 ---
 
-## 53. TypeScript Compilation
+## 54. TypeScript Compilation
 - **Command:** `npx tsc --noEmit -p apps/frontend/tsconfig.json`
 - **Result:** **PASS** (0 errors, exit 0)
 
 ---
 
-## 54. ESLint
+## 55. ESLint
 - **Command:** `npm run lint`
 - **Result:** **PASS** (0 errors, 0 warnings, exit 0)
 
 ---
 
-## 55. Next Production Build
+## 56. Next Production Build
 - **Command:** `npm run build`
 - **Result:** **PASS** (15/15 static pages generated successfully, exit 0)
 
 ---
 
-## 56. npm Audit
+## 57. npm Audit
 - **Command:** `npm audit --json`
 - **Result:** **PASS** (0 vulnerabilities, exit 0)
 
 ---
 
-## 57. Cargo Audit
+## 58. Cargo Audit
 - **Command:** `cargo audit`
 - **Version:** `cargo-audit 0.22.2`
 - **Result:** **PASS** (0 vulnerabilities, 12 allowed unmaintained warnings, exit 0)
 
 ---
 
-## 58. Package & Platform Diff Freeze
+## 59. Package & Platform Diff Freeze
 - `git diff 5ad4585b858f99edb33de19bca70f5bfa8012c11 da09d62371d83e6d49d37c32f1ab947b2a3d0fe6 -- apps/frontend/package.json apps/frontend/package-lock.json Cargo.toml Cargo.lock rust-toolchain.toml .clippy.toml .github/workflows deploy/docker`
 - **Result:** **EMPTY (0 diff)**
 
 ---
 
-## 59. Unrelated Local Worktree State
+## 60. Unrelated Local Worktree State
 - `apps/frontend/AGENTS.md`: PRESERVED (untracked)
 - `apps/frontend/CLAUDE.md`: PRESERVED (untracked)
 - **Status:** Local worktree contains unrelated untracked files; intended WMCP-2R tracked changes are clean and fully committed.
 
 ---
 
-## 60. Acceptance Gate Matrix
+## 61. Acceptance Gate Matrix
 
 | Gate | Description | Status |
 | :--- | :--- | :---: |
@@ -603,6 +629,6 @@ Static code scans confirm that `document.modelContext`, `registerTool`, and `Web
 
 ---
 
-## 61. Final Review Status
+## 62. Final Review Status
 
 **IMPLEMENTED - PENDING INDEPENDENT VERIFICATION**
