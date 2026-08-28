@@ -23,7 +23,8 @@ All functionality classified as pre-existing in WMCP-0A existed at or before: `8
 - **WMCP-1D (Frontend Tooling Modernization):** CLOSED at `767d852cc6963a2f7f3e58c363aa948acc6dd7fa`
 - **WMCP-1R (Platform Modernization Final Review):** CLOSED at `5ad4585b858f99edb33de19bca70f5bfa8012c11`
 - **WMCP-2A (Canonical War Room Domain State Kernel):** CLOSED at `01c47c35a597916dceb0360c34e745c0ad9184fc`
-- **WMCP-2B (Shared WarRoomActions Application Boundary):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
+- **WMCP-2B (Shared WarRoomActions Application Boundary):** CLOSED at `02c32ecb06733033fe08b2c0e5f12077695e4366`
+- **WMCP-2C (Human UI Integration Through WarRoomActions):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
 
 ---
 
@@ -37,6 +38,9 @@ The WebMCP Challenge execution follows an evidence-based phased architecture.
 - **WMCP-1C** unified and normalized the project runtime and toolchain environments (`node: 24.19.0` LTS, `rust: 1.98.0` stable, Clippy configuration cleanup, Docker build unification).
 - **WMCP-1D** modernized frontend tooling, aligned Node 24 typings, updated Playwright and typescript-eslint, while remediating tooling advisories (`eslint: 9.39.5`, `typescript-eslint: 8.67.0`, `playwright: 1.62.1`, `@types/node: 24.13.3`, `brace-expansion: 1.1.18`, `js-yaml: 4.3.1`).
 - **WMCP-1R** executes holistic multi-crate and full-stack platform verification across the entire WMCP-1 modernized baseline.
+- **WMCP-2A** established the canonical War Room domain state kernel, state machine, and state port.
+- **WMCP-2B** established the shared `WarRoomActions` application boundary with trusted security and query ports.
+- **WMCP-2C** connects the human interactive graph UI directly to the shared action boundary with isolated non-canonical render projections.
 
 ---
 
@@ -86,6 +90,7 @@ Every capability in the baseline evaluation is categorized into exactly one of t
 ### Platform Modernization Final Review (WMCP-1R)
 18. [`WMCP-1R-PLATFORM-CLOSURE.md`](WMCP-1R-PLATFORM-CLOSURE.md): Authoritative holistic synthesis and verification of the complete WMCP-1 platform modernization track.
 
-### War Room Domain State & Action Layer (WMCP-2A, WMCP-2B)
+### War Room Domain State & Action Layer (WMCP-2A, WMCP-2B, WMCP-2C)
 19. [`WMCP-2A-WAR-ROOM-DOMAIN-RESULTS.md`](WMCP-2A-WAR-ROOM-DOMAIN-RESULTS.md): Canonical War Room domain types, pure transition reducer, stale-context guard, and state port verification.
 20. [`WMCP-2B-WAR-ROOM-ACTIONS-RESULTS.md`](WMCP-2B-WAR-ROOM-ACTIONS-RESULTS.md): Shared WarRoomActions application boundary, trusted security/auth ports, and context-bound execution results.
+21. [`WMCP-2C-HUMAN-UI-INTEGRATION-RESULTS.md`](WMCP-2C-HUMAN-UI-INTEGRATION-RESULTS.md): Human UI migration on `/graph`, non-canonical graph projection store, Apollo client adapters, and E2E workflow verification.

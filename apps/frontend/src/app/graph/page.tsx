@@ -1,10 +1,17 @@
 "use client";
 
+/**
+ * Dependency Graph Page
+ *
+ * Migrated to route human graph interactions through shared WarRoomActions (WMCP-2C).
+ * Enforces dual Human-Agent parity (WMCP-INV-003, WMCP-INV-004).
+ */
+
 import { useState, useEffect, useCallback, useRef, Suspense, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
-import { useLazyQuery } from "@apollo/client/react";
+import * as THREE from "three";
 import {
   GitBranch,
   Maximize2,
@@ -20,17 +27,27 @@ import {
   Check,
   Sparkles,
 } from "lucide-react";
-import { GET_REVERSE_DEPENDENTS } from "@/lib/graphql/queries";
-import { getEcosystemColor, parsePackageId, formatEcosystemName } from "@/lib/utils";
+import { getEcosystemColor, formatEcosystemName } from "@/lib/utils";
 import { GraphControls } from "@/components/graph/graph-controls";
 import { NodeTooltip } from "@/components/graph/node-tooltip";
 import { LiveUpdateIndicator } from "@/components/graph/live-update-indicator";
 import { AnimatedCounter } from "@/components/ui/animated-counter";
-import { QueryError, EmptyState } from "@/components/ui/error-display";
+import { QueryError } from "@/components/ui/error-display";
 import { useDependencyGraphUpdates, useConnectionStatus } from "@/lib/hooks";
 import { useTheme } from "@/components/providers/theme-provider";
-import type { DependencyGraphUpdate, PackageEdge, GetReverseDependentsResponse, GetReverseDependentsVariables } from "@/lib/graphql/types";
-import * as THREE from "three";
+import {
+  useWarRoomActions,
+  useWarRoomSelector,
+  useHumanWarRoomInvocation,
+  useWarRoomGraphProjection,
+} from "@/components/providers/war-room-provider";
+import {
+  WarRoomState,
+  PackageEcosystem,
+  WarRoomProjectionNode,
+  WarRoomProjectionLink,
+} from "@/lib/war-room";
+import type { DependencyGraphUpdate } from "@/lib/graphql/types";
 import SpriteText from "three-spritetext";
 import type { NodeObject, LinkObject } from "react-force-graph-3d";
 
@@ -71,6 +88,55 @@ function GraphPageContent() {
   const initialPkg = searchParams.get("pkg") || "";
   const { theme } = useTheme();
 
+  // War Room Actions & Canonical State
+  const actions = useWarRoomActions();
+  const createHumanInvocation = useHumanWarRoomInvocation();
+
+  const canonicalPhase = useWarRoomSelector((s: WarRoomState) => s.phase);
+  const canonicalRevision = useWarRoomSelector((s: WarRoomState) => s.contextRevision);
+  const canonicalGraph = useWarRoomSelector((s: WarRoomState) =>
+    s.phase !== "BOOTSTRAP" && s.phase !== "IDLE" ? s.graph : null
+  );
+  const canonicalSelection = useWarRoomSelector((s: WarRoomState) =>
+    s.phase === "NODE_SELECTED" ||
+    s.phase === "SIMULATION_READY" ||
+    s.phase === "HUMAN_REVIEW" ||
+    s.phase === "PLAN_READY"
+      ? s.selection
+      : null
+  );
+
+  const graphProjection = useWarRoomGraphProjection();
+
+  // Active root package derived from canonical state
+  const activePackageId = canonicalGraph?.rootPackage.id || "";
+  const selectedPackageId = canonicalSelection?.package.id || null;
+
+  // UI-Local state
+  const [inputValue, setInputValue] = useState(initialPkg);
+  const [maxDepth, setMaxDepth] = useState(2);
+  const [debouncedMaxDepth, setDebouncedMaxDepth] = useState(maxDepth);
+  const [isLoading, setIsLoading] = useState(false);
+  const [uiError, setUiError] = useState<string | null>(null);
+
+  const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [autoRotate, setAutoRotate] = useState(true);
+  const [isPaused, setIsPaused] = useState(false);
+  const showLiveUpdates = true;
+
+  // Active abort controller for in-flight human graph requests
+  const activeControllerRef = useRef<AbortController | null>(null);
+  const initialLoadedRef = useRef(false);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const graphRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   // Safe SSR check for dark theme
   const [isDark, setIsDark] = useState(true);
   useEffect(() => {
@@ -87,29 +153,7 @@ function GraphPageContent() {
     return () => mediaQuery.removeEventListener("change", updateTheme);
   }, [theme]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const graphRef = useRef<any>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [packageId, setPackageId] = useState(initialPkg);
-  const [inputValue, setInputValue] = useState(initialPkg);
-  const [maxDepth, setMaxDepth] = useState(2);
-  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
-  const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
-  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [showChat, setShowChat] = useState(false);
-  const [autoRotate, setAutoRotate] = useState(true);
-  const [isPaused, setIsPaused] = useState(false);
-  const showLiveUpdates = true;
-
-  const [getReverseDeps, { data: reverseDepsData, loading, error }] = useLazyQuery<GetReverseDependentsResponse, GetReverseDependentsVariables>(GET_REVERSE_DEPENDENTS);
-
   // Debounced depth for graph loading
-  const [debouncedMaxDepth, setDebouncedMaxDepth] = useState(maxDepth);
-
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedMaxDepth(maxDepth);
@@ -119,29 +163,53 @@ function GraphPageContent() {
 
   // Connection status for real-time updates
   const connectionStatus = useConnectionStatus();
+  const isConnected = connectionStatus === "connected";
 
   // Subscribe to live dependency graph updates
   const { updates: liveUpdates } = useDependencyGraphUpdates({
-    rootPackageId: packageId,
+    rootPackageId: activePackageId,
     maxDepth: debouncedMaxDepth,
-    paused: !packageId || !showLiveUpdates,
+    paused: !activePackageId || !showLiveUpdates,
     onUpdate: useCallback((update: DependencyGraphUpdate) => {
-      // When we receive an update, refresh the graph
-      // Could also do incremental updates here for better performance
       if (update.type === "ADD" || update.type === "REMOVE" || update.type === "UPDATE") {
-        // For now, just reload the whole graph
-        // In production, we'd apply incremental updates
         console.log("[Graph] Live update received:", update);
       }
     }, []),
   });
 
+  // Derive 3D GraphData from non-canonical WarRoomGraphProjection
+  const graphData: GraphData = useMemo(() => {
+    if (!graphProjection) return { nodes: [], links: [] };
+
+    const nodes: GraphNode[] = graphProjection.nodes.map((node: WarRoomProjectionNode) => ({
+      id: node.id,
+      name: node.name,
+      ecosystem: node.ecosystem,
+      color: getEcosystemColor(node.ecosystem),
+      depth: node.depth,
+      val: node.isRoot ? 30 : Math.max(10, 25 - node.depth * 5),
+    }));
+
+    const links: GraphLink[] = graphProjection.links.map((link: WarRoomProjectionLink) => ({
+      source: link.source,
+      target: link.target,
+    }));
+
+    return { nodes, links };
+  }, [graphProjection]);
+
+  // Selected renderer node derived from canonical selection and projection
+  const selectedNode = useMemo(() => {
+    if (!selectedPackageId) return null;
+    return graphData.nodes.find((n) => n.id === selectedPackageId) || null;
+  }, [graphData.nodes, selectedPackageId]);
+
   // Compute graph statistics
   const graphStats = useMemo(() => {
     if (graphData.nodes.length === 0) return null;
 
-    const depths = graphData.nodes.map(n => n.depth);
-    const ecosystems = new Set(graphData.nodes.map(n => n.ecosystem));
+    const depths = graphData.nodes.map((n) => n.depth);
+    const ecosystems = new Set(graphData.nodes.map((n) => n.ecosystem));
     const maxDepthFound = Math.max(...depths);
     const depthCounts = depths.reduce((acc, d) => {
       acc[d] = (acc[d] || 0) + 1;
@@ -155,88 +223,94 @@ function GraphPageContent() {
       ecosystemCount: ecosystems.size,
       ecosystems: Array.from(ecosystems),
       depthCounts,
+      totalCount: graphProjection?.totalCount ?? graphData.nodes.length,
+      truncated: graphProjection?.truncated ?? false,
     };
-  }, [graphData]);
+  }, [graphData, graphProjection]);
 
-  const buildGraphData = useCallback((rootId: string, edges: PackageEdge[]) => {
-    const nodesMap = new Map<string, GraphNode>();
-    const links: GraphLink[] = [];
+  // Centralized human action to open/reload graph
+  const handleOpenGraph = useCallback(
+    async (rootPackageId: string, depth: number) => {
+      if (!rootPackageId.trim()) return;
 
-    // Add root node
-    const { name, ecosystem } = parsePackageId(rootId);
-    nodesMap.set(rootId, {
-      id: rootId,
-      name,
-      ecosystem: ecosystem.toUpperCase(),
-      color: getEcosystemColor(ecosystem),
-      depth: 0,
-      val: 30, // Larger for root
-    });
-
-    // Add dependent nodes
-    edges.forEach((edge) => {
-      const node = edge.node;
-      const depth = edge.depth || 1;
-
-      if (!nodesMap.has(node.id)) {
-        nodesMap.set(node.id, {
-          id: node.id,
-          name: node.name,
-          ecosystem: node.ecosystem,
-          color: getEcosystemColor(node.ecosystem),
-          depth,
-          val: Math.max(10, 25 - depth * 5), // Smaller as depth increases
-        });
+      // Abort any previous pending human graph request
+      if (activeControllerRef.current) {
+        activeControllerRef.current.abort();
       }
 
-      // Dependents point TO the root (reverse dependency)
-      links.push({
-        source: node.id,
-        target: rootId,
-      });
-    });
+      const controller = new AbortController();
+      activeControllerRef.current = controller;
 
-    setGraphData({
-      nodes: Array.from(nodesMap.values()),
-      links,
-    });
+      setIsLoading(true);
+      setUiError(null);
+
+      try {
+        const invocation = createHumanInvocation(controller.signal);
+        const result = await actions.openPackageGraph(invocation, {
+          rootPackageId: rootPackageId.trim(),
+          depth,
+        });
+
+        if (!result.ok) {
+          if (result.error.code !== "CANCELLED" && result.error.code !== "STALE_CONTEXT") {
+            setUiError(result.error.message || "Failed to load dependency graph");
+          }
+        }
+      } catch {
+        setUiError("Unexpected error loading graph");
+      } finally {
+        if (activeControllerRef.current === controller) {
+          setIsLoading(false);
+          activeControllerRef.current = null;
+        }
+      }
+    },
+    [actions, createHumanInvocation]
+  );
+
+  // Initial ?pkg= load when WarRoom store reaches IDLE
+  useEffect(() => {
+    if (
+      !initialLoadedRef.current &&
+      initialPkg.trim() &&
+      canonicalPhase === "IDLE"
+    ) {
+      initialLoadedRef.current = true;
+      handleOpenGraph(initialPkg, debouncedMaxDepth);
+    }
+  }, [initialPkg, canonicalPhase, debouncedMaxDepth, handleOpenGraph]);
+
+  // Depth reload action flow
+  useEffect(() => {
+    if (
+      activePackageId &&
+      graphProjection &&
+      graphProjection.depth !== debouncedMaxDepth
+    ) {
+      handleOpenGraph(activePackageId, debouncedMaxDepth);
+    }
+  }, [activePackageId, debouncedMaxDepth, graphProjection, handleOpenGraph]);
+
+  // Cleanup abort controller on unmount
+  useEffect(() => {
+    return () => {
+      if (activeControllerRef.current) {
+        activeControllerRef.current.abort();
+      }
+    };
   }, []);
-
-  // Build graph when data changes
-  useEffect(() => {
-    if (reverseDepsData?.reverseDependents && packageId) {
-      buildGraphData(packageId, reverseDepsData.reverseDependents.edges);
-    }
-  }, [reverseDepsData, packageId, buildGraphData]);
-
-  const loadGraph = useCallback(() => {
-    if (packageId.trim()) {
-      getReverseDeps({
-        variables: {
-          packageId: packageId.trim(),
-          maxDepth: debouncedMaxDepth,
-          first: 100,
-        },
-      });
-    }
-  }, [packageId, debouncedMaxDepth, getReverseDeps]);
-
-  useEffect(() => {
-    if (initialPkg) {
-      setPackageId(initialPkg);
-      setInputValue(initialPkg);
-    }
-  }, [initialPkg]);
-
-  useEffect(() => {
-    if (packageId) {
-      loadGraph();
-    }
-  }, [packageId, loadGraph]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setPackageId(inputValue.trim());
+    if (inputValue.trim()) {
+      handleOpenGraph(inputValue.trim(), debouncedMaxDepth);
+    }
+  };
+
+  const handleRefresh = () => {
+    if (activePackageId) {
+      handleOpenGraph(activePackageId, debouncedMaxDepth);
+    }
   };
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -254,6 +328,7 @@ function GraphPageContent() {
     const newZ = currentPos.z * 0.7;
     graphRef.current.cameraPosition({ z: newZ }, undefined, 400);
   };
+
   const handleZoomOut = () => {
     if (!graphRef.current) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -261,11 +336,61 @@ function GraphPageContent() {
     const newZ = currentPos.z / 0.7;
     graphRef.current.cameraPosition({ z: newZ }, undefined, 400);
   };
+
   const handleCenter = () => {
     if (!graphRef.current) return;
     graphRef.current.zoomToFit(400);
   };
-  const handleRefresh = () => loadGraph();
+
+  // Node Click: invokes WarRoomActions.selectPackage
+  const handleNodeClick = useCallback(
+    async (node: NodeObject) => {
+      const graphNode = node as GraphNode;
+      const invocation = createHumanInvocation();
+
+      const result = await actions.selectPackage(invocation, {
+        selection: {
+          package: {
+            id: graphNode.id,
+            name: graphNode.name,
+            ecosystem: (graphNode.ecosystem || "UNKNOWN") as PackageEcosystem,
+          },
+        },
+      });
+
+      if (result.ok && graphRef.current) {
+        const distance = 150;
+        const distRatio = 1 + distance / Math.hypot(graphNode.x || 0, graphNode.y || 0, graphNode.z || 0);
+
+        graphRef.current.cameraPosition(
+          {
+            x: (graphNode.x || 0) * distRatio,
+            y: (graphNode.y || 0) * distRatio,
+            z: (graphNode.z || 0) * distRatio,
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          node as any,
+          2000
+        );
+      }
+    },
+    [actions, createHumanInvocation]
+  );
+
+  // Deselect from panel: invokes WarRoomActions.deselectPackage
+  const handleDeselect = useCallback(async () => {
+    const invocation = createHumanInvocation();
+    await actions.deselectPackage(invocation);
+  }, [actions, createHumanInvocation]);
+
+  // Redraw Graph from selected node: invokes WarRoomActions.openPackageGraph
+  const handleRedrawFromSelected = useCallback(
+    (nodeId: string) => {
+      setInputValue(nodeId);
+      handleOpenGraph(nodeId, debouncedMaxDepth);
+    },
+    [debouncedMaxDepth, handleOpenGraph]
+  );
 
   // Camera auto-orbit effect
   useEffect(() => {
@@ -279,7 +404,7 @@ function GraphPageContent() {
         angle += 0.002;
         graphRef.current.cameraPosition({
           x: distance * Math.sin(angle),
-          z: distance * Math.cos(angle)
+          z: distance * Math.cos(angle),
         });
       }
     }, 20);
@@ -297,79 +422,50 @@ function GraphPageContent() {
   // Export functions
   const exportAsJSON = useCallback(() => {
     const data = {
-      root: packageId,
+      root: activePackageId,
       timestamp: new Date().toISOString(),
-      nodes: graphData.nodes.map(n => ({
+      nodes: graphData.nodes.map((n) => ({
         id: n.id,
         name: n.name,
         ecosystem: n.ecosystem,
         depth: n.depth,
       })),
-      edges: graphData.links.map(l => ({
-        source: typeof l.source === 'object' ? l.source.id : l.source,
-        target: typeof l.target === 'object' ? l.target.id : l.target,
+      edges: graphData.links.map((l) => ({
+        source: typeof l.source === "object" ? l.source.id : l.source,
+        target: typeof l.target === "object" ? l.target.id : l.target,
       })),
     };
 
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `${packageId.replace(/:/g, '-')}-dependencies.json`;
+    a.download = `${activePackageId.replace(/:/g, "-")}-dependencies.json`;
     a.click();
     URL.revokeObjectURL(url);
     setShowExportMenu(false);
-  }, [graphData, packageId]);
+  }, [graphData, activePackageId]);
 
   const exportAsPNG = useCallback(() => {
     if (!graphRef.current) return;
 
-    const canvas = document.querySelector('.force-graph-container canvas') as HTMLCanvasElement;
+    const canvas = document.querySelector(".force-graph-container canvas") as HTMLCanvasElement;
     if (canvas) {
-      const link = document.createElement('a');
-      link.download = `${packageId.replace(/:/g, '-')}-graph.png`;
-      link.href = canvas.toDataURL('image/png');
+      const link = document.createElement("a");
+      link.download = `${activePackageId.replace(/:/g, "-")}-graph.png`;
+      link.href = canvas.toDataURL("image/png");
       link.click();
     }
     setShowExportMenu(false);
-  }, [packageId]);
+  }, [activePackageId]);
 
   const copyShareLink = useCallback(async () => {
-    const url = `${window.location.origin}/graph?pkg=${encodeURIComponent(packageId)}`;
+    const url = `${window.location.origin}/graph?pkg=${encodeURIComponent(activePackageId)}`;
     await navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [packageId]);
+  }, [activePackageId]);
 
-  const handleNodeClick = useCallback((node: NodeObject) => {
-    const graphNode = node as GraphNode;
-    setSelectedNode(graphNode);
-
-    // Aim at node from outside it
-    if (graphRef.current) {
-      const distance = 150;
-      const distRatio = 1 + distance / Math.hypot(graphNode.x || 0, graphNode.y || 0, graphNode.z || 0);
-
-      graphRef.current.cameraPosition(
-        {
-          x: (graphNode.x || 0) * distRatio,
-          y: (graphNode.y || 0) * distRatio,
-          z: (graphNode.z || 0) * distRatio
-        }, // new position
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        node as any, // lookAt component
-        2000  // transition ms
-      );
-    }
-  }, []);
-
-  const navigateToNode = useCallback((nodeId: string) => {
-    setPackageId(nodeId);
-    setInputValue(nodeId);
-    setSelectedNode(null);
-  }, []);
-
-  // Fullscreen toggle
   const toggleFullscreen = useCallback(async () => {
     if (!document.fullscreenElement) {
       await containerRef.current?.requestFullscreen();
@@ -380,17 +476,22 @@ function GraphPageContent() {
     }
   }, []);
 
-  // Listen for fullscreen changes (e.g., user presses Escape)
   useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col gap-4">
+    <div
+      className="h-[calc(100vh-8rem)] flex flex-col gap-4"
+      data-war-room-phase={canonicalPhase}
+      data-war-room-revision={canonicalRevision}
+      data-war-room-root-package={activePackageId || undefined}
+      data-war-room-selected-package={selectedPackageId || undefined}
+    >
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -411,12 +512,18 @@ function GraphPageContent() {
         <form onSubmit={handleSubmit} className="flex gap-3">
           <input
             type="text"
+            data-testid="graph-package-input"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             placeholder="Enter package ID (e.g., cargo:tokio)"
             className="input-search max-w-xs !pl-4 focus:ring-primary-500/50 shadow-lg"
           />
-          <button type="submit" className="btn-primary whitespace-nowrap">
+          <button
+            type="submit"
+            data-testid="render-graph-button"
+            className="btn-primary whitespace-nowrap"
+          >
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> : null}
             Render Graph
           </button>
         </form>
@@ -429,7 +536,7 @@ function GraphPageContent() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
         onMouseMove={handleMouseMove}
-        className={`flex-1 relative graph-container ${isFullscreen ? 'theme-graph-bg' : ''}`}
+        className={`flex-1 relative graph-container ${isFullscreen ? "theme-graph-bg" : ""}`}
       >
         {/* 3D Graph Canvas */}
         {graphData.nodes.length > 0 ? (
@@ -438,157 +545,147 @@ function GraphPageContent() {
             graphData={graphData}
             backgroundColor="rgba(0,0,0,0)"
             showNavInfo={false}
-
-            // Node Styling
             nodeLabel={() => ""}
             nodeColor={(node) => (node as GraphNode).color}
             nodeVal={(node) => (node as GraphNode).val}
             nodeResolution={32}
-
-            // Custom Node Object (Glowing Spheres)
             nodeThreeObject={(node) => {
               const graphNode = node as GraphNode;
-              const isRoot = graphNode.depth === 0;
               const isSelected = selectedNode?.id === graphNode.id;
               const isHovered = hoveredNode?.id === graphNode.id;
 
-              // Base geometry
-              const size = isRoot ? 12 : Math.max(4, 10 - graphNode.depth * 2);
-              const geometry = new THREE.SphereGeometry(size, 32, 32);
-
-              // Emissive material for "glow"
-              const pulse = 1 + Math.sin(Date.now() / 500) * 0.2;
-              const material = new THREE.MeshStandardMaterial({
-                color: graphNode.color,
-                emissive: graphNode.color,
-                emissiveIntensity: isHovered || isSelected ? 3 : (isRoot ? 2 * pulse : 1),
-                roughness: 0.1,
-                metalness: 0.9,
-                transparent: true,
-                opacity: 0.95,
-              });
-
-              const sphere = new THREE.Mesh(geometry, material);
-
-              // Add a "glow" mesh (slightly larger, transparent)
-              const glowGeometry = new THREE.SphereGeometry(size * 1.4, 32, 32);
-              const glowMaterial = new THREE.MeshBasicMaterial({
-                color: graphNode.color,
-                transparent: true,
-                opacity: isHovered || isSelected ? 0.3 : 0.1,
-                blending: THREE.AdditiveBlending,
-              });
-              const glowSphere = new THREE.Mesh(glowGeometry, glowMaterial);
-
               const group = new THREE.Group();
-              group.add(sphere);
-              group.add(glowSphere);
 
-              // Add text label sprite
-              if (isRoot || isSelected || isHovered) {
-                const label = new SpriteText(graphNode.name);
-                label.color = "#ffffff";
-                label.textHeight = 8;
-                label.fontWeight = "bold";
-                label.backgroundColor = "rgba(0,0,0,0.6)";
-                label.padding = 2;
-                label.borderRadius = 4;
-                (label as unknown as THREE.Object3D).position.set(0, size + 12, 0);
-                group.add(label as unknown as THREE.Object3D);
+              const sphereSize = graphNode.val;
+              const sphereGeometry = new THREE.SphereGeometry(sphereSize, 32, 32);
+              const sphereMaterial = new THREE.MeshPhongMaterial({
+                color: new THREE.Color(graphNode.color),
+                emissive: new THREE.Color(graphNode.color),
+                emissiveIntensity: isSelected ? 0.8 : isHovered ? 0.5 : 0.2,
+                transparent: true,
+                opacity: 0.9,
+              });
+              const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+              group.add(sphere);
+
+              if (isSelected || isHovered) {
+                const ringGeometry = new THREE.RingGeometry(sphereSize * 1.2, sphereSize * 1.4, 32);
+                const ringMaterial = new THREE.MeshBasicMaterial({
+                  color: new THREE.Color(graphNode.color),
+                  side: THREE.DoubleSide,
+                  transparent: true,
+                  opacity: 0.8,
+                });
+                const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+                ring.rotation.x = Math.PI / 2;
+                group.add(ring);
               }
+
+              const sprite = new SpriteText(graphNode.name);
+              sprite.color = isDark ? "#ffffff" : "#0f172a";
+              sprite.textHeight = Math.max(6, 12 - graphNode.depth * 2);
+              sprite.position.y = sphereSize + 8;
+              sprite.backgroundColor = isDark ? "rgba(15, 23, 42, 0.75)" : "rgba(255, 255, 255, 0.85)";
+              sprite.padding = [3, 1.5];
+              sprite.borderRadius = 3;
+              group.add(sprite);
 
               return group;
             }}
-
-            // Link Styling
-            linkColor={() => isDark ? "rgba(148, 163, 184, 0.2)" : "rgba(100, 116, 139, 0.35)"}
-            linkWidth={1}
+            nodeThreeObjectExtend={false}
+            linkColor={() => (isDark ? "rgba(255, 255, 255, 0.15)" : "rgba(0, 0, 0, 0.15)")}
+            linkWidth={1.5}
             linkDirectionalParticles={2}
+            linkDirectionalParticleWidth={2}
             linkDirectionalParticleSpeed={0.005}
-            linkDirectionalParticleWidth={1.5}
-            linkDirectionalParticleColor={() => {
-              // Particles flow towards the dependency (the target)
-              return "rgba(99, 102, 241, 0.6)";
-            }}
-
-            // Interaction
+            linkDirectionalParticleColor={() => (isDark ? "#818cf8" : "#4f46e5")}
             onNodeHover={handleNodeHover}
             onNodeClick={handleNodeClick}
-
-            // Force settings for 3D space
-            d3AlphaDecay={0.01}
-            d3VelocityDecay={0.3}
-            onEngineStop={() => {
-              if (graphRef.current) {
-                // Initial camera positioning
-                // graphRef.current.zoomToFit(1000);
-              }
-            }}
-            cooldownTicks={isPaused ? 0 : Infinity}
+            enableNodeDrag={false}
+            enableNavigationControls={true}
+            warmupTicks={100}
+            cooldownTicks={100}
           />
-        ) : (
-          <div className="absolute inset-0 flex flex-col items-center justify-center theme-text-muted">
-            {loading ? (
-              <>
-                <Loader2 className="w-12 h-12 animate-spin mb-4" />
-                <p>Loading graph data...</p>
-              </>
-            ) : error ? (
-              <QueryError
-                error={error}
-                onRetry={() => packageId && getReverseDeps({
-                  variables: { packageId, maxDepth, first: 500 }
-                })}
-              />
-            ) : (
-              <EmptyState
-                icon={GitBranch}
-                title="Enter a package to visualize"
-                description="Enter a package ID like cargo:tokio or pypi:requests to see its dependency graph"
-              />
-            )}
+        ) : !isLoading && !uiError ? (
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="text-center">
+              <GitBranch className="w-16 h-16 theme-text-muted mx-auto mb-4 opacity-50" />
+              <p className="theme-text-muted text-lg">Enter a package ID to explore its dependency graph</p>
+              <p className="text-sm theme-text-faint mt-1">Try &quot;cargo:tokio&quot; or &quot;npm:react&quot;</p>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Loading Overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm z-30">
+            <div className="flex flex-col items-center gap-3 glass-card p-6 rounded-2xl shadow-xl">
+              <Loader2 className="w-8 h-8 text-primary-500 animate-spin" />
+              <p className="text-sm font-medium theme-text-primary">Loading graph through War Room actions...</p>
+            </div>
           </div>
         )}
 
-        {/* Controls Overlay */}
-        <GraphControls
-          onZoomIn={handleZoomIn}
-          onZoomOut={handleZoomOut}
-          onCenter={handleCenter}
-          onRefresh={handleRefresh}
-          maxDepth={maxDepth}
-          onMaxDepthChange={setMaxDepth}
-          loading={loading || false}
-          autoRotate={autoRotate}
-          onAutoRotateToggle={() => setAutoRotate(!autoRotate)}
-          isPaused={isPaused}
-          onPlayPauseToggle={() => setIsPaused(!isPaused)}
-        />
+        {/* UI Error Display */}
+        {uiError && (
+          <div className="absolute inset-0 flex items-center justify-center p-6 z-30 pointer-events-none">
+            <div className="pointer-events-auto max-w-md">
+              <QueryError error={new Error(uiError)} onRetry={handleRefresh} />
+            </div>
+          </div>
+        )}
 
-        {/* Minimap - Disabled for 3D */}
-
-        {/* Live Updates Indicator */}
-        {packageId && showLiveUpdates && (
-          <LiveUpdateIndicator
-            updates={liveUpdates}
-            isConnected={connectionStatus === "connected"}
-            className="absolute top-4 right-[220px]"
+        {/* Tooltip on Hover */}
+        {hoveredNode && !selectedNode && (
+          <NodeTooltip
+            node={hoveredNode}
+            position={tooltipPos}
           />
         )}
 
-        {/* Tooltip */}
-        {hoveredNode && !selectedNode && (
-          <NodeTooltip node={hoveredNode} position={tooltipPos} />
+        {/* Live Update Indicator */}
+        {activePackageId && showLiveUpdates && (
+          <div className="absolute top-4 left-4 z-20">
+            <LiveUpdateIndicator
+              updates={liveUpdates}
+              isConnected={isConnected}
+            />
+          </div>
         )}
 
-        {/* Stats Overlay - Enhanced with Legend */}
+        {/* Graph Controls */}
+        {graphData.nodes.length > 0 && (
+          <GraphControls
+            onZoomIn={handleZoomIn}
+            onZoomOut={handleZoomOut}
+            onCenter={handleCenter}
+            onRefresh={handleRefresh}
+            autoRotate={autoRotate}
+            onAutoRotateToggle={() => setAutoRotate(!autoRotate)}
+            maxDepth={maxDepth}
+            onMaxDepthChange={setMaxDepth}
+            loading={isLoading}
+            isPaused={isPaused}
+            onPlayPauseToggle={() => setIsPaused(!isPaused)}
+          />
+        )}
+
+        {/* Graph Statistics Card */}
         {graphStats && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="absolute bottom-4 left-4 glass-card p-4 space-y-3"
+            className="absolute bottom-4 left-4 glass-card p-4 rounded-xl text-xs space-y-2 z-20 max-w-xs"
           >
-            <div className="flex items-center gap-6 text-sm">
+            <div className="font-semibold theme-text-primary flex items-center justify-between">
+              <span>Graph Statistics</span>
+              {graphStats.truncated && (
+                <span className="text-[10px] text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded font-mono">
+                  Showing {graphStats.nodeCount} of {graphStats.totalCount}
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-center pt-1">
               <div>
                 <span className="theme-text-muted">Nodes </span>
                 <span className="theme-text-primary font-semibold">
@@ -596,7 +693,7 @@ function GraphPageContent() {
                 </span>
               </div>
               <div>
-                <span className="theme-text-muted">Edges </span>
+                <span className="theme-text-muted">Links </span>
                 <span className="theme-text-primary font-semibold">
                   <AnimatedCounter value={graphStats.edgeCount} duration={0.5} />
                 </span>
@@ -608,12 +705,9 @@ function GraphPageContent() {
             </div>
             <div className="flex items-center gap-2 pt-2 border-t theme-border">
               <span className="text-xs theme-text-faint mr-1">Ecosystems:</span>
-              {graphStats.ecosystems.map(eco => (
+              {graphStats.ecosystems.map((eco) => (
                 <button
                   key={eco}
-                  onClick={() => {
-                    // Could filter by ecosystem in future
-                  }}
                   className="px-2 py-0.5 rounded text-xs font-medium hover:ring-1 transition-all cursor-pointer"
                   style={{
                     backgroundColor: `${getEcosystemColor(eco)}20`,
@@ -630,35 +724,24 @@ function GraphPageContent() {
 
         {/* Export Menu */}
         <div className="absolute top-4 right-4 flex gap-2">
-          {/* Fullscreen Button */}
           <button
             onClick={toggleFullscreen}
             className="glass-card p-2 theme-inner-card-hover transition-colors"
             title={isFullscreen ? "Exit fullscreen" : "Fullscreen mode"}
           >
-            {isFullscreen ? (
-              <Minimize2 className="w-5 h-5 theme-text-muted" />
-            ) : (
-              <Maximize2 className="w-5 h-5 theme-text-muted" />
-            )}
+            {isFullscreen ? <Minimize2 className="w-5 h-5 theme-text-muted" /> : <Maximize2 className="w-5 h-5 theme-text-muted" />}
           </button>
 
-          {/* Share Button */}
-          {packageId && (
+          {activePackageId && (
             <button
               onClick={copyShareLink}
               className="glass-card p-2 theme-inner-card-hover transition-colors"
               title="Copy share link"
             >
-              {copied ? (
-                <Check className="w-5 h-5 text-success" />
-              ) : (
-                <Share2 className="w-5 h-5 theme-text-muted" />
-              )}
+              {copied ? <Check className="w-5 h-5 text-success" /> : <Share2 className="w-5 h-5 theme-text-muted" />}
             </button>
           )}
 
-          {/* Gemini Chat Toggle */}
           <button
             onClick={() => setShowChat(!showChat)}
             className={`glass-card p-2 theme-inner-card-hover transition-colors ${showChat ? "text-purple-400 border-purple-500/50 bg-purple-500/10" : "theme-text-muted"}`}
@@ -667,7 +750,6 @@ function GraphPageContent() {
             <Sparkles className="w-5 h-5" />
           </button>
 
-          {/* Export Button */}
           <div className="relative">
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
@@ -687,16 +769,14 @@ function GraphPageContent() {
                 >
                   <button
                     onClick={exportAsJSON}
-                    className="w-full px-4 py-2 flex items-center gap-3 text-sm theme-text-tertiary 
-                             theme-hover-text theme-inner-card-hover transition-colors"
+                    className="w-full px-4 py-2 flex items-center gap-3 text-sm theme-text-tertiary theme-hover-text theme-inner-card-hover transition-colors"
                   >
                     <FileJson className="w-4 h-4" />
                     Export as JSON
                   </button>
                   <button
                     onClick={exportAsPNG}
-                    className="w-full px-4 py-2 flex items-center gap-3 text-sm theme-text-tertiary 
-                             theme-hover-text theme-inner-card-hover transition-colors"
+                    className="w-full px-4 py-2 flex items-center gap-3 text-sm theme-text-tertiary theme-hover-text theme-inner-card-hover transition-colors"
                   >
                     <Image className="w-4 h-4" />
                     Export as PNG
@@ -716,6 +796,7 @@ function GraphPageContent() {
               exit={{ opacity: 0, x: 100, scale: 0.95 }}
               transition={{ type: "spring", stiffness: 300, damping: 30 }}
               className="absolute top-4 right-4 glass-card p-6 w-80 z-40 shadow-2xl border-primary-500/30"
+              data-testid="selected-node-panel"
             >
               <div className="flex items-start justify-between mb-4">
                 <div className="flex flex-col gap-1">
@@ -724,7 +805,8 @@ function GraphPageContent() {
                       className="w-3 h-3 rounded-full animate-pulse"
                       style={{ backgroundColor: selectedNode.color }}
                     />
-                    <span className="text-[10px] uppercase tracking-tighter font-bold px-2 py-0.5 rounded bg-black/5 dark:bg-white/5"
+                    <span
+                      className="text-[10px] uppercase tracking-tighter font-bold px-2 py-0.5 rounded bg-black/5 dark:bg-white/5"
                       style={{ color: selectedNode.color }}
                     >
                       {formatEcosystemName(selectedNode.ecosystem)}
@@ -732,7 +814,8 @@ function GraphPageContent() {
                   </div>
                 </div>
                 <button
-                  onClick={() => setSelectedNode(null)}
+                  data-testid="selected-node-close-button"
+                  onClick={handleDeselect}
                   className="p-1.5 rounded-lg theme-text-faint hover:theme-text-primary hover:bg-black/5 hover:dark:bg-white/10 transition-all"
                 >
                   <X className="w-5 h-5" />
@@ -747,7 +830,12 @@ function GraphPageContent() {
                 <div className="p-3 rounded-xl bg-black/5 dark:bg-black/20 border border-surface-200/50 dark:border-white/5">
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-xs theme-text-faint uppercase font-semibold">Package ID</span>
-                    <button className="text-[10px] theme-text-accent hover:underline" onClick={() => navigator.clipboard.writeText(selectedNode.id)}>Copy</button>
+                    <button
+                      className="text-[10px] theme-text-accent hover:underline"
+                      onClick={() => navigator.clipboard.writeText(selectedNode.id)}
+                    >
+                      Copy
+                    </button>
                   </div>
                   <p className="theme-text-secondary font-mono text-xs break-all">
                     {selectedNode.id}
@@ -759,16 +847,18 @@ function GraphPageContent() {
                     <span className="block text-[10px] theme-text-faint uppercase font-semibold mb-1">Depth</span>
                     <span className="text-lg font-bold theme-text-primary">{selectedNode.depth}</span>
                   </div>
+                  {/* Truthful analysis field replacing unsupported Impact High claim */}
                   <div className="p-3 rounded-xl bg-black/[0.02] dark:bg-white/5 border border-surface-200/50 dark:border-white/5">
-                    <span className="block text-[10px] theme-text-faint uppercase font-semibold mb-1">Impact</span>
-                    <span className="text-lg font-bold theme-text-primary">High</span>
+                    <span className="block text-[10px] theme-text-faint uppercase font-semibold mb-1">Analysis</span>
+                    <span className="text-sm font-semibold theme-text-muted">Not analyzed</span>
                   </div>
                 </div>
               </div>
 
               <div className="space-y-2">
                 <button
-                  onClick={() => navigateToNode(selectedNode.id)}
+                  data-testid="redraw-graph-button"
+                  onClick={() => handleRedrawFromSelected(selectedNode.id)}
                   className="w-full btn-primary py-3 rounded-xl flex items-center justify-center gap-2 font-semibold shadow-lg shadow-primary-500/20"
                 >
                   <GitBranch className="w-4 h-4" />
@@ -777,18 +867,14 @@ function GraphPageContent() {
                 <div className="grid grid-cols-2 gap-2">
                   <a
                     href={`/explore?q=${encodeURIComponent(selectedNode.id)}`}
-                    className="glass-card py-2.5 rounded-xl text-sm text-center theme-text-tertiary 
-                             theme-hover-text theme-inner-card-hover transition-all 
-                             flex items-center justify-center gap-2 border border-surface-200 dark:border-white/5"
+                    className="glass-card py-2.5 rounded-xl text-sm text-center theme-text-tertiary theme-hover-text theme-inner-card-hover transition-all flex items-center justify-center gap-2 border border-surface-200 dark:border-white/5"
                   >
                     <ExternalLink className="w-4 h-4" />
                     Details
                   </a>
                   <a
                     href={`/impact?pkg=${encodeURIComponent(selectedNode.id)}`}
-                    className="glass-card py-2.5 rounded-xl text-sm text-center theme-text-tertiary 
-                             hover:text-danger hover:border-danger/30 transition-all 
-                             flex items-center justify-center gap-2 border border-surface-200 dark:border-white/5"
+                    className="glass-card py-2.5 rounded-xl text-sm text-center theme-text-tertiary hover:text-danger hover:border-danger/30 transition-all flex items-center justify-center gap-2 border border-surface-200 dark:border-white/5"
                   >
                     <Info className="w-4 h-4" />
                     Impact
@@ -805,11 +891,13 @@ function GraphPageContent() {
 
 export default function GraphPage() {
   return (
-    <Suspense fallback={
-      <div className="h-[calc(100vh-8rem)] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-primary-400 animate-spin" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="h-[calc(100vh-8rem)] flex items-center justify-center">
+          <Loader2 className="w-8 h-8 text-primary-400 animate-spin" />
+        </div>
+      }
+    >
       <GraphPageContent />
     </Suspense>
   );

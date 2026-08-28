@@ -3,6 +3,7 @@ import Script from "next/script";
 import "./globals.css";
 import { ApolloWrapper } from "@/lib/apollo-wrapper";
 import { ThemeProvider } from "@/components/providers/theme-provider";
+import { WarRoomProvider } from "@/components/providers/war-room-provider";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { ToastProvider } from "@/components/ui/toast";
@@ -52,31 +53,33 @@ export default function RootLayout({
       <body className="min-h-screen theme-bg-primary gradient-mesh transition-colors duration-300" suppressHydrationWarning>
         <ThemeProvider>
           <ApolloWrapper>
-            <ToastProvider>
-              <SkipLink />
-              <div className="flex h-screen overflow-hidden">
-                {/* Sidebar Navigation */}
-                <Sidebar />
+            <WarRoomProvider>
+              <ToastProvider>
+                <SkipLink />
+                <div className="flex h-screen overflow-hidden">
+                  {/* Sidebar Navigation */}
+                  <Sidebar />
 
-                {/* Main Content Area */}
-                <div className="flex-1 flex flex-col overflow-hidden">
-                  {/* Top Header */}
-                  <Header />
+                  {/* Main Content Area */}
+                  <div className="flex-1 flex flex-col overflow-hidden">
+                    {/* Top Header */}
+                    <Header />
 
-                  {/* Page Content with Error Boundary */}
-                  <main id="main-content" className="flex-1 overflow-y-auto p-6 relative">
-                    <ErrorBoundary>
-                      <PageTransition>
-                        {children}
-                      </PageTransition>
-                    </ErrorBoundary>
-                  </main>
+                    {/* Page Content with Error Boundary */}
+                    <main id="main-content" className="flex-1 overflow-y-auto p-6 relative">
+                      <ErrorBoundary>
+                        <PageTransition>
+                          {children}
+                        </PageTransition>
+                      </ErrorBoundary>
+                    </main>
+                  </div>
                 </div>
-              </div>
 
-              {/* Global Command Palette (Cmd+K) */}
-              <CommandPalette />
-            </ToastProvider>
+                {/* Global Command Palette (Cmd+K) */}
+                <CommandPalette />
+              </ToastProvider>
+            </WarRoomProvider>
           </ApolloWrapper>
         </ThemeProvider>
       </body>
