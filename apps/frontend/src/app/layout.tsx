@@ -4,6 +4,7 @@ import "./globals.css";
 import { ApolloWrapper } from "@/lib/apollo-wrapper";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { WarRoomProvider } from "@/components/providers/war-room-provider";
+import { WarRoomWebMcpBridge } from "@/components/providers/war-room-webmcp-bridge";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { ToastProvider } from "@/components/ui/toast";
@@ -54,6 +55,7 @@ export default function RootLayout({
         <ThemeProvider>
           <ApolloWrapper>
             <WarRoomProvider>
+              <WarRoomWebMcpBridge />
               <ToastProvider>
                 <SkipLink />
                 <div className="flex h-screen overflow-hidden">

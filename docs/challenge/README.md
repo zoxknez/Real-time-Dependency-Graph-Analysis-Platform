@@ -25,9 +25,9 @@ All functionality classified as pre-existing in WMCP-0A existed at or before: `8
 - **WMCP-2A (Canonical War Room Domain State Kernel):** CLOSED at `01c47c35a597916dceb0360c34e745c0ad9184fc`
 - **WMCP-2B (Shared WarRoomActions Application Boundary):** CLOSED at `02c32ecb06733033fe08b2c0e5f12077695e4366`
 - **WMCP-2C (Human UI Integration Through WarRoomActions):** CLOSED at `da09d62371d83e6d49d37c32f1ab947b2a3d0fe6`
-- **WMCP-2R (War Room Domain & Action Layer Final Review):** CLOSED at `1ae87969743e1d9f2a71cc0d89402090c133f0d8`
 - **WMCP-2 (War Room Domain State & Action Layer):** PASS - CLOSED at `1ae87969743e1d9f2a71cc0d89402090c133f0d8`
-- **WMCP-3A (WebMCP Platform Contract, Capability Detection & Type Boundary):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
+- **WMCP-3A (WebMCP Platform Contract, Capability Detection & Type Boundary):** CLOSED at `993fb4b10dbb1a060424494a1adad081020f782a`
+- **WMCP-3B (Primitive Registration Adapter & Tool Execution Bridge):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
 
 ---
 
@@ -101,5 +101,8 @@ Every capability in the baseline evaluation is categorized into exactly one of t
 21. [`WMCP-2C-HUMAN-UI-INTEGRATION-RESULTS.md`](WMCP-2C-HUMAN-UI-INTEGRATION-RESULTS.md): Human UI migration on `/graph`, non-canonical graph projection store, Apollo client adapters, and E2E workflow verification.
 22. [`WMCP-2R-WAR-ROOM-CLOSURE.md`](WMCP-2R-WAR-ROOM-CLOSURE.md): Holistic forensic review of WMCP-2 domain, state, action, security, integration, race-safety, and human UI architecture.
 
-### WebMCP Foundation & Platform Adapter (WMCP-3A)
+### WebMCP Platform Contract & Capability Detection (WMCP-3A)
 23. [`WMCP-3A-WEBMCP-PLATFORM-CONTRACT.md`](WMCP-3A-WEBMCP-PLATFORM-CONTRACT.md): WebMCP platform contract, browser capability detection, and type boundaries.
+
+### WebMCP Primitive Registration & Execution Bridge (WMCP-3B)
+24. [`WMCP-3B-PRIMITIVE-REGISTRATION-BRIDGE.md`](WMCP-3B-PRIMITIVE-REGISTRATION-BRIDGE.md): Primitive tool set registration, tool execution bridge, shared WarRoomActions integration, staged projection lifecycle, and E2E workflow verification.

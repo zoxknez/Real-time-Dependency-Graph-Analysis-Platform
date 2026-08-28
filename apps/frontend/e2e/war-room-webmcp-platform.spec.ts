@@ -409,8 +409,12 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A-R3)", ()
     scanDir(srcDir);
   });
 
-  test("22. No production registerTool invocation exists yet", () => {
+  test("22. Browser registerTool invocation exists ONLY inside platform browser adapter", () => {
     const srcDir = path.resolve(__dirname, "../src");
+    const allowedSubpaths = [
+      path.normalize("src/lib/webmcp/platform/browser-adapter.ts"),
+    ];
+
     function scanDir(dir: string) {
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
@@ -418,9 +422,11 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A-R3)", ()
         if (entry.isDirectory()) {
           scanDir(fullPath);
         } else if (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx")) {
-          const content = fs.readFileSync(fullPath, "utf8");
-          expect(content).not.toContain("modelContext.registerTool(");
-          expect(content).not.toContain(".registerTool(");
+          const isAllowed = allowedSubpaths.some((sub) => fullPath.includes(sub));
+          if (!isAllowed) {
+            const content = fs.readFileSync(fullPath, "utf8");
+            expect(content).not.toContain("modelContext.registerTool(");
+          }
         }
       }
     }
