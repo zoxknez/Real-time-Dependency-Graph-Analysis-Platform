@@ -1,5 +1,5 @@
 /**
- * WebMCP Browser Compatibility Declarations (WMCP-3A)
+ * WebMCP Browser Compatibility Declarations (WMCP-3A-R1)
  *
  * Conservative local type definitions based on the Web Machine Learning Community Group
  * WebMCP Draft Community Group Report (26 August 2026) and experimental Chrome documentation.
@@ -20,7 +20,7 @@ export interface WebMcpBrowserChromeExecutionContext {
 export type WebMcpBrowserToolExecuteCallback<TInput = unknown, TOutput = unknown> = (
   input: TInput,
   chromeExecutionContext?: WebMcpBrowserChromeExecutionContext
-) => Promise<TOutput> | TOutput;
+) => Promise<TOutput>;
 
 export interface WebMcpBrowserTool<TInput = unknown, TOutput = unknown> {
   readonly name: string;
@@ -31,11 +31,17 @@ export interface WebMcpBrowserTool<TInput = unknown, TOutput = unknown> {
   readonly annotations?: WebMcpBrowserToolAnnotations;
 }
 
-export interface WebMcpBrowserRegisteredTool {
+/**
+ * Safe metadata subset of RegisteredTool returned by getTools().
+ * Note: Normative WebIDL RegisteredTool dictionary contains a `window` (Window) member.
+ * We intentionally model a clean metadata subset to prevent leaking raw Window instances into application snapshots.
+ * The `inputSchema` property in RegisteredTool is a serialized DOMString (string), distinct from the registration-time object.
+ */
+export interface WebMcpBrowserRegisteredToolMetadata {
   readonly name: string;
   readonly title?: string;
   readonly description: string;
-  readonly inputSchema?: Record<string, unknown>;
+  readonly inputSchema?: string;
   readonly origin: string;
   readonly annotations?: WebMcpBrowserToolAnnotations;
 }
@@ -46,18 +52,18 @@ export interface WebMcpBrowserRegisterOptions {
 }
 
 export interface WebMcpBrowserGetToolsOptions {
-  readonly signal?: AbortSignal;
+  readonly fromOrigins?: readonly string[];
 }
 
 export interface WebMcpBrowserModelContext extends EventTarget {
   registerTool(
-    tool: WebMcpBrowserTool<any, any>,
+    tool: WebMcpBrowserTool<unknown, unknown>,
     options?: WebMcpBrowserRegisterOptions
-  ): Promise<void> | void;
+  ): Promise<void>;
 
   getTools(
     options?: WebMcpBrowserGetToolsOptions
-  ): Promise<readonly WebMcpBrowserRegisteredTool[]>;
+  ): Promise<readonly WebMcpBrowserRegisteredToolMetadata[]>;
 
   ontoolchange?: ((this: WebMcpBrowserModelContext, ev: Event) => any) | null;
 }
@@ -66,7 +72,10 @@ declare global {
   interface Document {
     /**
      * Optional WebMCP ModelContext surface.
-     * Present only in environments supporting the WebMCP Draft Community Group specification.
+     * Note: In the normative WebMCP WebIDL specification, this attribute is declared as:
+     * `[SecureContext, SameObject] readonly attribute ModelContext modelContext;`
+     * It is intentionally declared optional (`?`) in our local TypeScript ambient environment
+     * to support progressive enhancement and feature detection in browsers where WebMCP is absent.
      */
     readonly modelContext?: WebMcpBrowserModelContext;
   }

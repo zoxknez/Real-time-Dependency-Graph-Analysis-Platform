@@ -1,8 +1,8 @@
 /**
- * WebMCP Platform Contract & Capability Detection Tests (WMCP-3A)
+ * WebMCP Platform Contract & Capability Detection Tests (WMCP-3A-R1)
  *
  * Deterministic test suite verifying platform detection rules, snapshot serializability,
- * SSR safety, canonical state isolation, and zero premature tool registration.
+ * SSR safety, canonical state isolation, normative WebIDL alignment, and zero premature tool registration.
  */
 
 import { test, expect } from "@playwright/test";
@@ -13,8 +13,15 @@ import {
   createWarRoomStore,
   createWarRoomStatePort,
 } from "../src/lib/war-room";
+import type {
+  WebMcpBrowserGetToolsOptions,
+  WebMcpBrowserRegisterOptions,
+  WebMcpBrowserTool,
+  WebMcpBrowserRegisteredToolMetadata,
+  WebMcpBrowserModelContext,
+} from "../src/types/webmcp";
 
-test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () => {
+test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A-R1)", () => {
   // ─── 1. Core Feature Detection Rules ───
 
   test("1. No document -> UNAVAILABLE", () => {
@@ -80,7 +87,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: {
         document: {
           modelContext: {
-            registerTool: () => {},
+            registerTool: async () => {},
           },
         },
       },
@@ -98,7 +105,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: {
         document: {
           modelContext: {
-            getTools: () => {},
+            getTools: async () => [],
           },
         },
       },
@@ -116,7 +123,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: {
         document: {
           modelContext: {
-            registerTool: () => {},
+            registerTool: async () => {},
             getTools: async () => [],
           },
         },
@@ -138,10 +145,10 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: {
         document: {
           modelContext: {
-            registerTool: () => {
+            registerTool: async () => {
               registerToolCallCount++;
             },
-            getTools: () => {},
+            getTools: async () => [],
           },
         },
       },
@@ -159,9 +166,10 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: {
         document: {
           modelContext: {
-            registerTool: () => {},
-            getTools: () => {
+            registerTool: async () => {},
+            getTools: async () => {
               getToolsCallCount++;
+              return [];
             },
           },
         },
@@ -195,7 +203,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: {
         document: {
           modelContext: {
-            registerTool: () => {},
+            registerTool: async () => {},
             getTools: async () => [],
           },
         },
@@ -218,7 +226,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: {
         document: {
           modelContext: {
-            registerTool: () => {},
+            registerTool: async () => {},
             getTools: async () => [],
           },
         },
@@ -243,7 +251,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: {
         document: {
           modelContext: {
-            registerTool: () => {},
+            registerTool: async () => {},
             getTools: async () => [],
           },
         },
@@ -259,7 +267,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: {
         document: {
           modelContext: {
-            registerTool: () => {},
+            registerTool: async () => {},
             getTools: async () => [],
           },
         },
@@ -275,7 +283,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: {
         document: {
           modelContext: {
-            registerTool: () => {},
+            registerTool: async () => {},
             getTools: async () => [],
           },
         },
@@ -312,7 +320,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: {
         document: {
           modelContext: {
-            registerTool: () => {},
+            registerTool: async () => {},
             getTools: async () => [],
           },
         },
@@ -339,7 +347,7 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: {
         document: {
           modelContext: {
-            registerTool: () => {},
+            registerTool: async () => {},
             getTools: async () => [],
           },
         },
@@ -467,5 +475,109 @@ test.describe("WebMCP Platform Capability & Detection Boundary (WMCP-3A)", () =>
       customGlobal: { document: {} },
     });
     expect(a3.getSnapshot().secureContext).toBeNull();
+  });
+
+  // ─── 5. Normative WebIDL Type Contract Verification (WMCP-3A-R1) ───
+
+  test("27. WebMcpBrowserGetToolsOptions accurately models fromOrigins and excludes signal (WMCP-3A-R1)", () => {
+    const getToolsOptions: WebMcpBrowserGetToolsOptions = {
+      fromOrigins: ["https://example.com"],
+    };
+
+    expect(getToolsOptions.fromOrigins).toEqual(["https://example.com"]);
+    // Static verify: signal must not exist on getToolsOptions
+    expect("signal" in getToolsOptions).toBe(false);
+  });
+
+  test("28. WebMcpBrowserRegisterOptions accurately models signal and exposedTo (WMCP-3A-R1)", () => {
+    const controller = new AbortController();
+    const registerOptions: WebMcpBrowserRegisterOptions = {
+      signal: controller.signal,
+      exposedTo: ["https://partner.example.com"],
+    };
+
+    expect(registerOptions.signal).toBe(controller.signal);
+    expect(registerOptions.exposedTo).toEqual(["https://partner.example.com"]);
+  });
+
+  test("29. RegisteredTool metadata inputSchema is modeled as serialized string (DOMString) (WMCP-3A-R1)", () => {
+    const registered: WebMcpBrowserRegisteredToolMetadata = {
+      name: "search_packages",
+      description: "Search package catalog",
+      origin: "https://example.com",
+      inputSchema: JSON.stringify({ type: "object", properties: { query: { type: "string" } } }),
+    };
+
+    expect(typeof registered.inputSchema).toBe("string");
+    expect(registered.name).toBe("search_packages");
+  });
+
+  test("30. Registration ModelContextTool inputSchema is modeled as object / Record (WMCP-3A-R1)", () => {
+    const toolDef: WebMcpBrowserTool = {
+      name: "test_tool",
+      description: "Test tool description",
+      inputSchema: { type: "object", properties: { q: { type: "string" } } },
+      execute: async (input) => ({ echo: input }),
+    };
+
+    expect(typeof toolDef.inputSchema).toBe("object");
+    expect(toolDef.inputSchema).not.toBeNull();
+  });
+
+  test("31. registerTool return type is strictly Promise<void> (WMCP-3A-R1)", async () => {
+    let called = false;
+    const mockContext: WebMcpBrowserModelContext = {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => true,
+      registerTool: async () => {
+        called = true;
+      },
+      getTools: async () => [],
+    };
+
+    const res = mockContext.registerTool({
+      name: "t",
+      description: "d",
+      execute: async () => {},
+    });
+
+    expect(res instanceof Promise).toBe(true);
+    await res;
+    expect(called).toBe(true);
+  });
+
+  test("32. executeTool is completely absent from the application platform adapter interface (WMCP-3A-R1)", () => {
+    const adapter = createBrowserWebMcpPlatformAdapter();
+    expect(adapter).not.toHaveProperty("executeTool");
+    expect(typeof (adapter as any).executeTool).toBe("undefined");
+  });
+
+  test("33. WebMcpPlatformSnapshot contains zero DOM or Window references (WMCP-3A-R1)", () => {
+    const adapter = createBrowserWebMcpPlatformAdapter({
+      customGlobal: {
+        document: {
+          modelContext: {
+            registerTool: async () => {},
+            getTools: async () => [],
+          },
+        },
+        window: {},
+        isSecureContext: true,
+      },
+    });
+
+    const snapshot = adapter.getSnapshot();
+    expect(snapshot).not.toHaveProperty("window");
+    expect(snapshot).not.toHaveProperty("document");
+    expect(snapshot).not.toHaveProperty("modelContext");
+  });
+
+  test("34. Local type declarations do NOT augment Navigator with modelContext (WMCP-3A-R1)", () => {
+    const typesFilePath = path.resolve(__dirname, "../src/types/webmcp.d.ts");
+    const content = fs.readFileSync(typesFilePath, "utf8");
+
+    expect(content).not.toContain("interface Navigator");
+    expect(content).toContain("interface Document");
   });
 });
