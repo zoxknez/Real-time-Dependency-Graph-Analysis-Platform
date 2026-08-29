@@ -27,7 +27,9 @@ All functionality classified as pre-existing in WMCP-0A existed at or before: `8
 - **WMCP-2C (Human UI Integration Through WarRoomActions):** CLOSED at `da09d62371d83e6d49d37c32f1ab947b2a3d0fe6`
 - **WMCP-2 (War Room Domain State & Action Layer):** PASS - CLOSED at `1ae87969743e1d9f2a71cc0d89402090c133f0d8`
 - **WMCP-3A (WebMCP Platform Contract, Capability Detection & Type Boundary):** CLOSED at `993fb4b10dbb1a060424494a1adad081020f782a`
-- **WMCP-3B (Primitive Registration Adapter & Tool Execution Bridge):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
+- **WMCP-3B (Primitive Registration Adapter & Tool Execution Bridge):** CLOSED at `565c7a80a30eaf1fc5296921d0be32e8a5acebc3`
+- **WMCP-3R (WebMCP Foundation Final Review):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
+- **WMCP-3 (WebMCP Platform & Tool Foundation):** NOT CLOSED
 
 ---
 
@@ -45,7 +47,9 @@ The WebMCP Challenge execution follows an evidence-based phased architecture.
 - **WMCP-2B** established the shared `WarRoomActions` application boundary with trusted security and query ports.
 - **WMCP-2C** connected the human interactive graph UI directly to the shared action boundary with isolated non-canonical render projections.
 - **WMCP-2R** executed holistic multi-layer architectural review and regression verification across the entire WMCP-2 domain and action layer.
-- **WMCP-3A** establishes the WebMCP platform contract, browser capability detection, and type boundaries.
+- **WMCP-3A** established the WebMCP platform contract, browser capability detection, and type boundaries.
+- **WMCP-3B** established the primitive registration adapter, tool execution bridge, and shared WarRoomActions integration.
+- **WMCP-3R** performs holistic foundation closure review across platform contracts, primitive bridge, shared runtime, and race safety.
 
 ---
 
@@ -106,3 +110,6 @@ Every capability in the baseline evaluation is categorized into exactly one of t
 
 ### WebMCP Primitive Registration & Execution Bridge (WMCP-3B)
 24. [`WMCP-3B-PRIMITIVE-REGISTRATION-BRIDGE.md`](WMCP-3B-PRIMITIVE-REGISTRATION-BRIDGE.md): Primitive tool set registration, tool execution bridge, shared WarRoomActions integration, staged projection lifecycle, and E2E workflow verification.
+
+### WebMCP Foundation Final Review (WMCP-3R)
+25. [`WMCP-3R-WEBMCP-FOUNDATION-CLOSURE.md`](WMCP-3R-WEBMCP-FOUNDATION-CLOSURE.md): Authoritative holistic synthesis, architectural invariant matrix, security boundary verification, race-safety audit, and foundation closure verification for WMCP-3.
