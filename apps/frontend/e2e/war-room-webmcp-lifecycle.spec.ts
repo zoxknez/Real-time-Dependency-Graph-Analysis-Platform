@@ -107,6 +107,76 @@ function createMockPlatformAdapter(initialAvailable = true): WebMcpPlatformAdapt
   };
 }
 
+function createAdversarialPlatformAdapter(): WebMcpPlatformAdapter & {
+  registeredTools: Map<string, { definition: WebMcpPlatformToolDefinition<any, any>; options?: WebMcpPlatformRegistrationOptions }>;
+  pendingRegistrations: Map<string, { resolve: (res: WebMcpPlatformRegistrationResult) => void; reject: (err: unknown) => void }>;
+  registrationCallCounts: Map<string, number>;
+  setAvailable(available: boolean): void;
+} {
+  let isAvail = true;
+  const registeredTools = new Map<string, { definition: WebMcpPlatformToolDefinition<any, any>; options?: WebMcpPlatformRegistrationOptions }>();
+  const pendingRegistrations = new Map<string, { resolve: (res: WebMcpPlatformRegistrationResult) => void; reject: (err: unknown) => void }>();
+  const registrationCallCounts = new Map<string, number>();
+
+  return {
+    registeredTools,
+    pendingRegistrations,
+    registrationCallCounts,
+    setAvailable(available: boolean) {
+      isAvail = available;
+    },
+    getSnapshot(): WebMcpPlatformSnapshot {
+      return {
+        availability: isAvail ? "AVAILABLE" : "UNAVAILABLE",
+        hasDocument: true,
+        hasModelContext: isAvail,
+        secureContext: true,
+      };
+    },
+    isAvailable(): boolean {
+      return isAvail;
+    },
+    async registerTool<TInput extends object = Record<string, unknown>, TOutput = unknown>(
+      tool: WebMcpPlatformToolDefinition<TInput, TOutput>,
+      options?: WebMcpPlatformRegistrationOptions
+    ): Promise<WebMcpPlatformRegistrationResult> {
+      const currentCount = registrationCallCounts.get(tool.name) ?? 0;
+      registrationCallCounts.set(tool.name, currentCount + 1);
+
+      if (!isAvail) {
+        return { ok: false, error: { code: "UNAVAILABLE", message: "WebMCP is unavailable" } };
+      }
+
+      if (options?.signal?.aborted) {
+        return { ok: false, error: { code: "CANCELLED", message: "Registration signal already aborted" } };
+      }
+
+      // Enforce duplicate collision in simulated platform map
+      if (registeredTools.has(tool.name)) {
+        return {
+          ok: false,
+          error: {
+            code: "REGISTRATION_FAILED",
+            message: `InvalidStateError: Tool ${tool.name} already registered`,
+          },
+        };
+      }
+
+      registeredTools.set(tool.name, { definition: tool, options });
+
+      if (options?.signal) {
+        options.signal.addEventListener("abort", () => {
+          registeredTools.delete(tool.name);
+        });
+      }
+
+      return new Promise<WebMcpPlatformRegistrationResult>((resolve, reject) => {
+        pendingRegistrations.set(tool.name, { resolve, reject });
+      });
+    },
+  };
+}
+
 function createDummyTool(name: WebMcpActionName): WebMcpPlatformToolDefinition<Record<string, unknown>, unknown> {
   return {
     name,
@@ -414,7 +484,7 @@ test.describe("WebMCP Adaptive Capability & Registration Lifecycle (WMCP-4A)", (
       expect(platform.registeredTools.size).toBe(0);
     });
 
-    test("owner disposal aborts all registrations idempotently (INV-WMCP4-LIFE-003, INV-WMCP4-OWN-003)", async () => {
+    test("owner disposal aborts all registrations idempotently (INV-WMCP4-LIFE-003, INV-WMCP4-OWN-003, INV-WMCP4-LIFE-005)", async () => {
       const platform = createMockPlatformAdapter();
       const owner = createWebMcpRegistrationOwner(platform);
 
@@ -500,6 +570,245 @@ test.describe("WebMCP Adaptive Capability & Registration Lifecycle (WMCP-4A)", (
       await pass1Promise;
 
       // Assert stale Pass 1 did NOT resurrect search_packages
+      expect(owner.getActiveRegistrations().has("search_packages")).toBe(false);
+      expect(owner.getActiveRegistrations().has("open_package_graph")).toBe(true);
+    });
+
+    // --- WMCP-4A-R2 Adversarial Race Tests (TEST R2-1 through R2-7) ---
+
+    test("R2-1: Same-tool pending adoption prevents duplicate call and retains tool (INV-WMCP4-RACE-002, INV-WMCP4-RACE-003)", async () => {
+      const platform = createAdversarialPlatformAdapter();
+      const owner = createWebMcpRegistrationOwner(platform);
+
+      // Pass 1: desired search_packages
+      const pass1Promise = owner.reconcile(
+        { phase: "IDLE", contextRevision: 1, toolNames: new Set<WebMcpActionName>(["search_packages"]) },
+        createDummyTool
+      );
+
+      expect(platform.registeredTools.has("search_packages")).toBe(true);
+      expect(platform.registrationCallCounts.get("search_packages")).toBe(1);
+
+      // Pass 2: also desired search_packages (before Pass 1 promise resolves)
+      const pass2Promise = owner.reconcile(
+        { phase: "IDLE", contextRevision: 2, toolNames: new Set<WebMcpActionName>(["search_packages"]) },
+        createDummyTool
+      );
+
+      // Single-flight guarantee: no second call to registerTool issued
+      expect(platform.registrationCallCounts.get("search_packages")).toBe(1);
+
+      // Now resolve the in-flight registration
+      const pending = platform.pendingRegistrations.get("search_packages");
+      expect(pending).toBeDefined();
+      pending!.resolve({ ok: true });
+
+      const [res1, res2] = await Promise.all([pass1Promise, pass2Promise]);
+
+      expect(res1.errors).toEqual({});
+      expect(res2.errors).toEqual({});
+      expect(owner.getActiveRegistrations().has("search_packages")).toBe(true);
+      expect(platform.registeredTools.has("search_packages")).toBe(true);
+      expect(platform.registrationCallCounts.get("search_packages")).toBe(1);
+    });
+
+    test("R2-2: Multi-tool pending adoption removes obsolete tool and adopts pending tool (INV-WMCP4-RACE-002)", async () => {
+      const platform = createAdversarialPlatformAdapter();
+      const owner = createWebMcpRegistrationOwner(platform);
+
+      // Pass 1: wants ['search_packages', 'open_package_graph']
+      // Let search_packages resolve immediately, open_package_graph stay pending
+      const originalRegister = platform.registerTool.bind(platform);
+      platform.registerTool = async (tool, options) => {
+        if (tool.name === "search_packages") {
+          platform.registeredTools.set(tool.name, { definition: tool, options });
+          if (options?.signal) {
+            options.signal.addEventListener("abort", () => {
+              platform.registeredTools.delete(tool.name);
+            });
+          }
+          platform.registrationCallCounts.set(tool.name, 1);
+          return { ok: true };
+        }
+        return originalRegister(tool, options);
+      };
+
+      const pass1Promise = owner.reconcile(
+        { phase: "IDLE", contextRevision: 1, toolNames: new Set<WebMcpActionName>(["search_packages", "open_package_graph"]) },
+        createDummyTool
+      );
+
+      // Allow microtasks to run so open_package_graph starts registration
+      await new Promise((r) => setTimeout(r, 10));
+
+      // Pass 2: wants only ['open_package_graph']
+      const pass2Promise = owner.reconcile(
+        { phase: "GRAPH_READY", contextRevision: 2, toolNames: new Set<WebMcpActionName>(["open_package_graph"]) },
+        createDummyTool
+      );
+
+      // Resolve pending open_package_graph
+      const pending = platform.pendingRegistrations.get("open_package_graph");
+      if (pending) pending.resolve({ ok: true });
+
+      const [, res2] = await Promise.all([pass1Promise, pass2Promise]);
+
+      expect(res2.removed).toEqual(["search_packages"]);
+      expect(owner.getActiveRegistrations().has("search_packages")).toBe(false);
+      expect(owner.getActiveRegistrations().has("open_package_graph")).toBe(true);
+      expect(platform.registeredTools.has("search_packages")).toBe(false);
+      expect(platform.registeredTools.has("open_package_graph")).toBe(true);
+      expect(platform.registrationCallCounts.get("open_package_graph")).toBe(1);
+    });
+
+    test("R2-3: Pending tool becomes obsolete in newer pass and is aborted without resurrection (INV-WMCP4-LIFE-001)", async () => {
+      const platform = createAdversarialPlatformAdapter();
+      const owner = createWebMcpRegistrationOwner(platform);
+
+      const pass1Promise = owner.reconcile(
+        { phase: "IDLE", contextRevision: 1, toolNames: new Set<WebMcpActionName>(["search_packages"]) },
+        createDummyTool
+      );
+
+      // Pass 2: wants empty surface
+      const pass2Promise = owner.reconcile(
+        { phase: "BOOTSTRAP", contextRevision: 2, toolNames: new Set<WebMcpActionName>() },
+        createDummyTool
+      );
+
+      // Late resolve of Pass 1
+      const pending = platform.pendingRegistrations.get("search_packages");
+      if (pending) pending.resolve({ ok: true });
+
+      await Promise.all([pass1Promise, pass2Promise]);
+
+      expect(owner.getActiveRegistrations().size).toBe(0);
+      expect(platform.registeredTools.size).toBe(0);
+    });
+
+    test("R2-4: Capability loss after platform acceptance aborts pending tools without resurrection (INV-WMCP4-CAP-003)", async () => {
+      const platform = createAdversarialPlatformAdapter();
+      const owner = createWebMcpRegistrationOwner(platform);
+
+      const pass1Promise = owner.reconcile(
+        { phase: "IDLE", contextRevision: 1, toolNames: new Set<WebMcpActionName>(["search_packages"]) },
+        createDummyTool
+      );
+
+      // Capability lost
+      platform.setAvailable(false);
+
+      const pass2Promise = owner.reconcile(
+        { phase: "IDLE", contextRevision: 2, toolNames: new Set<WebMcpActionName>(["search_packages"]) },
+        createDummyTool
+      );
+
+      // Late resolve of Pass 1
+      const pending = platform.pendingRegistrations.get("search_packages");
+      if (pending) pending.resolve({ ok: true });
+
+      await Promise.all([pass1Promise, pass2Promise]);
+
+      expect(owner.getActiveRegistrations().size).toBe(0);
+      expect(platform.registeredTools.size).toBe(0);
+    });
+
+    test("R2-5: Owner disposal after platform acceptance aborts pending tools without resurrection (INV-WMCP4-LIFE-005)", async () => {
+      const platform = createAdversarialPlatformAdapter();
+      const owner = createWebMcpRegistrationOwner(platform);
+
+      const pass1Promise = owner.reconcile(
+        { phase: "IDLE", contextRevision: 1, toolNames: new Set<WebMcpActionName>(["search_packages"]) },
+        createDummyTool
+      );
+
+      owner.dispose();
+
+      // Late resolve of Pass 1
+      const pending = platform.pendingRegistrations.get("search_packages");
+      if (pending) pending.resolve({ ok: true });
+
+      await pass1Promise;
+
+      expect(owner.isDisposed()).toBe(true);
+      expect(owner.getActiveRegistrations().size).toBe(0);
+      expect(platform.registeredTools.size).toBe(0);
+    });
+
+    test("R2-6: Pending registration failure clears pending ownership and allows subsequent retry", async () => {
+      const platform = createAdversarialPlatformAdapter();
+      const owner = createWebMcpRegistrationOwner(platform);
+
+      const pass1Promise = owner.reconcile(
+        { phase: "IDLE", contextRevision: 1, toolNames: new Set<WebMcpActionName>(["search_packages"]) },
+        createDummyTool
+      );
+
+      // Fail Pass 1 registration
+      const pending = platform.pendingRegistrations.get("search_packages");
+      if (pending) {
+        pending.resolve({
+          ok: false,
+          error: { code: "REGISTRATION_FAILED", message: "Simulated browser error" },
+        });
+      }
+
+      const res1 = await pass1Promise;
+      expect(res1.errors.search_packages).toBe("Simulated browser error");
+      expect(owner.getActiveRegistrations().has("search_packages")).toBe(false);
+
+      // Next reconciliation retries fresh registration
+      const pass2Promise = owner.reconcile(
+        { phase: "IDLE", contextRevision: 2, toolNames: new Set<WebMcpActionName>(["search_packages"]) },
+        createDummyTool
+      );
+
+      const pending2 = platform.pendingRegistrations.get("search_packages");
+      if (pending2) pending2.resolve({ ok: true });
+
+      const res2 = await pass2Promise;
+      expect(res2.registered).toEqual(["search_packages"]);
+      expect(owner.getActiveRegistrations().has("search_packages")).toBe(true);
+    });
+
+    test("R2-7: Pre-registration delay race remains safe without resurrecting obsolete tool (Race A preservation)", async () => {
+      const platform = createMockPlatformAdapter();
+      const owner = createWebMcpRegistrationOwner(platform);
+
+      let slowResolve: (() => void) | null = null;
+      const slowPromise = new Promise<void>((resolve) => {
+        slowResolve = resolve;
+      });
+
+      const originalRegister = platform.registerTool.bind(platform);
+      let isFirst = true;
+
+      platform.registerTool = async (tool, options) => {
+        if (isFirst && tool.name === "search_packages") {
+          isFirst = false;
+          await slowPromise;
+        }
+        return originalRegister(tool, options);
+      };
+
+      const pass1Promise = owner.reconcile(
+        { phase: "IDLE", contextRevision: 1, toolNames: new Set<WebMcpActionName>(["search_packages"]) },
+        createDummyTool
+      );
+
+      const pass2Promise = owner.reconcile(
+        { phase: "GRAPH_READY", contextRevision: 2, toolNames: new Set<WebMcpActionName>(["open_package_graph"]) },
+        createDummyTool
+      );
+
+      await pass2Promise;
+      expect(owner.getActiveRegistrations().has("open_package_graph")).toBe(true);
+
+      if (slowResolve) {
+        (slowResolve as () => void)();
+      }
+      await pass1Promise;
+
       expect(owner.getActiveRegistrations().has("search_packages")).toBe(false);
       expect(owner.getActiveRegistrations().has("open_package_graph")).toBe(true);
     });
