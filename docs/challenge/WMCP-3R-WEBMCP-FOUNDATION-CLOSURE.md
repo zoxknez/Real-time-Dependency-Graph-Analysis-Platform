@@ -11,49 +11,45 @@ The purpose of WMCP-3R is not to add new features or begin WMCP-4 adaptive lifec
 
 ---
 
-## 2. Review Starting HEAD
+## 2. Review Starting HEAD & Dependencies
 
 - **Repository**: `zoxknez/Real-time-Dependency-Graph-Analysis-Platform`
 - **Branch**: `feature/webmcp-challenge-2026`
-- **Starting HEAD**: `565c7a80a30eaf1fc5296921d0be32e8a5acebc3`
-- **Commit Message**: `test(webmcp): restore production apollo concurrency`
+- **Starting HEAD**: `55c83b69c0759d2b24fcafc794cea768410da59f`
+- **WMCP-3A Closure Dependency**: `PASS - CLOSED` at `993fb4b10dbb1a060424494a1adad081020f782a`
+- **WMCP-3B Closure Dependency**: `PASS - CLOSED` at `565c7a80a30eaf1fc5296921d0be32e8a5acebc3`
 
 ---
 
-## 3. WMCP-3A Closure Dependency
+## 3. WMCP-3R Independent Review
 
-- **Phase Name**: WebMCP Platform Contract, Capability Detection & Type Boundary
-- **Verdict**: `PASS - CLOSED`
-- **Closure HEAD**: `993fb4b10dbb1a060424494a1adad081020f782a`
-- **Scope**:
-  - Progressive-enhancement low-level ambient browser types (`apps/frontend/src/types/webmcp.d.ts`).
-  - Application-owned platform adapter interface (`apps/frontend/src/lib/webmcp/platform/types.ts`).
-  - Lazy, SSR-safe browser platform adapter (`apps/frontend/src/lib/webmcp/platform/browser-adapter.ts`).
-  - Strict 42-test platform verification suite (`apps/frontend/e2e/war-room-webmcp-platform.spec.ts`).
-
----
-
-## 4. WMCP-3B Closure Dependency
-
-- **Phase Name**: Primitive Registration Adapter & Tool Execution Bridge
-- **Verdict**: `PASS - CLOSED`
-- **Closure HEAD**: `565c7a80a30eaf1fc5296921d0be32e8a5acebc3`
-- **Scope**:
-  - Primitive physical tool pair: `search_packages` and `open_package_graph`.
-  - Strict schema definitions, standalone runtime validators, and hard <= 1500 character output budgeting.
-  - Invocation context with `channel: "AGENT"`, invocation-time context revision capture, and cancellation signal propagation.
-  - Atomic staged projection activation on canonical success with discard on failure/stale rejection.
-  - React host component `WarRoomWebMcpBridge` composed in root layout.
-  - 40 unit/integration bridge tests and 7 browser E2E workflows.
+- **Reviewed HEAD**: `55c83b69c0759d2b24fcafc794cea768410da59f`
+- **Verdict**: `PASS WITH CORRECTIONS - NOT CLOSED`
+- **Independent Findings**:
+  1. 3R was correctly docs-only and contained zero production and zero test changes.
+  2. README status transitions were correct (3A CLOSED, 3B CLOSED, 3R PENDING, WMCP-3 NOT CLOSED).
+  3. Upstream WebMCP pin remained unchanged at `41d12f057167ccf5954dbcf49d99502cb6c84491`.
+  4. WebMCP contract summary incorrectly described normative `Document.modelContext` as optional.
+  5. WebMCP contract summary collapsed normative `Promise<undefined>` into `Promise<void>` without distinguishing normative WebIDL from local TypeScript declarations.
+  6. `executeTool` was incorrectly documented as taking `toolName` rather than `RegisteredTool`.
+  7. `RegisteredTool` summary omitted required `window` and `origin` dictionary members.
+  8. Invariant matrix reassigned multiple `WMCP-INV-*` identifiers to invented titles instead of following `ARCHITECTURE-INVARIANTS.md`.
+  9. WMCP-4 logical tool examples contradicted `WEBMCP-STATE-MACHINE.md` and included non-existent tool names (`expand_node`, `inspect_package`, `close_graph`).
+  10. Primitive tool schema limits/enums did not match committed source (e.g. query length, ecosystem enum, limit, root ID, depth).
+  11. Security identity was incorrectly described as being carried by `WarRoomInvocationContext`.
+  12. `WarRoomActions` call signatures were documented incorrectly (`(invocation, request)` vs multi-arg).
+  13. WMCP-2 closure commit message in lineage was incorrectly listed as `feat(war-room): close...` instead of `docs(challenge): correct WMCP-2 review evidence`.
+  14. Open graph output shapes were incompletely represented in full and compact envelope forms.
+- **Correction Scope**: No production or test defect exists. WMCP-3R-R1 corrects forensic evidence precision only.
 
 ---
 
-## 5. Git Lineage & Commit Chain
+## 4. Git Lineage & Commit Chain
 
-Ancestry from WMCP-2 final closure (`1ae87969743e1d9f2a71cc0d89402090c133f0d8`) to WMCP-3B closure (`565c7a80a30eaf1fc5296921d0be32e8a5acebc3`):
+Ancestry from WMCP-2 final closure (`1ae87969743e1d9f2a71cc0d89402090c133f0d8`) through WMCP-3B closure to WMCP-3R:
 
 ```
-1ae8796 [WMCP-2 Closure] feat(war-room): close WMCP-2 domain and action layer
+1ae8796 [WMCP-2 Closure] docs(challenge): correct WMCP-2 review evidence
   |
 8013ec7 [WMCP-3A Initial] feat(webmcp): establish platform capability boundary
   |
@@ -74,6 +70,8 @@ f4b2e21 [WMCP-3B-R1] fix(webmcp): close primitive bridge race and budget gaps
 c0a0847 [WMCP-3B-R4] test(webmcp): prove two-request browser overlap
   |
 565c7a8 [WMCP-3B-R5 Closure] test(webmcp): restore production apollo concurrency
+  |
+55c83b6 [WMCP-3R Initial] docs(challenge): record WMCP-3 foundation review
 ```
 
 - **Linear Ancestry**: Verified linear commit history without branching, rebasing, or hidden merges.
@@ -81,17 +79,17 @@ c0a0847 [WMCP-3B-R4] test(webmcp): prove two-request browser overlap
 
 ---
 
-## 6. WMCP-3A Correction History
+## 5. WMCP-3A Correction History
 
 The WMCP-3A platform layer progressed through three corrective iterations:
-1. **Initial (`8013ec7`)**: Introduced platform adapter types and capability detection, but low-level types drifted from draft WebMCP specification (used outdated `DOMString` assumptions and missing `fromOrigins`).
-2. **R1 (`85bcd1b`)**: Aligned browser types with the W3C WebMCP draft specification, updated `getTools({ fromOrigins })`, and corrected `registerTool` to Promise-only.
-3. **R2 (`d4c601f`)**: Closed generic variance gaps in `registerTool<TInput>`, enforced `TInput extends object`, and established cast-free platform boundary typing.
-4. **R3 (`993fb4b`)**: Verified against current upstream pin (`41d12f057167ccf5954dbcf49d99502cb6c84491`), confirmed `executeTool` specification presence, required callback `AbortSignal` options, and completed formal 3A closure.
+1. **Initial (`8013ec7`)**: Architecture and capability detection were accepted, but `getTools` options used `signal` instead of `fromOrigins`, `registerTool` return was overly broad (`Promise<void> | void`), broad `any` typing was present, and `executeTool` was unmodeled.
+2. **R1 (`85bcd1b`)**: Aligned to the then-reviewed rendered draft report, corrected `fromOrigins`, enforced Promise-only registration, and temporarily modeled `RegisteredTool.inputSchema` as `DOMString` based on the rendered snapshot.
+3. **R2 (`d4c601f`)**: Introduced generic typed `registerTool<TInput>`, enforced `TInput extends object`, and established cast-free registration proof.
+4. **R3 (`993fb4b`)**: Verified directly against upstream GitHub main SHA (`41d12f057167ccf5954dbcf49d99502cb6c84491`), confirmed `executeTool` in specification, restored `RegisteredTool.inputSchema` to `object`, required callback `AbortSignal`, and completed formal 3A closure.
 
 ---
 
-## 7. WMCP-3B Correction History
+## 6. WMCP-3B Correction History
 
 The WMCP-3B primitive bridge layer progressed through five corrective iterations:
 1. **Initial (`91489ba`)**: Built `search_packages` and `open_package_graph` bridge and session, but lacked hard output budget guarantees, contained projection race gaps, and had simulated race tests.
@@ -103,326 +101,299 @@ The WMCP-3B primitive bridge layer progressed through five corrective iterations
 
 ---
 
-## 8. Upstream WebMCP Contract Pin & Protocol Status
+## 7. Upstream WebMCP Contract Pin & Normative vs Local Types
 
 - **Repository**: `webmachinelearning/webmcp`
 - **Branch**: `main`
 - **Observed Pin SHA**: `41d12f057167ccf5954dbcf49d99502cb6c84491`
 - **Specification Source**: `index.bs` (W3C Community Group Draft)
-- **Verified Contract Members**:
-  - `Document.modelContext`: Optional attribute on `Document` (`[SecureContext, SameObject] readonly attribute ModelContext modelContext;`).
-  - `ModelContext.registerTool(tool, options)`: Returns `Promise<void>`.
-  - `ModelContext.getTools(options)`: Accepts `ModelContextGetToolOptions` with `fromOrigins`.
-  - `ModelContext.executeTool(toolName, input, options)`: Present in low-level specification.
-  - `ToolExecuteCallback(input, options)`: Callback receives `input` (object) and `ToolExecuteCallbackOptions` containing `signal: AbortSignal`.
-  - `ModelContextRegisterToolOptions`: Contains `signal?: AbortSignal` for unregister lifetime.
-  - `RegisteredTool`: Reflects `name`, `description`, `inputSchema` (object), `annotations`.
+
+### Normative WebIDL Specification vs Local TypeScript Declarations
+
+| Contract Element | Normative Upstream WebIDL | Local TypeScript Compatibility (`webmcp.d.ts`) | Architectural Rationale |
+| :--- | :--- | :--- | :--- |
+| `Document.modelContext` | `[SecureContext, SameObject] readonly attribute ModelContext modelContext;` (**non-optional**) | `readonly modelContext?: WebMcpBrowserModelContext;` (**optional `?`**) | Local `?` enables progressive enhancement and safe feature detection in standard browsers where WebMCP is absent. |
+| `registerTool()` return | `Promise<undefined>` | `Promise<void>` | Standard TypeScript convention representing `Promise<undefined>`. |
+| `executeTool()` signature | `executeTool(RegisteredTool tool, optional object inputObject = {}, optional ModelContextExecuteToolOptions options = {}): Promise<DOMString>` | `executeTool(tool: WebMcpBrowserRegisteredTool, inputObject?: object, options?: WebMcpBrowserExecuteToolOptions): Promise<string>` | First argument is `RegisteredTool` (not `toolName`); returns stringified execution output. |
+| `RegisteredTool` members | `name` (DOMString), `title` (DOMString?), `description` (DOMString), `inputSchema` (object), `window` (Window), `origin` (USVString), `annotations` (ToolAnnotations?) | `name`, `title?`, `description`, `inputSchema?`, `window: Window`, `origin: string`, `annotations?` | Complete dictionary modeling including required `window` and `origin` provenance properties. |
+| `ToolExecuteCallback` | `callback ToolExecuteCallback = Promise<any> (object inputObject, ToolExecuteCallbackOptions options);` | `(input: TInput, options: WebMcpBrowserToolExecuteOptions) => Promise<TOutput>` | Callback receives input object and options with required `signal: AbortSignal`. |
+
 - **Draft Status Notice**: WebMCP remains an active W3C Community Group draft. The pinned SHA serves as the authoritative implementation baseline for WMCP-3. WMCP-4 will re-verify upstream before implementing adaptive generation lifecycles.
 
 ---
 
-## 9. WMCP-3 Architecture Map
+## 8. Exact Local Type Identifiers
+
+### Low-Level Browser Ambient Types (`apps/frontend/src/types/webmcp.d.ts`)
+- `WebMcpBrowserToolAnnotations`
+- `WebMcpBrowserToolExecuteOptions`
+- `WebMcpBrowserToolExecuteCallback<TInput, TOutput>`
+- `WebMcpBrowserTool<TInput, TOutput>`
+- `WebMcpBrowserRegisteredTool`
+- `WebMcpBrowserRegisterOptions`
+- `WebMcpBrowserGetToolsOptions`
+- `WebMcpBrowserExecuteToolOptions`
+- `WebMcpBrowserModelContext`
+
+### Application Platform Types (`apps/frontend/src/lib/webmcp/platform/types.ts`)
+- `WebMcpAvailability`
+- `WebMcpPlatformSnapshot`
+- `WebMcpPlatformExecutionContext`
+- `WebMcpPlatformToolAnnotations`
+- `WebMcpPlatformToolDefinition<TInput, TOutput>`
+- `WebMcpPlatformRegistrationOptions`
+- `WebMcpPlatformRegistrationErrorCode`
+- `WebMcpPlatformRegistrationResult`
+- `WebMcpPlatformAdapter`
+
+---
+
+## 9. Architecture & Composition Flow
 
 ```
 +-------------------------------------------------------------------------+
-|                         Browser Realm (Window)                          |
+|                  React Host & Platform Adapter Boundary                 |
 |                                                                         |
-|  +-----------------------------------+                                  |
-|  | window.document.modelContext      |  (Optional Native/Polyfill)      |
-|  +-----------------+-----------------+                                  |
-|                    |                                                    |
-|                    v                                                    |
-|  +-----------------+-----------------+                                  |
-|  |      WebMcpPlatformAdapter        |  (apps/frontend/src/lib/webmcp/  |
-|  |   - getSnapshot()                 |   platform/browser-adapter.ts)   |
-|  |   - isAvailable()                 |                                  |
-|  |   - registerTool()                |  (Isolated from DOM types)       |
-|  +-----------------+-----------------+                                  |
-|                    |                                                    |
-|                    v                                                    |
-|  +-----------------+-----------------+                                  |
-|  | Primitive Registration Session    |  (Lifetime AbortController,      |
-|  | - search_packages                 |   all-or-nothing rollback)       |
-|  | - open_package_graph              |                                  |
-|  +--------+--------------------+-----+                                  |
-|           |                    |                                        |
-|           | (Agent Call)       | (Agent Call)                           |
-|           v                    v                                        |
-|  +--------+--------------------+-----+                                  |
-|  |      WarRoomWebMcpBridge          |  (Primitive Execution Bridge)    |
-|  |  - Strict Runtime Validation      |                                  |
-|  |  - Invocation-time rev capture    |                                  |
-|  |  - Execution AbortSignal pass     |                                  |
-|  |  - Hard <= 1500 output budget     |                                  |
-|  +-----------------+-----------------+                                  |
-|                    |                                                    |
-+--------------------|----------------------------------------------------+
-                     |
-                     | channel: "AGENT", capturedRevision, signal
-                     v
-+--------------------+----------------------------------------------------+
-|               Shared Application Layer (WarRoomActions)                 |
+|  WarRoomWebMcpBridge (Headless React Host / Composition Layer)          |
+|    - Waits for exit from BOOTSTRAP                                      |
+|    - Invokes createPrimitiveTools()                                     |
+|    - Invokes createPrimitiveWebMcpRegistrationSession()                 |
 |                                                                         |
-|  (Human UI triggers enter the same WarRoomActions methods!)             |
+|  WebMcpPlatformAdapter (apps/frontend/src/lib/webmcp/platform/...)       |
+|    - Isolated from raw DOM / Window / ModelContext types                |
+|    - registerTool() delegates to browser document.modelContext          |
++------------------------------------+------------------------------------+
+                                     |
+                                     v
++-------------------------------------------------------------------------+
+|                 Primitive Execution Bridge Layer                        |
 |                                                                         |
-|  +-----------------+-----------------+                                  |
-|  | WarRoomActions.searchPackages     |                                  |
-|  | WarRoomActions.openPackageGraph   |                                  |
-|  +--------+--------------------+-----+                                  |
-|           |                    |                                        |
-|           +----+          +----+                                        |
-|                |          |                                             |
-|                v          v                                             |
-|  +-------------+----------+----------+                                  |
-|  | Trusted Security / Auth Context   |  (Caller CANNOT provide tenant/  |
-|  | (WarRoomInvocationContext)        |   user/token/revision)           |
-|  +-------------+---------------------+                                  |
-|                |                                                        |
-|                v                                                        |
-|  +-------------+---------------------+                                  |
-|  | GraphQL / Apollo Ports            |  (Query execution with cache/    |
-|  | (GetPackage, GetReverseDeps)      |   in-flight deduplication)       |
-|  +-------------+---------------------+                                  |
-|                |                                                        |
-|                v                                                        |
-|  +-------------+---------------------+                                  |
-|  | StatePort.commitContextBound      |  (Atomic Revision Guard:         |
-|  |                                   |   current === captured)          |
-|  +-------------+---------------------+                                  |
-|                |                                                        |
-|        +-------+-------+                                                |
-|        | (Success)     | (Mismatch)                                     |
-|        v               v                                                |
-|  +-----+----+    +-----+----+                                           |
-|  | Canonical|    |  Reject  |                                           |
-|  | WarRoom  |    |  STALE_  |                                           |
-|  | State    |    |  CONTEXT |                                           |
-|  | (Store)  |    +----------+                                           |
-|  +-----+----+                                                           |
-|        |                                                                |
-|        v                                                                |
-|  +-----+----+                                                           |
-|  | Activate |                                                           |
-|  | Staged   |                                                           |
-|  | Visual   |  (Non-canonical graph-projection store)                   |
-|  | Project. |                                                           |
-|  +----------+                                                           |
+|  primitive-tools.ts / validation.ts / output.ts                         |
+|    1. Tool execute callback receives (input, context)                   |
+|    2. Runtime input validation (validateSearchPackagesInput, etc.)      |
+|    3. Invocation-time revision capture: statePort.getState().contextRev |
+|    4. Constructs WarRoomInvocationContext:                              |
+|       { channel: "AGENT", capturedContextRevision, signal }             |
+|    5. Delegates to WarRoomActions                                       |
+|    6. Enforces hard <= 1500 char budget (full / compact / fail-closed)  |
++------------------------------------+------------------------------------+
+                                     |
+                                     | invocation, request
+                                     v
++-------------------------------------------------------------------------+
+|                Shared Application Layer (WarRoomActions)                |
+|                                                                         |
+|  searchPackages(invocation, request)                                    |
+|  openPackageGraph(invocation, request)                                  |
+|                                                                         |
+|  Internal Security Resolution:                                          |
+|    - Resolves trusted identity via WarRoomSecurityContextPort           |
+|    - Evaluates authorization via WarRoomAuthorizationPort               |
+|    - Executes queries via GraphQL / Apollo ports                        |
+|    - Verifies revision guard: statePort.commitContextBound(capturedRev) |
+|    - Emits WarRoomActionResult with authoritative revision and changed  |
+|                                                                         |
+|  Visual Projection Integration:                                         |
+|    - On canonical success: activates staged visual graph projection     |
+|    - On stale/failure: discards staged projection                       |
 +-------------------------------------------------------------------------+
 ```
 
 ---
 
-## 10. Low-Level Browser Type Boundary
+## 10. Security Context vs Invocation Context Boundary
 
-- File: `apps/frontend/src/types/webmcp.d.ts`
-- Ambient declaration extending `Document` with optional `modelContext?: WebMcpBrowserModelContext`.
-- Encapsulates:
-  - `WebMcpBrowserModelContext`: `registerTool`, `getTools`, `executeTool`, `addEventListener`, `removeEventListener`, `dispatchEvent`.
-  - `WebMcpBrowserTool<TInput>`: `name`, `description`, `inputSchema`, `annotations`, `execute`.
-  - `WebMcpBrowserToolExecuteCallbackOptions`: `signal: AbortSignal`.
-  - `WebMcpBrowserRegisterToolOptions`: `signal?: AbortSignal`.
-  - `WebMcpBrowserGetToolOptions`: `fromOrigins?: string[]`.
-- Type-safe, strict, and prevents pollution of the core TypeScript compiler realm.
-
----
-
-## 11. Application Platform Boundary Isolation
-
-- Files:
-  - `apps/frontend/src/lib/webmcp/platform/types.ts`
-  - `apps/frontend/src/lib/webmcp/platform/browser-adapter.ts`
-  - `apps/frontend/src/lib/webmcp/platform/adapter.ts`
-- **Application Isolation**: Exposes application-owned types (`WebMcpToolDefinition`, `WebMcpPlatformAdapter`, `WebMcpPlatformSnapshot`, `WebMcpRegistrationResult`).
-- **Zero Leakage**: Does NOT expose `Document`, `Window`, `ModelContext`, `EventTarget`, or raw `DOMException` to consuming components.
-- **Adapter API**:
-  - `getSnapshot()`: Returns sanitized platform availability snapshot.
-  - `isAvailable()`: Fast boolean check.
-  - `registerTool(definition, options)`: Handles input translation, error normalization (`UNAVAILABLE`, `CANCELLED`, `REGISTRATION_FAILED`), and browser registration.
+- **`WarRoomInvocationContext`** contains exclusively:
+  - `channel: "AGENT" | "HUMAN"` (provenance audit)
+  - `capturedContextRevision: number` (stale-context guard)
+  - `signal?: AbortSignal` (cancellation propagation)
+- **`WarRoomSecurityContext`** contains trusted identity:
+  - `tenantId: string`
+  - `userId: string`
+  - `organizationId?: string`
+- **Security Resolution**: Callers (Human UI or Agent tools) **never** supply security identity or context revisions. Trusted security identity is resolved internally within `WarRoomActions` via `WarRoomSecurityContextPort`.
+- **Authorization Parity**: Permissions and tenant scopes are checked identically for `HUMAN` and `AGENT` channels. Channel is provenance, not an authorization bypass.
 
 ---
 
-## 12. Progressive Enhancement Guarantee (WMCP-INV-016)
+## 11. Unified Action Layer & Signatures
 
-- When `document.modelContext` is absent (standard browsers, headless environments, SSR):
-  - `isAvailable()` returns `false`.
-  - `registerTool()` gracefully returns `{ ok: false, error: { code: "UNAVAILABLE", ... } }`.
-  - The War Room application boots normally into `IDLE`, interactive search works, and human users can open graphs, inspect packages, and explore supply chains without errors.
-- Verified by:
-  - `war-room-human-ui.spec.ts` (5/5 PASS)
-  - `homepage.spec.ts` (8/8 PASS)
-  - `war-room-webmcp-platform.spec.ts` (42/42 PASS)
+`WarRoomActions` provides transport-independent application methods invoked with uniform signatures:
+
+```typescript
+searchPackages(
+  invocation: WarRoomInvocationContext,
+  request: SearchPackagesRequest
+): Promise<WarRoomActionResult<WarRoomPackageSearchResult>>
+
+openPackageGraph(
+  invocation: WarRoomInvocationContext,
+  request: OpenPackageGraphRequest
+): Promise<WarRoomActionResult<WarRoomGraphContext>>
+```
+
+- Zero business logic duplication: WebMCP bridge contains zero GraphQL queries, zero `fetch` calls, zero direct Apollo client instances, and zero direct state mutations.
 
 ---
 
-## 13. Primitive Physical Surface vs Logical Tool Surface
+## 12. Primitive Tool Schemas & Runtime Validation
+
+### `search_packages`
+- **Schema**: `type: "object"`, `additionalProperties: false`, required `["query"]`.
+  - `query`: string, `minLength: 1`, `maxLength: 120`.
+  - `ecosystem`: enum `["NPM", "PY_PI", "CARGO", "MAVEN", "NU_GET", "GO"]`.
+  - `limit`: integer, `minimum: 1`, `maximum: 8` (runtime default: `5`).
+- **Annotations**: `readOnlyHint: true`, `untrustedContentHint: true`.
+- **Runtime Validator (`validateSearchPackagesInput`)**: Rejects non-objects, arrays, unknown keys, whitespace-only queries, invalid ecosystems, out-of-range limits, and prototype-polluting own keys.
+
+### `open_package_graph`
+- **Schema**: `type: "object"`, `additionalProperties: false`, required `["rootPackageId"]`.
+  - `rootPackageId`: string, `minLength: 1`, `maxLength: 256`.
+  - `depth`: integer, `minimum: 1`, `maximum: 4` (runtime default: `2`).
+- **Annotations**: `readOnlyHint: false`, `untrustedContentHint: true`.
+- **Runtime Validator (`validateOpenPackageGraphInput`)**: Rejects non-objects, arrays, unknown keys, whitespace-only package IDs, and out-of-range depths.
+
+---
+
+## 13. Output Budgeting & Response Shapes (WMCP-INV-011)
+
+All tool outputs are hard-bounded to `JSON.stringify(envelope).length <= 1500`:
+
+### `search_packages` Output
+- Incremental whole-record packing of `WarRoomPackageRef` records (`id`, `name`, `version`, `ecosystem`).
+- Never slices strings or truncates partial records.
+- Sets `truncated: true` when whole records are omitted due to budget.
+
+### `open_package_graph` Output Shapes
+1. **Full Output Data** (`compact: false`):
+   ```json
+   {
+     "graphId": "...",
+     "rootPackage": { "id": "...", "name": "...", "version": "...", "ecosystem": "..." },
+     "packageCount": 42,
+     "compact": false,
+     "projectionActivated": true
+   }
+   ```
+2. **Compact Fallback Data** (`compact: true` - used if full representation exceeds 1500 chars):
+   ```json
+   {
+     "graphId": "...",
+     "rootPackageId": "...",
+     "packageCount": 42,
+     "compact": true,
+     "projectionActivated": true
+   }
+   ```
+3. **Fail-Closed Fallback**: If even the compact envelope exceeds 1500 characters, returns structured `INTERNAL_ERROR` failure envelope.
+
+---
+
+## 14. Physical Primitive Surface vs Desired Logical Surface
 
 ### A. Physical Foundation Registration (WMCP-3B Current Truth)
-- After the War Room application exits `BOOTSTRAP`, `WarRoomWebMcpBridge` starts a single registration session.
-- Physically registers exactly **2** tools:
-  1. `search_packages`: Pure read package search.
-  2. `open_package_graph`: Context-bound graph opening.
-- The physical tool pair remains registered across component lifecycle and unregisters cleanly upon session disposal.
+- After the War Room exits `BOOTSTRAP`, `WarRoomWebMcpBridge` starts a single registration session.
+- Physically registers exactly **2** tools: `search_packages` and `open_package_graph`.
+- Retains this physical pair for the session lifetime; unregisters cleanly on unmount.
 
 ### B. Desired Logical Tool Surface (WMCP-4 Deferred Scope)
-- The dynamic state-derived tool surface `DesiredLogicalTools = f(canonicalState, webMcpAvailability)` is **NOT** implemented in WMCP-3.
-- In WMCP-3, the static physical pair is registered once as the primitive foundation.
-- Full state-dependent tool exposure (`IDLE` -> `search_packages` only; `GRAPH_READY` -> `search_packages`, `expand_node`, `inspect_package`, `close_graph`, etc.) belongs exclusively to **WMCP-4**.
+- Dynamic state-derived tool surfaces `DesiredLogicalTools = f(canonicalState, webMcpAvailability)` are **NOT** implemented in WMCP-3.
+- The locked normative target from `WEBMCP-STATE-MACHINE.md` is:
+  - **`BOOTSTRAP`**: (None)
+  - **`IDLE`**: `search_packages`, `open_package_graph`
+  - **`GRAPH_READY`**: `summarize_graph`, `calculate_blast_radius`, `trace_dependency_path`, `focus_graph_nodes`, `open_package_graph`
+  - **`NODE_SELECTED`**: `inspect_selected_package`, `calculate_blast_radius`, `trace_dependency_path`, `simulate_api_changes`, `focus_graph_nodes`
+  - **`SIMULATION_READY`**: `inspect_scenario`, `calculate_blast_radius`, `trace_dependency_path`, `set_scenario_priority`, `set_scenario_exclusion`, `focus_graph_nodes`
+  - **`HUMAN_REVIEW`**: `recalculate_scenario`, `generate_migration_plan`, `inspect_critical_paths`, `set_scenario_priority`
+  - **`PLAN_READY`**: `inspect_migration_plan`, `recalculate_scenario`, `focus_critical_path`
 
 ---
 
-## 14. WMCP-4 Deferral Matrix
+## 15. WMCP-4 Deferral Matrix
 
-The following capabilities are explicitly deferred to **WMCP-4** and are **NOT implemented** in WMCP-3:
-
-| Architectural Component | Status in WMCP-3 | Target Phase |
-| :--- | :--- | :--- |
-| `ToolRegistry` Class | Not Implemented | WMCP-4 |
-| `RegistrationManager` | Not Implemented | WMCP-4 |
-| `desiredLogicalTools` State Mapping | Not Implemented | WMCP-4 |
-| Generation Counters / Generation IDs | Not Implemented | WMCP-4 |
-| `REGISTERING` / `ACTIVE` / `RETIRING` / `REMOVED` Lifecycle States | Not Implemented | WMCP-4 |
-| `activeExecutions` Tracking & Drain Barrier | Not Implemented | WMCP-4 |
-| Admission Rejection during Tool Retirement | Not Implemented | WMCP-4 |
-| `toolchange` Event Observer & Handler | Not Implemented | WMCP-4 |
-| Rapid State Mutation De-bouncing (`A -> B -> A`) | Not Implemented | WMCP-4 |
+The following components are strictly deferred to **WMCP-4**:
+- `ToolRegistry` class
+- `RegistrationManager`
+- Dynamic `desiredLogicalTools` state mapping
+- Tool generation counters and generation IDs
+- `REGISTERING` / `ACTIVE` / `RETIRING` / `REMOVED` lifecycle states
+- `activeExecutions` tracking and execution drain barrier
+- Admission rejection during tool retirement
+- `toolchange` event observer and handler
+- Rapid state transition de-bouncing (`A -> B -> A`)
 
 ---
 
-## 15. Architectural Invariant Matrix (WMCP-INV-001 to WMCP-INV-025)
+## 16. Authoritative Architectural Invariant Matrix (WMCP-INV-001 to WMCP-INV-025)
 
-| Invariant ID | Title | Status in WMCP-3 | Evidence Reference |
+Every invariant is evaluated against its authoritative definition in `docs/challenge/ARCHITECTURE-INVARIANTS.md`:
+
+| Invariant ID | Authoritative Title | Status in WMCP-3 | Enforcement Scope & Evidence |
 | :--- | :--- | :--- | :--- |
-| **WMCP-INV-001** | State-Derived Tool Surface | DEFERRED BY ORIGINAL CONTRACT TO WMCP-4 | Dynamic state mapping deferred to WMCP-4 |
-| **WMCP-INV-002** | Stale Context Isolation | PASS - ENFORCED IN WMCP-3 | Tests 26, 33, 34 in registration spec; Test 5 in Agent UI |
-| **WMCP-INV-003** | Dual Human-Agent Accessibility | PASS - ENFORCED IN WMCP-3 | Both channels use `WarRoomActions` on `/graph` |
-| **WMCP-INV-004** | Unified Action Layer | PASS - ENFORCED IN WMCP-3 | All bridge tools delegate to `WarRoomActions` |
-| **WMCP-INV-005** | Monotonic Revision Counter | PASS - ENFORCED IN WMCP-3 | Domain state kernel revision increments monotonically |
-| **WMCP-INV-006** | Pure Domain State Reducer | PASS - ENFORCED IN WMCP-3 | Closed in WMCP-2A (`war-room-domain.spec.ts`) |
-| **WMCP-INV-007** | State Mutation Exclusivity | PASS - ENFORCED IN WMCP-3 | Bridge contains 0 `store.setState` or GraphQL mutations |
-| **WMCP-INV-008** | Untrusted Content Provenance | PASS - ENFORCED IN WMCP-3 | `untrustedContentHint: true` on all registered schemas |
-| **WMCP-INV-009** | Constrained Tool Input Surface | PASS - ENFORCED IN WMCP-3 | Strict object schemas, `additionalProperties: false` |
-| **WMCP-INV-010** | Execution Lifecycle Management | DEFERRED BY ORIGINAL CONTRACT TO WMCP-4 | Generation drain and retiring lifecycle in WMCP-4 |
-| **WMCP-INV-011** | Concise Output Budget | PASS - ENFORCED IN WMCP-3 | Hard <= 1500 char budget enforced on all tool outputs |
-| **WMCP-INV-012** | Explicit Error Hierarchy | PASS - ENFORCED IN WMCP-3 | Stable error codes (`INVALID_INPUT`, `STALE_CONTEXT`, etc.) |
-| **WMCP-INV-013** | WebMCP Adapter Isolation | PASS - ENFORCED IN WMCP-3 | Browser objects isolated behind `WebMcpPlatformAdapter` |
-| **WMCP-INV-014** | Registration Lifecycle State Machine | DEFERRED BY ORIGINAL CONTRACT TO WMCP-4 | Tool states (`REGISTERING`, `ACTIVE`, etc.) in WMCP-4 |
-| **WMCP-INV-015** | Idempotent Transition Queue | DEFERRED BY ORIGINAL CONTRACT TO WMCP-4 | Multi-phase transition queue in WMCP-4 |
-| **WMCP-INV-016** | Progressive Enhancement Guarantee | PASS - ENFORCED IN WMCP-3 | Human UI fully operational without WebMCP |
-| **WMCP-INV-017** | Security Parity Between Human/Agent | PASS - ENFORCED IN WMCP-3 | Trusted `WarRoomSecurityContext` created by system |
-| **WMCP-INV-018** | Action Channel Provenance | PASS - ENFORCED IN WMCP-3 | `channel: "AGENT"` passed to `WarRoomInvocationContext` |
-| **WMCP-INV-019** | Tool Surface Observation | DEFERRED BY ORIGINAL CONTRACT TO WMCP-4 | `toolchange` observer in WMCP-4 |
-| **WMCP-INV-020** | Execution Cancellation Propagation | PASS - ENFORCED IN WMCP-3 | Callback `signal` propagated to query ports |
-| **WMCP-INV-021** | Non-Serializable State Isolation | PASS - ENFORCED IN WMCP-3 | Zero DOM/Signals/Contexts in canonical state store |
-| **WMCP-INV-022** | Invocation Context Binding | PASS - FOUNDATION DEMONSTRATED, FULL ENFORCEMENT LATER | `capturedRevision` captured at tool invocation |
-| **WMCP-INV-023** | Action Result Revision Proof | PASS - FOUNDATION DEMONSTRATED, FULL ENFORCEMENT LATER | `contextRevision` and `changed` emitted in result |
-| **WMCP-INV-024** | Mandatory Runtime Parameter Validation | PASS - ENFORCED IN WMCP-3 | Standalone validators reject malformed/injected inputs |
-| **WMCP-INV-025** | Product-Specific Tool Surface | PASS - ENFORCED IN WMCP-3 | Only domain primitives (`search_packages`, `open_package_graph`) |
+| **WMCP-INV-001** | Context-Valid Logical Tool Availability | DEFERRED BY ORIGINAL CONTRACT TO WMCP-4 | First enforcement in WMCP-4; dynamic state mapping deferred. |
+| **WMCP-INV-002** | Stale Context Isolation | PASS - ENFORCED IN WMCP-3 | Tests 26, 33, 34 in registration spec; Test 5 in Agent UI E2E. |
+| **WMCP-INV-003** | Dual Human-Agent Accessibility | PASS - ENFORCED IN WMCP-3 | Both channels access shared capabilities through `/graph`. |
+| **WMCP-INV-004** | Unified Action Layer | PASS - ENFORCED IN WMCP-3 | Both channels delegate to `WarRoomActions`. |
+| **WMCP-INV-005** | Topology Does Not Equal Confirmed Breakage | NOT APPLICABLE TO WMCP-3 - FIRST ENFORCEMENT WMCP-7 | Current `packageCount` represents topology only; no breakage claimed. |
+| **WMCP-INV-006** | Separation of Blast Radius and Confidence | NOT APPLICABLE TO WMCP-3 - FIRST ENFORCEMENT WMCP-9 | Technical blast radius scoring deferred to WMCP-9. |
+| **WMCP-INV-007** | Human Business Context Isolation | NOT APPLICABLE TO WMCP-3 - FIRST ENFORCEMENT WMCP-10 | Human priority annotations deferred to WMCP-10. |
+| **WMCP-INV-008** | Untrusted Content Provenance | PASS - ENFORCED IN WMCP-3 | `untrustedContentHint: true` set on all registered tools. |
+| **WMCP-INV-009** | Constrained Tool Input Surface | PASS - ENFORCED IN WMCP-3 | Strict object schemas, `additionalProperties: false`, domain types. |
+| **WMCP-INV-010** | Deterministic Breaking Change Evaluation | NOT APPLICABLE TO WMCP-3 - FIRST ENFORCEMENT WMCP-7 | AST breaking change detection deferred to WMCP-7. |
+| **WMCP-INV-011** | Concise Output Budget | PASS - ENFORCED IN WMCP-3 | Hard <= 1500 char limit enforced across all success/error outputs. |
+| **WMCP-INV-012** | Prohibition of Fabricated Production Metrics | NOT APPLICABLE TO FULL ENFORCEMENT IN WMCP-3 - FIRST ENFORCEMENT WMCP-9 | No fabricated metrics emitted; zero violations observed. |
+| **WMCP-INV-013** | WebMCP Adapter Isolation | PASS - ENFORCED IN WMCP-3 | Direct browser interactions isolated behind `WebMcpPlatformAdapter`. |
+| **WMCP-INV-014** | Registration Generation Independence | DEFERRED BY ORIGINAL CONTRACT TO WMCP-4 | Generation tracking and cleanup isolation deferred to WMCP-4. |
+| **WMCP-INV-015** | In-Flight Execution Drain & Safe Retirement | DEFERRED BY ORIGINAL CONTRACT TO WMCP-4 | Phased retirement and active execution drain deferred to WMCP-4. |
+| **WMCP-INV-016** | Progressive Enhancement Guarantee | PASS - ENFORCED IN WMCP-3 | Standard browsers fully functional when WebMCP is unavailable. |
+| **WMCP-INV-017** | Security Parity Between Human and Agent | PASS - ENFORCED IN WMCP-3 | Uniform authorization enforced via `WarRoomSecurityContextPort`. |
+| **WMCP-INV-018** | Separation of Interpretation and Evidence | NOT APPLICABLE TO WMCP-3 - FIRST ENFORCEMENT WMCP-11 | AI interpretation data tagging deferred to WMCP-11. |
+| **WMCP-INV-019** | Deterministic Tool Availability | DEFERRED BY ORIGINAL CONTRACT TO WMCP-4 | Deterministic tool sets per state deferred to WMCP-4. |
+| **WMCP-INV-020** | Multi-Modal Evidence Accessibility | NOT APPLICABLE TO WMCP-3 - FIRST ENFORCEMENT WMCP-12 | Tabular and accessibility representations deferred to WMCP-12. |
+| **WMCP-INV-021** | Non-Serializable State Isolation | PASS - ENFORCED IN WMCP-3 | Zero DOM objects, Signals, or Controllers in canonical state store. |
+| **WMCP-INV-022** | Invocation-Time Context Capture | PASS - FOUNDATION DEMONSTRATED, FULL LIFECYCLE ENFORCEMENT WMCP-4 | Context revision captured at invocation; full lifecycle in WMCP-4. |
+| **WMCP-INV-023** | Stale Context Early Rejection | PASS - FOUNDATION DEMONSTRATED, FULL LIFECYCLE ENFORCEMENT WMCP-4 | Mismatched revision rejects state commit; full lifecycle in WMCP-4. |
+| **WMCP-INV-024** | Mandatory Runtime Parameter Validation | PASS - ENFORCED IN WMCP-3 | Standalone validators reject malformed/injected parameters. |
+| **WMCP-INV-025** | Product-Specific Tool Surface | PASS - ENFORCED IN WMCP-3 | Only product primitives (`search_packages`, `open_package_graph`). |
 
 ---
 
-## 16. Unified Action Layer Verification
+## 17. Apollo Production Fidelity & Concurrency Truth
 
-- `search_packages` -> calls `WarRoomActions.searchPackages(query, ecosystem, limit, context)`.
-- `open_package_graph` -> calls `WarRoomActions.openPackageGraph(rootPackageId, depth, context)`.
-- Zero business logic duplication: WebMCP bridge contains zero GraphQL queries, zero `fetch` calls, zero direct Apollo client calls, and zero direct state mutations.
-
----
-
-## 17. Security Parity & Caller Parameter Isolation
-
-- **Inaccessible Security Identity**: Callers cannot provide `tenantId`, `userId`, `organizationId`, `permissions`, `accessToken`, `authToken`, `jwt`, `authorization`, `cookie`, `session`, or `securityContext`.
-- **System Authority**: All security contexts are constructed internally by the application runtime and passed via `WarRoomInvocationContext`.
-- **Authorization Parity**: Authorization checks inside `WarRoomActions` do not bypass permissions based on channel (`HUMAN` vs `AGENT`). Channel is audit provenance, not a security override.
-- **Inaccessible Context Revision**: Callers cannot supply `contextRevision`, `capturedContextRevision`, or `stateRevision` to force a state commit.
-
----
-
-## 18. Runtime Validation & Input Schemas
-
-- Strict JSON Schemas:
-  - `SEARCH_PACKAGES_SCHEMA`: `type: "object"`, `additionalProperties: false`, required `query` (string 1..100), optional `ecosystem` (enum `NPM`, `PYPI`, `CARGO`, `GO`, `MAVEN`), optional `limit` (integer 1..50).
-  - `OPEN_PACKAGE_GRAPH_SCHEMA`: `type: "object"`, `additionalProperties: false`, required `rootPackageId` (string 1..150), optional `depth` (integer 1..5).
-- Standalone Runtime Validators (`validateSearchPackagesInput`, `validateOpenPackageGraphInput`):
-  - Independent of schema validation engine.
-  - Strict type checking, boundary enforcement, string trimming, and prototype injection rejection (`__proto__`, `constructor`).
-
----
-
-## 19. Output Budget & Record Integrity (WMCP-INV-011)
-
-- All tool success and error outputs are hard bounded: `JSON.stringify(payload).length <= 1500`.
-- **Whole-Record Search Truncation**: Search results truncate at whole package records. No partial package names, ecosystems, or IDs are returned.
-- **Open Graph Fallback**:
-  - Full: `{ graphId, packageCount, projectionActivated, compact: false }`.
-  - Compact (pathological input): `{ rootPackageId, projectionActivated, compact: true }`.
-- **Fail-Closed Guarantee**: `formatToolSuccess` rejects payloads exceeding 1500 characters and safely emits a sanitized error response.
-- **Sanitized Errors**: `formatToolFailure` guarantees error messages are bounded and sanitized <= 1500 characters.
-
----
-
-## 20. Signal Separation & Lifetime Management
-
-- **Registration Lifetime Signal**: `AbortController` created by `createPrimitiveWebMcpRegistrationSession`. Used exclusively to unregister/dispose tools on component unmount or session rollback.
-- **Callback Execution Signal**: `AbortSignal` delivered by the WebMCP execution environment inside `ToolExecuteCallbackOptions`. Passed through `WarRoomInvocationContext.signal` to abort in-flight GraphQL queries.
-- **Signal Independence**: Unregistering a tool does not cancel existing in-flight executions (aligned with Chrome WebMCP unregister behavior). Execution cancellation is governed exclusively by the callback signal.
-
----
-
-## 21. Race Safety & Stale Context Isolation
-
-- **Unit Concurrency Proofs** (`war-room-webmcp-registration.spec.ts`):
-  - **Test 33 (A-first)**: Agent A commits first (`contextRevision = 2`, `projectionActivated = true`); Agent B with starting revision 1 receives `STALE_CONTEXT` and discards staged projection.
-  - **Test 34 (B-first)**: Agent B commits first (`contextRevision = 2`, `projectionActivated = true`); Agent A with starting revision 1 receives `STALE_CONTEXT` and discards staged projection.
-- **Browser Cross-Channel Concurrency Proof** (`war-room-webmcp-agent-ui.spec.ts` Test 7):
-  - Agent starts graph query and is held at the network gate.
-  - Human triggers the exact same graph via UI search input and button click while Agent request is in-flight.
-  - Upon network release, Apollo deduplicates the in-flight query, exactly one semantic canonical commit succeeds (revision 1 -> 2), and canonical state converges with visual projection (`npm:same-package`).
-
----
-
-## 22. Apollo Production Fidelity & Transport vs Invocation Identity
-
-- **Installed Version**: `@apollo/client` version `4.2.0`.
+- **Installed Dependency**: `@apollo/client` version `4.2.0`.
 - **Production Configuration**: `apps/frontend/src/lib/apollo-wrapper.tsx` creates `ApolloClient` with default options (`queryDeduplication: true`).
-- **Zero Prototype Mutations**: The test suite uses zero `Object.prototype` modifications.
-- **Transport vs Invocation Identity**:
-  - Transport-level query deduplication (merging identical in-flight network requests) is standard Apollo behavior.
-  - Invocation-level identity remains distinct: Human and Agent actions carry independent channel provenance, captured context revisions, and atomic commit attempts.
+- **Zero Prototype Hacks**: Final test harness contains 0 `Object.prototype` mutations.
+- **Transport vs Invocation Distinction**:
+  - Apollo Client deduplicates identical concurrent in-flight HTTP/GraphQL requests.
+  - War Room maintains independent invocation contexts for Human and Agent callers.
+  - Exactly one semantic commit occurs (`data-war-room-revision` 1 -> 2), and canonical state converges with visual projection (`npm:same-package`).
 
 ---
 
-## 23. Authorized Post-Closure Integration Supersession
+## 18. Authorized Post-Closure Integration Supersession
 
-- **Mandatory Historical Truth**: WMCP-2 closed at `1ae87969743e1d9f2a71cc0d89402090c133f0d8`.
-- During WMCP-3B-R1, testing cross-channel concurrency exposed a latent mismatch in `apps/frontend/src/lib/war-room/integration/graph-projection.ts`: visual projection publication was using "latest request wins" instead of respecting canonical commit authorization.
-- An authorized post-closure correction updated `graph-projection.ts` (17 lines) to enforce monotonic committed sequence publication.
-- **Canonical Freeze Preserved**: Domain kernel (`domain/**`), state reducer (`state/**`), and action layer (`application/**`) remained 100% untouched.
+- WMCP-2 closed at `1ae87969743e1d9f2a71cc0d89402090c133f0d8` (`docs(challenge): correct WMCP-2 review evidence`).
+- During WMCP-3B-R1, an authorized post-closure correction was made to `apps/frontend/src/lib/war-room/integration/graph-projection.ts` to enforce monotonic committed sequence publication, preventing visual splits during cross-channel concurrency.
+- **Canonical Freeze Preserved**: Canonical domain (`domain/**`), state reducer (`state/**`), and application layer (`application/**`) remained 100% untouched throughout WMCP-3.
 
 ---
 
-## 24. Direct Browser API Static Scans
+## 19. Static Scans & Boundary Verification
 
-| Scan Target | Required Occurrence | Actual Count | Status |
+| Scan Target | Required Count | Actual Count | Status |
 | :--- | :--- | :--- | :--- |
 | `navigator.modelContext` | 0 | 0 | **PASS** |
-| Direct `document.modelContext` in React Host / Actions / Domain | 0 | 0 | **PASS** |
-| Production `modelContext.getTools(...)` invocation | 0 | 0 | **PASS** |
-| Production `modelContext.executeTool(...)` invocation | 0 | 0 | **PASS** |
-| Direct `modelContext.registerTool(...)` callsites | 1 (`browser-adapter.ts`) | 1 | **PASS** |
+| Production `modelContext.getTools(...)` | 0 | 0 | **PASS** |
+| Production `modelContext.executeTool(...)` | 0 | 0 | **PASS** |
+| Direct browser `registerTool(...)` | 1 (`browser-adapter.ts:187`) | 1 | **PASS** |
+| Direct `document.modelContext` in Host / Actions / Domain | 0 | 0 | **PASS** |
 | Generic backend tools (SQL, shell, eval, generic fetch) | 0 | 0 | **PASS** |
 | `as any` in `apps/frontend/src/lib/webmcp` | 0 | 0 | **PASS** |
 | `ToolRegistry` or `RegistrationManager` in production `src` | 0 | 0 | **PASS** |
 
 ---
 
-## 25. Package & Configuration Freeze
-
-- Zero new npm packages added for WebMCP.
-- Zero modifications to `next.config.js`, `tsconfig.json`, `eslint.config.mjs`, `playwright.config.ts`, `Dockerfile`, or Rust crates.
-
----
-
-## 26. Full Test Regression Suite (211/211 PASS)
+## 20. Execution Evidence & Quality Matrix
 
 | Test Suite | Spec File | Test Count | Result |
 | :--- | :--- | :--- | :--- |
@@ -436,19 +407,15 @@ The following capabilities are explicitly deferred to **WMCP-4** and are **NOT i
 | **Homepage Progressive Enhancement** | `e2e/homepage.spec.ts` | 8 | **8 / 8 PASS** |
 | **Total Automated Tests** | — | **211** | **211 / 211 PASS** |
 
----
-
-## 27. Quality Gates & Build Verification
-
-- **TypeScript Typecheck**: `npx tsc --noEmit -p apps/frontend/tsconfig.json` -> **0 errors** (Note: `e2e/**` is excluded from production tsconfig).
-- **ESLint Linting**: `npm run lint` -> **0 errors, 0 warnings**.
-- **Next.js Production Build**: `npm run build` -> **Exit 0**, 15/15 static pages generated successfully.
-- **npm audit**: `npm audit --json` -> **0 vulnerabilities**.
-- **Remote CI Boundary**: Local executor test, build, lint, and audit results represent execution evidence. Remote GitHub Actions workflow runs will be recorded upon remote trigger.
+- **TypeScript**: 0 errors (`npx tsc --noEmit -p apps/frontend/tsconfig.json`; `e2e/**` is excluded from tsconfig).
+- **ESLint**: 0 errors, 0 warnings (`npm run lint`).
+- **Next.js Build**: Exit 0, 15/15 static pages successfully generated in 5.2s (`npm run build`).
+- **npm audit**: 0 vulnerabilities (`npm audit --json`).
+- **Remote CI Boundary**: Local executor test, build, lint, and audit results represent execution evidence. No GitHub Actions workflow runs or commit status checks were attached to starting HEAD `55c83b69c0759d2b24fcafc794cea768410da59f`.
 
 ---
 
-## 28. Known Deferred Technical Debt (WMCP-14 Scope)
+## 21. Known Deferred Technical Debt (WMCP-14 Scope)
 
 The following pre-existing CI configuration items are tracked for future WMCP-14 hardening and remain intentionally untouched during WMCP-3:
 - ESLint `continue-on-error`
@@ -459,144 +426,91 @@ The following pre-existing CI configuration items are tracked for future WMCP-14
 
 ---
 
-## 29. Readiness for WMCP-4
+## 22. Readiness for WMCP-4
 
 With the completion and verification of the WebMCP Foundation:
 1. Low-level browser types and platform adapters faithfully model the pinned W3C WebMCP draft specification.
 2. Primitive tools (`search_packages`, `open_package_graph`) are securely bridged to shared `WarRoomActions`.
 3. Invocation-time revision capture, atomic context-bound commits, and stale context rejection are proven across independent Agent races and shared-transport Human/Agent browser concurrency.
 4. Progressive enhancement and SSR safety are verified.
-5. All 118 Acceptance Gates are satisfied.
+5. Invariant matrix, tool schemas, output shapes, and security boundaries are forensically exact.
+6. All 64 Acceptance Gates are satisfied.
 
-**Conclusion**: The codebase is architecturally solid and ready for **WMCP-4 (Adaptive Tool Surface & Registration Lifecycle)** to begin from the verified WMCP-3R closure HEAD.
+**Conclusion**: The WebMCP Foundation is complete, proven, and ready for **WMCP-4 (Adaptive Tool Surface & Registration Lifecycle)**.
 
 ---
 
-## 30. Acceptance Gates Matrix (3R-1 to 3R-118)
+## 23. Acceptance Gates Matrix (3R-R1-1 to 3R-R1-64)
 
 | Gate ID | Requirement Description | Status |
 | :--- | :--- | :--- |
-| **3R-1** | Starting branch exact (`feature/webmcp-challenge-2026`) | **PASS** |
-| **3R-2** | Starting HEAD exact `565c7a80a30eaf1fc5296921d0be32e8a5acebc3` | **PASS** |
-| **3R-3** | WMCP-3A closure SHA verified (`993fb4b10dbb1a060424494a1adad081020f782a`) | **PASS** |
-| **3R-4** | WMCP-3B closure SHA verified (`565c7a80a30eaf1fc5296921d0be32e8a5acebc3`) | **PASS** |
-| **3R-5** | WMCP-3 git lineage reviewed | **PASS** |
-| **3R-6** | No hidden merge/rewrite identified | **PASS** |
-| **3R-7** | Current upstream WebMCP main SHA recorded (`41d12f057167ccf5954dbcf49d99502cb6c84491`) | **PASS** |
-| **3R-8** | Current upstream contract reverified | **PASS** |
-| **3R-9** | WebMCP remains described as evolving CG draft | **PASS** |
-| **3R-10** | Browser low-level types reviewed | **PASS** |
-| **3R-11** | Application platform adapter reviewed | **PASS** |
-| **3R-12** | Raw DOM/ModelContext not leaked into application contract | **PASS** |
-| **3R-13** | `navigator.modelContext` production use = 0 | **PASS** |
-| **3R-14** | Direct browser modelContext usage isolated to platform boundary | **PASS** |
-| **3R-15** | Production `getTools` invocation = 0 | **PASS** |
-| **3R-16** | Production `executeTool` invocation = 0 | **PASS** |
-| **3R-17** | Browser-facing `registerTool` call isolated to platform adapter | **PASS** |
-| **3R-18** | SSR-safe feature detection confirmed | **PASS** |
-| **3R-19** | Progressive enhancement confirmed | **PASS** |
-| **3R-20** | Physical primitive tool count exactly 2 | **PASS** |
-| **3R-21** | `search_packages` present | **PASS** |
-| **3R-22** | `open_package_graph` present | **PASS** |
-| **3R-23** | No third production tool | **PASS** |
-| **3R-24** | No registration during `BOOTSTRAP` | **PASS** |
-| **3R-25** | Static physical registration accurately documented | **PASS** |
-| **3R-26** | Static physical registration NOT mislabeled as logical active surface | **PASS** |
-| **3R-27** | Desired logical surface explicitly deferred to WMCP-4 | **PASS** |
-| **3R-28** | `ToolRegistry` not implemented | **PASS** |
-| **3R-29** | Generations not implemented | **PASS** |
-| **3R-30** | `RETIRING` lifecycle not implemented | **PASS** |
-| **3R-31** | Execution drain not implemented | **PASS** |
-| **3R-32** | Toolchange observer not implemented | **PASS** |
-| **3R-33** | WMCP-INV-002 reviewed PASS | **PASS** |
-| **3R-34** | WMCP-INV-003 reviewed PASS | **PASS** |
-| **3R-35** | WMCP-INV-004 reviewed PASS | **PASS** |
-| **3R-36** | WMCP-INV-008 reviewed PASS | **PASS** |
-| **3R-37** | WMCP-INV-009 reviewed PASS | **PASS** |
-| **3R-38** | WMCP-INV-011 reviewed PASS | **PASS** |
-| **3R-39** | WMCP-INV-013 reviewed PASS | **PASS** |
-| **3R-40** | WMCP-INV-016 reviewed PASS | **PASS** |
-| **3R-41** | WMCP-INV-017 reviewed PASS | **PASS** |
-| **3R-42** | WMCP-INV-021 reviewed PASS | **PASS** |
-| **3R-43** | WMCP-INV-024 reviewed PASS | **PASS** |
-| **3R-44** | WMCP-INV-025 reviewed PASS | **PASS** |
-| **3R-45** | WMCP-INV-001 correctly deferred to WMCP-4 | **PASS** |
-| **3R-46** | WMCP-INV-014 correctly deferred to WMCP-4 | **PASS** |
-| **3R-47** | WMCP-INV-015 correctly deferred to WMCP-4 | **PASS** |
-| **3R-48** | WMCP-INV-019 correctly deferred to WMCP-4 | **PASS** |
-| **3R-49** | Primitive invocation-time revision capture confirmed | **PASS** |
-| **3R-50** | Primitive stale-context rejection confirmed | **PASS** |
-| **3R-51** | Unified `WarRoomActions` delegation confirmed | **PASS** |
-| **3R-52** | No direct Apollo business bypass in WebMCP bridge | **PASS** |
-| **3R-53** | No direct canonical state mutation in WebMCP bridge | **PASS** |
-| **3R-54** | Trusted security identity remains caller-inaccessible | **PASS** |
-| **3R-55** | Caller-controlled `contextRevision` absent | **PASS** |
-| **3R-56** | Runtime validation independent of schema confirmed | **PASS** |
-| **3R-57** | Product-specific input surface confirmed | **PASS** |
-| **3R-58** | `search_packages` `readOnlyHint: true` | **PASS** |
-| **3R-59** | `search_packages` `untrustedContentHint: true` | **PASS** |
-| **3R-60** | `open_package_graph` `readOnlyHint: false` | **PASS** |
-| **3R-61** | `open_package_graph` `untrustedContentHint: true` | **PASS** |
-| **3R-62** | Hard <= 1500 output budget reviewed | **PASS** |
-| **3R-63** | Whole-record search truncation reviewed | **PASS** |
-| **3R-64** | No fabricated impact/breakage claims | **PASS** |
-| **3R-65** | Structured error sanitization reviewed | **PASS** |
-| **3R-66** | Registration error normalization reviewed | **PASS** |
-| **3R-67** | Registration session idempotence reviewed | **PASS** |
-| **3R-68** | Partial registration rollback reviewed | **PASS** |
-| **3R-69** | Registration/execution signal separation reviewed | **PASS** |
-| **3R-70** | Same-key Agent A-first race evidence reviewed | **PASS** |
-| **3R-71** | Same-key Agent B-first race evidence reviewed | **PASS** |
-| **3R-72** | Human-Agent production Apollo concurrency reviewed | **PASS** |
-| **3R-73** | Single semantic commit browser evidence reviewed | **PASS** |
-| **3R-74** | Canonical/projection parity reviewed | **PASS** |
-| **3R-75** | Transport vs invocation identity documented | **PASS** |
-| **3R-76** | Non-serializable WebMCP objects absent from canonical state | **PASS** |
-| **3R-77** | Authorized post-WMCP-2 graph-projection correction documented | **PASS** |
-| **3R-78** | No false "WMCP-2 completely unchanged" claim | **PASS** |
-| **3R-79** | Canonical domain layer unchanged through WMCP-3 | **PASS** |
-| **3R-80** | Canonical state layer unchanged through WMCP-3 | **PASS** |
-| **3R-81** | Application action layer unchanged through WMCP-3 | **PASS** |
-| **3R-82** | Apollo production fidelity reviewed | **PASS** |
-| **3R-83** | Installed Apollo version recorded truthfully (`4.2.0`) | **PASS** |
-| **3R-84** | No `Object.prototype` Apollo mutation in final tests | **PASS** |
-| **3R-85** | No generic backend WebMCP primitive | **PASS** |
-| **3R-86** | WMCP-3 range diff fully classified | **PASS** |
-| **3R-87** | No unexplained production change | **PASS** |
-| **3R-88** | No new WebMCP dependency | **PASS** |
-| **3R-89** | `next.config.js` unchanged for 3R | **PASS** |
-| **3R-90** | CI/Docker/Rust unchanged for 3R | **PASS** |
-| **3R-91** | 3A platform suite 42/42 PASS | **PASS** |
-| **3R-92** | 3B registration suite 40/40 PASS | **PASS** |
-| **3R-93** | 3B Agent UI suite 7/7 PASS | **PASS** |
-| **3R-94** | 2A regression 28/28 PASS | **PASS** |
-| **3R-95** | 2B regression 51/51 PASS | **PASS** |
-| **3R-96** | 2C integration regression 30/30 PASS | **PASS** |
-| **3R-97** | 2C Human UI regression 5/5 PASS | **PASS** |
-| **3R-98** | Homepage 8/8 PASS | **PASS** |
-| **3R-99** | Logical test total 211/211 PASS | **PASS** |
-| **3R-100** | TypeScript PASS (0 errors) | **PASS** |
-| **3R-101** | E2E tsconfig exclusion documented truthfully | **PASS** |
-| **3R-102** | ESLint PASS (0 errors, 0 warnings) | **PASS** |
-| **3R-103** | Next build PASS (15/15 static pages) | **PASS** |
-| **3R-104** | npm audit 0 vulnerabilities | **PASS** |
-| **3R-105** | Remote CI evidence boundary recorded truthfully | **PASS** |
-| **3R-106** | Known WMCP-14 CI debt remains untouched | **PASS** |
-| **3R-107** | 3A historical corrections preserved | **PASS** |
-| **3R-108** | 3B historical corrections preserved | **PASS** |
-| **3R-109** | New 3R closure doc created | **PASS** |
-| **3R-110** | README marks 3A CLOSED | **PASS** |
-| **3R-111** | README marks 3B CLOSED at `565c7a80...` | **PASS** |
-| **3R-112** | README marks 3R pending independent verification | **PASS** |
-| **3R-113** | README does NOT mark WMCP-3 closed | **PASS** |
-| **3R-114** | Evidence index updated | **PASS** |
-| **3R-115** | Zero production diff in 3R | **PASS** |
-| **3R-116** | Zero test diff in 3R | **PASS** |
-| **3R-117** | Only two scope-valid docs staged | **PASS** |
-| **3R-118** | ASCII hyphen rule PASS (zero non-ASCII dashes) | **PASS** |
+| **3R-R1-1** | Starting HEAD exact `55c83b69c0759d2b24fcafc794cea768410da59f` | **PASS** |
+| **3R-R1-2** | Upstream WebMCP main rechecked | **PASS** |
+| **3R-R1-3** | Upstream SHA recorded exactly (`41d12f057167ccf5954dbcf49d99502cb6c84491`) | **PASS** |
+| **3R-R1-4** | Normative `Document.modelContext` documented non-optional | **PASS** |
+| **3R-R1-5** | Local TypeScript optionality documented separately | **PASS** |
+| **3R-R1-6** | Normative `registerTool` return documented `Promise<undefined>` | **PASS** |
+| **3R-R1-7** | Local `registerTool` representation documented `Promise<void>` | **PASS** |
+| **3R-R1-8** | `executeTool` first argument corrected to `RegisteredTool` | **PASS** |
+| **3R-R1-9** | `executeTool` `Promise<DOMString>` / local `Promise<string>` distinction correct | **PASS** |
+| **3R-R1-10** | `RegisteredTool` `window` documented | **PASS** |
+| **3R-R1-11** | `RegisteredTool` `origin` documented | **PASS** |
+| **3R-R1-12** | `RegisteredTool` `inputSchema` object semantics documented | **PASS** |
+| **3R-R1-13** | Required callback `AbortSignal` preserved | **PASS** |
+| **3R-R1-14** | Local WebMCP type identifiers match source exactly | **PASS** |
+| **3R-R1-15** | Application platform type identifiers match source exactly | **PASS** |
+| **3R-R1-16** | `WarRoomWebMcpBridge` documented as host/composition layer | **PASS** |
+| **3R-R1-17** | `primitive-tools` documented as execution callback bridge | **PASS** |
+| **3R-R1-18** | `WarRoomInvocationContext` not conflated with security identity | **PASS** |
+| **3R-R1-19** | `WarRoomSecurityContextPort` documented as trusted identity source | **PASS** |
+| **3R-R1-20** | `searchPackages` action signature corrected (`invocation, request`) | **PASS** |
+| **3R-R1-21** | `openPackageGraph` action signature corrected (`invocation, request`) | **PASS** |
+| **3R-R1-22** | `search_packages` `query` max 120 | **PASS** |
+| **3R-R1-23** | `search_packages` ecosystem exact `PY_PI` | **PASS** |
+| **3R-R1-24** | `search_packages` ecosystem exact `NU_GET` included | **PASS** |
+| **3R-R1-25** | `search_packages` `limit` max 8 | **PASS** |
+| **3R-R1-26** | `open_package_graph` `rootPackageId` max 256 | **PASS** |
+| **3R-R1-27** | `open_package_graph` `depth` max 4 | **PASS** |
+| **3R-R1-28** | Runtime defaults 5 and 2 documented | **PASS** |
+| **3R-R1-29** | No unsupported prototype-injection hardening claim | **PASS** |
+| **3R-R1-30** | Full open graph output shape correct | **PASS** |
+| **3R-R1-31** | Compact open graph output shape correct | **PASS** |
+| **3R-R1-32** | WMCP-2 closure commit message corrected (`docs(challenge): correct WMCP-2 review evidence`) | **PASS** |
+| **3R-R1-33** | 3A correction history no longer falsely assigns DOMString to initial commit | **PASS** |
+| **3R-R1-34** | WMCP-4 `IDLE` tool set exact (`search_packages`, `open_package_graph`) | **PASS** |
+| **3R-R1-35** | WMCP-4 `GRAPH_READY` tool set exact (`summarize_graph`, `calculate_blast_radius`, `trace_dependency_path`, `focus_graph_nodes`, `open_package_graph`) | **PASS** |
+| **3R-R1-36** | No invented `expand_node` tool | **PASS** |
+| **3R-R1-37** | No invented `inspect_package` logical target in `GRAPH_READY` | **PASS** |
+| **3R-R1-38** | No invented `close_graph` logical target in `GRAPH_READY` | **PASS** |
+| **3R-R1-39** | All 25 invariant IDs use exact authoritative titles | **PASS** |
+| **3R-R1-40** | INV-005 classification matches original contract (WMCP-7) | **PASS** |
+| **3R-R1-41** | INV-006 classification matches original contract (WMCP-9) | **PASS** |
+| **3R-R1-42** | INV-007 classification matches original contract (WMCP-10) | **PASS** |
+| **3R-R1-43** | INV-010 classification matches original contract (WMCP-7) | **PASS** |
+| **3R-R1-44** | INV-012 classification matches original contract (WMCP-9) | **PASS** |
+| **3R-R1-45** | INV-014 correctly describes generation independence | **PASS** |
+| **3R-R1-46** | INV-015 correctly describes retirement/drain | **PASS** |
+| **3R-R1-47** | INV-018 classification matches original contract (WMCP-11) | **PASS** |
+| **3R-R1-48** | INV-019 correctly describes deterministic tool availability | **PASS** |
+| **3R-R1-49** | INV-020 classification matches original contract (WMCP-12) | **PASS** |
+| **3R-R1-50** | INV-022 correct title and WMCP-4 full-enforcement note | **PASS** |
+| **3R-R1-51** | INV-023 correct title and WMCP-4 full-enforcement note | **PASS** |
+| **3R-R1-52** | WMCP-2 graph projection supersession preserved | **PASS** |
+| **3R-R1-53** | Apollo 4.2.0 truth preserved | **PASS** |
+| **3R-R1-54** | Production dedup fidelity preserved | **PASS** |
+| **3R-R1-55** | Physical vs logical tool distinction preserved | **PASS** |
+| **3R-R1-56** | `ToolRegistry` still not claimed implemented | **PASS** |
+| **3R-R1-57** | Generation lifecycle still not claimed implemented | **PASS** |
+| **3R-R1-58** | Remote CI evidence remains truthful | **PASS** |
+| **3R-R1-59** | Independent `55c83b` review recorded | **PASS** |
+| **3R-R1-60** | No production changes (0 lines diff) | **PASS** |
+| **3R-R1-61** | No test changes (0 lines diff) | **PASS** |
+| **3R-R1-62** | README unchanged | **PASS** |
+| **3R-R1-63** | Only closure document modified | **PASS** |
+| **3R-R1-64** | ASCII hyphen rule PASS (zero non-ASCII dashes) | **PASS** |
 
 ---
 
-## 31. Final Review Status
+## 24. Final Review Status
 
 **IMPLEMENTED - PENDING INDEPENDENT VERIFICATION**
