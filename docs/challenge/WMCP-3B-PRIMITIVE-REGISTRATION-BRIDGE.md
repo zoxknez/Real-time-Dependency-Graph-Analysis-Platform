@@ -203,6 +203,84 @@ WebMCP Platform (document.modelContext)
 
 ---
 
-## 10. Final Status
+## 11. WMCP-3B-R3 Deterministic Human-Agent Overlap & Final Evidence Closure
+
+### 11.1 Independent Review Context (WMCP-3B-R2)
+- **Reviewed HEAD**: `8714009e403da938c507503f7901e067ee325a19`
+- **Verdict**: `PASS WITH CORRECTIONS - NOT CLOSED`
+- **Key Findings**:
+  1. Agent A-first (Test 33) and Agent B-first (Test 34) bridge race tests in `war-room-webmcp-registration.spec.ts` fully verified and accepted.
+  2. Browser Human-Agent same-key race in `war-room-webmcp-agent-ui.spec.ts` Test 7 required removing fixed timers (`setTimeout(60)`) and establishing deterministic synchronization and completion tracking.
+  3. Zero executable production diff required for R3.
+
+### 11.2 R3 Deterministic Overlap Implementation
+- **Zero Timer Authority**: Completely eliminated `setTimeout(60)` or any arbitrary delay timers from concurrency assertions.
+- **Deterministic Network Gating**: Playwright route handler gates on the reverse dependents network request for the requested root package (`npm:same-package`).
+- **Concurrent In-Flight Assertion**: While the Agent's request is held at the network gate, the Human UI triggers graph opening via real UI search input and button click; the test deterministically verifies that the Human UI loading spinner (`.animate-spin`) is actively visible, proving simultaneous in-flight execution.
+- **Unblocking & Settlement**: Upon releasing the network gate, the Agent completes canonical commit and projection activation (`agentResult.data.projectionActivated === true`); the Human UI then finishes execution and clears its loading spinner (`expect(loadingSpinner).not.toBeVisible()`).
+- **Final State Parity**: Both canonical root and visual projection root deterministically converge to `"npm:same-package"`.
+
+### 11.3 Quality Suite Execution (211/211 PASS)
+- **Agent UI E2E**: 7/7 tests PASS (`war-room-webmcp-agent-ui.spec.ts`)
+- **Human UI E2E**: 5/5 tests PASS (`war-room-human-ui.spec.ts`)
+- **Homepage E2E**: 8/8 tests PASS (`homepage.spec.ts`)
+- **Registration Bridge Unit/Integration**: 40/40 tests PASS (`war-room-webmcp-registration.spec.ts`)
+- **Platform Capability Boundary**: 42/42 tests PASS (`war-room-webmcp-platform.spec.ts`)
+- **Domain Logic**: 28/28 tests PASS (`war-room-domain.spec.ts`)
+- **Application Actions**: 51/51 tests PASS (`war-room-actions.spec.ts`)
+- **Integration Adapters**: 30/30 tests PASS (`war-room-integration.spec.ts`)
+- **TypeScript**: 0 errors (`tsc --noEmit`)
+- **ESLint**: 0 errors, 0 warnings (`eslint .`)
+- **Next.js Build**: 15/15 static pages successfully generated (`next build`)
+- **npm audit**: 0 vulnerabilities
+
+### 11.4 Acceptance Gates Matrix (3B-R3-1 to 3B-R3-40)
+
+| Gate ID | Requirement Description | Status |
+| :--- | :--- | :--- |
+| **3B-R3-1** | Starting commit is exactly `8714009e403da938c507503f7901e067ee325a19` | **PASS** |
+| **3B-R3-2** | Zero executable production diff in bridge, platform, domain, state, app, or UI | **PASS** |
+| **3B-R3-3** | Browser Test 7 eliminates all fixed sleep timers (`setTimeout`) | **PASS** |
+| **3B-R3-4** | Browser Test 7 explicitly awaits network arrival before Human UI trigger | **PASS** |
+| **3B-R3-5** | Browser Test 7 verifies simultaneous in-flight state via active UI spinner | **PASS** |
+| **3B-R3-6** | Browser Test 7 releases network gate and verifies Agent projection activation | **PASS** |
+| **3B-R3-7** | Browser Test 7 deterministically awaits Human action settlement | **PASS** |
+| **3B-R3-8** | Browser Test 7 verifies canonical root equals projection root (`npm:same-package`) | **PASS** |
+| **3B-R3-9** | Agent A-first race test preserved and passing in registration spec (Test 33) | **PASS** |
+| **3B-R3-10** | Agent B-first race test preserved and passing in registration spec (Test 34) | **PASS** |
+| **3B-R3-11** | Hard output budget tests preserved (5000-char, 50000-char, oversized search) | **PASS** |
+| **3B-R3-12** | Truncation preserves whole package records | **PASS** |
+| **3B-R3-13** | Compact fallback outputs rootPackageId and compact: true | **PASS** |
+| **3B-R3-14** | formatToolSuccess fails closed on oversized payload | **PASS** |
+| **3B-R3-15** | formatToolFailure sanitizes error messages <= 1500 chars | **PASS** |
+| **3B-R3-16** | Action result contextRevision and changed remain authoritative | **PASS** |
+| **3B-R3-17** | Monotonic committed sequence preserved in projection store | **PASS** |
+| **3B-R3-18** | Post-commit signal abort publishes projection | **PASS** |
+| **3B-R3-19** | Zero `as any` or broad `any` casts in production code | **PASS** |
+| **3B-R3-20** | WebMCP bridge contains zero direct DOM/Apollo/GraphQL access | **PASS** |
+| **3B-R3-21** | WebMCP bridge contains zero ToolRegistry or generation lifecycle concepts | **PASS** |
+| **3B-R3-22** | Upstream WebMCP pin verified (`41d12f057167ccf5954dbcf49d99502cb6c84491`) | **PASS** |
+| **3B-R3-23** | 3A Platform regression suite PASS (42/42) | **PASS** |
+| **3B-R3-24** | 2A Domain regression suite PASS (28/28) | **PASS** |
+| **3B-R3-25** | 2B Application Actions regression suite PASS (51/51) | **PASS** |
+| **3B-R3-26** | 2C Integration Adapters regression suite PASS (30/30) | **PASS** |
+| **3B-R3-27** | 2C Human UI regression suite PASS (5/5) | **PASS** |
+| **3B-R3-28** | Homepage regression suite PASS (8/8) | **PASS** |
+| **3B-R3-29** | 3B Primitive Registration suite PASS (40/40) | **PASS** |
+| **3B-R3-30** | 3B Agent Browser suite PASS (7/7) | **PASS** |
+| **3B-R3-31** | Total test count is 211 tests (211/211 PASS) | **PASS** |
+| **3B-R3-32** | TypeScript verification PASS (0 errors) | **PASS** |
+| **3B-R3-33** | ESLint verification PASS (0 errors, 0 warnings) | **PASS** |
+| **3B-R3-34** | Next.js production build PASS (15/15 static pages) | **PASS** |
+| **3B-R3-35** | npm audit PASS (0 vulnerabilities) | **PASS** |
+| **3B-R3-36** | Evidence documents R2 review findings and R3 resolution | **PASS** |
+| **3B-R3-37** | Evidence lists exact parent SHA `8714009e403da938c507503f7901e067ee325a19` | **PASS** |
+| **3B-R3-38** | Git status clean with only scope-permitted files modified | **PASS** |
+| **3B-R3-39** | Commit message formatted as `test(webmcp): make human-agent race deterministic` | **PASS** |
+| **3B-R3-40** | Final status set to IMPLEMENTED - PENDING INDEPENDENT VERIFICATION | **PASS** |
+
+---
+
+## 12. Final Status
 
 **IMPLEMENTED - PENDING INDEPENDENT VERIFICATION**

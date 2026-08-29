@@ -498,16 +498,31 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B / WMCP-3B-R1)", () =>
   test("7. Real Human / Agent same-key race: concurrent requests for same package converge canonical state and visible projection", async ({
     page,
   }) => {
-    let unblockFirst: (() => void) | null = null;
-    const firstGate = new Promise<void>((r) => {
-      unblockFirst = r;
+    let resolveFirstArrival: (() => void) | null = null;
+    const firstArrival = new Promise<void>((r) => {
+      resolveFirstArrival = r;
     });
-    let unblockSecond: (() => void) | null = null;
+    let resolveSecondArrival: (() => void) | null = null;
+    const secondArrival = new Promise<void>((r) => {
+      resolveSecondArrival = r;
+    });
+
+    let unblockFirstGate: (() => void) | null = null;
+    const firstGate = new Promise<void>((r) => {
+      unblockFirstGate = r;
+    });
+    let unblockSecondGate: (() => void) | null = null;
     const secondGate = new Promise<void>((r) => {
-      unblockSecond = r;
+      unblockSecondGate = r;
+    });
+
+    let resolveHumanWorkflowCompleted: (() => void) | null = null;
+    const humanWorkflowCompleted = new Promise<void>((r) => {
+      resolveHumanWorkflowCompleted = r;
     });
 
     let networkArrivalCount = 0;
+    let reverseDependentsCount = 0;
 
     await page.route((url) => url.href.includes("graphql"), async (route) => {
       const req = route.request();
@@ -515,18 +530,13 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B / WMCP-3B-R1)", () =>
       const op = postData?.operationName;
       const vars = postData?.variables || {};
 
-      if (op === "GetPackage" && (vars.id === "npm:same-package" || !vars.id)) {
-        networkArrivalCount++;
-        const currentArrival = networkArrivalCount;
+      const isGetPackage =
+        (op === "GetPackage" || postData?.query?.includes("GetPackage")) &&
+        !postData?.query?.includes("GetReverseDependents");
+      const isGetReverseDependents =
+        op === "GetReverseDependents" || postData?.query?.includes("GetReverseDependents");
 
-        if (currentArrival === 1) {
-          await firstGate;
-        } else if (currentArrival === 2) {
-          await secondGate;
-        }
-      }
-
-      if (op === "GetPackage") {
+      if (isGetPackage) {
         const pkgId = vars.id || "npm:same-package";
         return route.fulfill({
           status: 200,
@@ -545,7 +555,13 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B / WMCP-3B-R1)", () =>
         });
       }
 
-      if (op === "GetReverseDependents") {
+      if (isGetReverseDependents) {
+        networkArrivalCount++;
+        if (resolveFirstArrival) {
+          (resolveFirstArrival as () => void)();
+        }
+        await firstGate;
+
         const pkgId = vars.packageId || "npm:same-package";
         return route.fulfill({
           status: 200,
@@ -599,35 +615,39 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B / WMCP-3B-R1)", () =>
       { timeout: 10000 }
     );
 
-    // 1. Agent starts opening npm:same-package (first arrival)
-    const agentPromise = page.evaluate(async () => {
+    // 1. Agent starts opening npm:same-package (reaches network barrier)
+    await page.evaluate(() => {
       const tools = (window as any).__registeredWebMcpTools;
       const openTool = tools.find((t: any) => t.name === "open_package_graph");
       const controller = new AbortController();
-      return await openTool.execute(
+      (window as any).__agentExecPromise = openTool.execute(
         { rootPackageId: "npm:same-package", depth: 2 },
         { signal: controller.signal }
       );
     });
 
-    // Wait until Agent request has entered network gate
-    await new Promise((r) => setTimeout(r, 60));
+    // Explicitly await Agent request arrival at the network barrier
+    await firstArrival;
+    expect(networkArrivalCount).toBe(1);
 
-    // 2. Human triggers opening the EXACT SAME package via real UI input
+    // 2. Human triggers opening the EXACT SAME package via real UI input while Agent is blocked
     const searchInput = page.getByTestId("graph-package-input");
     await searchInput.fill("npm:same-package");
     await page.getByTestId("render-graph-button").click();
 
-    // Wait until both requests have reached network barrier
-    await new Promise((r) => setTimeout(r, 60));
+    // Deterministically assert Human UI is actively in-flight simultaneously with Agent
+    const loadingSpinner = page.getByTestId("render-graph-button").locator(".animate-spin");
+    await expect(loadingSpinner).toBeVisible({ timeout: 5000 });
 
-    // 3. Release first caller (Agent) -> Agent wins canonical commit & projection
-    if (unblockFirst) {
-      (unblockFirst as () => void)();
+    // 3. Release network barrier -> Agent completes canonical commit & projection
+    if (unblockFirstGate) {
+      (unblockFirstGate as () => void)();
     }
 
-    const agentResult: any = await agentPromise;
+    // 4. Await Agent result and assert projection activated
+    const agentResult: any = await page.evaluate(() => (window as any).__agentExecPromise);
     expect(agentResult.ok).toBe(true);
+    expect(agentResult.data.projectionActivated).toBe(true);
 
     const container = page.locator("[data-war-room-phase]");
     await expect(container).toHaveAttribute("data-war-room-phase", "GRAPH_READY", {
@@ -644,12 +664,10 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B / WMCP-3B-R1)", () =>
       { timeout: 10000 }
     );
 
-    // 4. Release second caller (Human) -> finishes gracefully
-    if (unblockSecond) {
-      (unblockSecond as () => void)();
-    }
+    // 5. Deterministically await Human workflow completion (spinner disappears upon action settlement)
+    await expect(loadingSpinner).not.toBeVisible({ timeout: 10000 });
 
-    // Final state remains converged and valid
+    // 6. Final State Parity Assertions (asserted only after both callers have fully settled)
     await expect(container).toHaveAttribute(
       "data-war-room-root-package",
       "npm:same-package",
@@ -660,5 +678,10 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B / WMCP-3B-R1)", () =>
       "npm:same-package",
       { timeout: 10000 }
     );
+    const finalCanonicalRoot = await container.getAttribute("data-war-room-root-package");
+    const finalProjectionRoot = await container.getAttribute("data-war-room-projection-root");
+    expect(finalCanonicalRoot).toBe("npm:same-package");
+    expect(finalProjectionRoot).toBe("npm:same-package");
+    expect(finalCanonicalRoot).toBe(finalProjectionRoot);
   });
 });
