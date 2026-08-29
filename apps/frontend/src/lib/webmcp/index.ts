@@ -4,3 +4,4 @@
 
 export * from "./platform";
 export * from "./bridge";
+export * from "./lifecycle";
