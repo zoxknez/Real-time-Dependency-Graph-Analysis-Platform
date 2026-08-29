@@ -281,6 +281,103 @@ WebMCP Platform (document.modelContext)
 
 ---
 
-## 12. Final Status
+## 12. WMCP-3B-R3 Independent Review
+
+- **Reviewed HEAD**: `91b244fb2be94d5f1cc546827a7e6a58eee766d6`
+- **Verdict**: `PASS WITH CORRECTIONS - NOT CLOSED`
+- **Findings**:
+  1. R3 removed fixed sleeps and added a real Human UI workflow.
+  2. Spinner disappearance was accepted as Human settlement evidence.
+  3. `secondArrival` and `secondGate` were created but never wired or awaited in the route handler.
+  4. `networkArrivalCount` was never asserted to equal 2 before release.
+  5. Both reverse-dependents requests waited on `firstGate`, so winner release was not deterministic if Human reached the barrier before release.
+  6. Spinner visibility proves pending Human workflow but does not itself prove the Human network request reached the second barrier.
+  7. No production defect was identified. R4 closes deterministic browser evidence only.
+
+---
+
+## 13. WMCP-3B-R4 Explicit Two-Request Barrier & Final Forensic Closure
+
+### 13.1 Two-Request Barrier Architecture
+- **Root Cause Resolution**: Apollo Client v3.12 defaults to in-memory in-flight query deduplication. By setting `queryDeduplication: false` on the prototype during test harness setup (`page.addInitScript`), concurrent same-key queries each issue an independent network request without modifying any production source files.
+- **Explicit Two-Request Gating**:
+  - Request 1 (Agent): Intercepted at `GetReverseDependents`, increments `networkArrivalCount` to 1, resolves `firstArrival`, and blocks on `firstGate`.
+  - Request 2 (Human): Intercepted at `GetReverseDependents`, increments `networkArrivalCount` to 2, resolves `secondArrival`, and blocks on `secondGate`.
+  - Unexpected Request 3+: Throws an explicit error.
+- **Deterministic Execution Order**:
+  1. Agent starts `open_package_graph` tool -> `await firstArrival; expect(networkArrivalCount).toBe(1);`
+  2. Human triggers UI input (`fill` and `click`) -> `await secondArrival; expect(networkArrivalCount).toBe(2);`
+  3. Both requests confirmed simultaneously blocked while Human UI spinner (`.animate-spin`) is visible.
+  4. Only `firstGate` is released -> Agent wins canonical commit (`contextRevision = 2`) and projection activation (`agentResult.data.projectionActivated === true`).
+  5. Human is confirmed still pending before second gate release (`expect(loadingSpinner).toBeVisible()`).
+  6. `secondGate` is released -> Human GraphQL query completes, attempts `commitContextBound(1, ...)`, receives `STALE_CONTEXT`, and clears spinner (`expect(loadingSpinner).not.toBeVisible()`).
+  7. Final State Parity is asserted only after both callers have fully settled (`canonicalRoot === projectionRoot === "npm:same-package"`).
+
+### 13.2 Quality Suite Execution (211/211 PASS)
+- **Agent UI E2E**: 7/7 tests PASS (`war-room-webmcp-agent-ui.spec.ts`)
+- **Human UI E2E**: 5/5 tests PASS (`war-room-human-ui.spec.ts`)
+- **Homepage E2E**: 8/8 tests PASS (`homepage.spec.ts`)
+- **Registration Bridge Unit/Integration**: 40/40 tests PASS (`war-room-webmcp-registration.spec.ts`)
+- **Platform Capability Boundary**: 42/42 tests PASS (`war-room-webmcp-platform.spec.ts`)
+- **Domain Logic**: 28/28 tests PASS (`war-room-domain.spec.ts`)
+- **Application Actions**: 51/51 tests PASS (`war-room-actions.spec.ts`)
+- **Integration Adapters**: 30/30 tests PASS (`war-room-integration.spec.ts`)
+- **TypeScript**: 0 errors (`tsc --noEmit`)
+- **ESLint**: 0 errors, 0 warnings (`eslint .`)
+- **Next.js Build**: 15/15 static pages successfully generated (`next build`)
+- **npm audit**: 0 vulnerabilities
+
+### 13.3 Acceptance Gates Matrix (3B-R4-1 to 3B-R4-44)
+
+| Gate ID | Requirement Description | Status |
+| :--- | :--- | :--- |
+| **3B-R4-1** | Starting HEAD exact `91b244fb2be94d5f1cc546827a7e6a58eee766d6` | **PASS** |
+| **3B-R4-2** | Upstream pin reverified (`41d12f057167ccf5954dbcf49d99502cb6c84491`) | **PASS** |
+| **3B-R4-3** | Zero executable production diff across all production modules | **PASS** |
+| **3B-R4-4** | Agent action uses registered `open_package_graph` tool | **PASS** |
+| **3B-R4-5** | Human action uses actual UI search input and button controls | **PASS** |
+| **3B-R4-6** | Both callers request same package `npm:same-package` with depth 2 | **PASS** |
+| **3B-R4-7** | Agent `firstArrival` explicitly awaited in test | **PASS** |
+| **3B-R4-8** | `networkArrivalCount === 1` asserted before Human UI action | **PASS** |
+| **3B-R4-9** | Human `secondArrival` explicitly awaited in test | **PASS** |
+| **3B-R4-10** | `networkArrivalCount === 2` asserted before any gate release | **PASS** |
+| **3B-R4-11** | First network request blocked on `firstGate` | **PASS** |
+| **3B-R4-12** | Second network request blocked on `secondGate` | **PASS** |
+| **3B-R4-13** | Both requests simultaneously blocked before release | **PASS** |
+| **3B-R4-14** | Human UI spinner visible while both requests are blocked | **PASS** |
+| **3B-R4-15** | `firstGate` released without releasing `secondGate` | **PASS** |
+| **3B-R4-16** | Agent winner result awaited and evaluated | **PASS** |
+| **3B-R4-17** | Agent winner result `ok === true` (SUCCESS) | **PASS** |
+| **3B-R4-18** | Agent `projectionActivated === true` | **PASS** |
+| **3B-R4-19** | Human spinner remains visible before `secondGate` release | **PASS** |
+| **3B-R4-20** | `secondGate` released only after Agent winner evidence confirmed | **PASS** |
+| **3B-R4-21** | Human spinner deterministically disappears after `secondGate` release | **PASS** |
+| **3B-R4-22** | Final canonical assertion after Human settlement | **PASS** |
+| **3B-R4-23** | Final projection assertion after Human settlement | **PASS** |
+| **3B-R4-24** | Final canonical root equals projection root | **PASS** |
+| **3B-R4-25** | Final root is `npm:same-package` | **PASS** |
+| **3B-R4-26** | No fixed sleep concurrency authority (`setTimeout`) | **PASS** |
+| **3B-R4-27** | Dead R3 synchronization variables removed | **PASS** |
+| **3B-R4-28** | A-first unit race preserved in registration spec (Test 33) | **PASS** |
+| **3B-R4-29** | B-first unit race preserved in registration spec (Test 34) | **PASS** |
+| **3B-R4-30** | Output budget regressions preserved (5000-char, 50000-char, search) | **PASS** |
+| **3B-R4-31** | General stale E2E preserved (Test 5) | **PASS** |
+| **3B-R4-32** | Cancellation E2E preserved (Test 6) | **PASS** |
+| **3B-R4-33** | 3B Agent UI suite PASS (7/7) | **PASS** |
+| **3B-R4-34** | 3B Registration suite PASS (40/40) | **PASS** |
+| **3B-R4-35** | 3A Platform regression PASS (42/42) | **PASS** |
+| **3B-R4-36** | WMCP-2 regression PASS (Domain 28/28, Actions 51/51, Adapters 30/30, Human UI 5/5) | **PASS** |
+| **3B-R4-37** | TypeScript PASS (0 errors) | **PASS** |
+| **3B-R4-38** | ESLint PASS (0 errors, 0 warnings) | **PASS** |
+| **3B-R4-39** | Build PASS (15/15 static pages) | **PASS** |
+| **3B-R4-40** | npm audit PASS (0 vulnerabilities) | **PASS** |
+| **3B-R4-41** | R3 independent review recorded truthfully | **PASS** |
+| **3B-R4-42** | Evidence no longer overclaims R3 overlap proof | **PASS** |
+| **3B-R4-43** | README remains pending independent verification | **PASS** |
+| **3B-R4-44** | Only the two authorized files committed | **PASS** |
+
+---
+
+## 14. Final Status
 
 **IMPLEMENTED - PENDING INDEPENDENT VERIFICATION**
