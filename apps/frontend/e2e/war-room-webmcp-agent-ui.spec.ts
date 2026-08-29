@@ -683,4 +683,52 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B / WMCP-3B-R1)", () =>
     // 8. Assert production deduplication evidence: Apollo deduplicated simultaneous in-flight queries
     expect(reverseDependentsArrivalCount).toBe(1);
   });
+
+  test("8. Live Browser Model Context: Agent opens graph and physical registration surface dynamically updates to GRAPH_READY", async ({
+    page,
+  }) => {
+    await page.goto("/graph");
+
+    await page.waitForFunction(
+      () => {
+        const tools = (window as any).__registeredWebMcpTools;
+        return Array.isArray(tools) && tools.length === 2;
+      },
+      undefined,
+      { timeout: 10000 }
+    );
+
+    // Initial IDLE surface
+    const initialTools: any = await page.evaluate(() => (window as any).__registeredWebMcpTools);
+    expect(initialTools.map((t: any) => t.name).sort()).toEqual(["open_package_graph", "search_packages"]);
+
+    // Agent executes open_package_graph
+    const openRes: any = await page.evaluate(async () => {
+      const tools = (window as any).__registeredWebMcpTools;
+      const openTool = tools.find((t: any) => t.name === "open_package_graph");
+      const controller = new AbortController();
+      return await openTool.execute({ rootPackageId: "npm:react", depth: 2 }, { signal: controller.signal });
+    });
+
+    expect(openRes.ok).toBe(true);
+
+    // Wait for live registration surface to update
+    await page.waitForFunction(
+      () => {
+        const tools = (window as any).__registeredWebMcpTools;
+        return (
+          Array.isArray(tools) &&
+          tools.length === 3 &&
+          tools.some((t: any) => t.name === "summarize_graph")
+        );
+      },
+      undefined,
+      { timeout: 10000 }
+    );
+
+    const updatedTools: any = await page.evaluate(() => (window as any).__registeredWebMcpTools);
+    const updatedNames = updatedTools.map((t: any) => t.name).sort();
+    expect(updatedNames).toEqual(["open_package_graph", "summarize_graph", "trace_dependency_path"]);
+    expect(updatedNames).not.toContain("search_packages");
+  });
 });

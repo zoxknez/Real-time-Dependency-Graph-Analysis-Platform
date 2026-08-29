@@ -1,19 +1,19 @@
 "use client";
 
 /**
- * War Room WebMCP Bridge Host Component (WMCP-3B)
+ * War Room WebMCP Bridge Host Component (WMCP-4D)
  *
- * Client-only headless host that initiates primitive WebMCP tool registration
- * once the War Room exits BOOTSTRAP phase. Does not access browser model context
- * directly and uses the shared WarRoomContext runtime.
+ * Client-only headless host that mounts the live adaptive WebMCP registration session
+ * bound to the shared WarRoomContext runtime and browser modelContext.
+ * Follows INV-WMCP4D-003, INV-WMCP4D-012, INV-WMCP4D-013, INV-WMCP4D-014, and INV-WMCP4D-015.
  */
 
 import { useEffect, useRef } from "react";
 import { useWarRoomContext } from "./war-room-provider";
 import {
   createBrowserWebMcpPlatformAdapter,
-  createPrimitiveTools,
-  createPrimitiveWebMcpRegistrationSession,
+  createLiveAdaptiveRegistrationSession,
+  LiveAdaptiveRegistrationSession,
 } from "../../lib/webmcp";
 
 export function WarRoomWebMcpBridge(): null {
@@ -21,48 +21,18 @@ export function WarRoomWebMcpBridge(): null {
   const adapterRef = useRef(createBrowserWebMcpPlatformAdapter());
 
   useEffect(() => {
-    let session: ReturnType<typeof createPrimitiveWebMcpRegistrationSession> | null = null;
-    let unsub: (() => void) | null = null;
-    let started = false;
+    let session: LiveAdaptiveRegistrationSession | null = createLiveAdaptiveRegistrationSession({
+      statePort,
+      actions,
+      projectionStore,
+      platformAdapter: adapterRef.current,
+    });
 
-    function tryStartRegistration() {
-      if (started) return;
-      const currentPhase = statePort.getState().phase;
-      if (currentPhase === "BOOTSTRAP") return;
-
-      started = true;
-      if (unsub) {
-        unsub();
-        unsub = null;
-      }
-
-      const tools = createPrimitiveTools({
-        statePort,
-        actions,
-        projectionStore,
-      });
-
-      session = createPrimitiveWebMcpRegistrationSession(adapterRef.current, tools);
-      session.start().catch(() => {
-        // Non-fatal: registration failure does not crash the UI
-      });
-    }
-
-    if (statePort.getState().phase !== "BOOTSTRAP") {
-      tryStartRegistration();
-    } else {
-      unsub = statePort.subscribe((state) => {
-        if (state.phase !== "BOOTSTRAP") {
-          tryStartRegistration();
-        }
-      });
-    }
+    session.start().catch(() => {
+      // Non-fatal: Progressive enhancement guarantees registration failure does not crash the UI
+    });
 
     return () => {
-      if (unsub) {
-        unsub();
-        unsub = null;
-      }
       if (session) {
         session.dispose();
         session = null;
