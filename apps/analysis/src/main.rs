@@ -30,6 +30,7 @@ mod health;
 #[cfg(feature = "onnx")]
 mod onnx_model;
 mod proto_gen;
+pub mod public_api;
 
 use anyhow::{Context, Result};
 use config::{Config, ParserConfig};
