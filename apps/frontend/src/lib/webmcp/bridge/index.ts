@@ -1,5 +1,5 @@
 /**
- * WebMCP Tool Execution Bridge Module (WMCP-3B)
+ * WebMCP Tool Execution Bridge Module (WMCP-3B / WMCP-4C)
  */
 
 export * from "./types";
@@ -10,3 +10,4 @@ export * from "./primitive-session";
 export * from "./adaptive-catalog";
 export * from "./adaptive-validation";
 export * from "./adaptive-tools";
+export * from "./execution-guard";

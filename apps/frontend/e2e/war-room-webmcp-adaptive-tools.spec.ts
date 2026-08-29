@@ -368,6 +368,13 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
 
   test("R2-T16. Executable Tool Factory: trace_dependency_path action execution", async () => {
     const harness = setupTestHarness();
+
+    // Open graph first to transition to GRAPH_READY
+    await harness.actions.openPackageGraph(
+      { channel: "AGENT", capturedContextRevision: harness.statePort.getState().contextRevision },
+      { rootPackageId: "npm:root" }
+    );
+
     const tool = createAdaptiveToolDefinition("trace_dependency_path", harness);
 
     const res = await tool.execute({
