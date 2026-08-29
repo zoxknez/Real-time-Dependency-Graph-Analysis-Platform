@@ -1,7 +1,7 @@
 /**
- * WebMCP Adaptive Tool Input Validation (WMCP-4B)
+ * WebMCP Adaptive Tool Input Validation (WMCP-4B / WMCP-4B-R2)
  *
- * Strict input validators for all adaptive tools.
+ * Strict input validators for all adaptive tools with FROZEN schemas.
  * Enforces bounded inputs, explicit additionalProperties rejection,
  * and exclusion of security/credential payloads.
  * Follows WMCP-INV-004, WMCP-INV-017, WMCP-INV-021.
@@ -97,41 +97,6 @@ export function validateTraceDependencyPathInput(
       sourcePackageId: obj.sourcePackageId.trim(),
       targetPackageId: obj.targetPackageId.trim(),
       maxDepth,
-    },
-  };
-}
-
-export function validateFocusGraphNodesInput(
-  input: unknown
-): AdaptiveValidationResult<{ nodeIds: readonly string[] }> {
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return { ok: false, error: "focus_graph_nodes input must be a JSON object" };
-  }
-  const obj = input as Record<string, unknown>;
-  const secError = rejectForbiddenKeys(obj);
-  if (secError) return { ok: false, error: secError };
-
-  const allowedKeys = new Set(["nodeIds"]);
-  for (const key of Object.keys(obj)) {
-    if (!allowedKeys.has(key)) {
-      return { ok: false, error: `Unexpected property '${key}' in focus_graph_nodes input` };
-    }
-  }
-
-  if (!Array.isArray(obj.nodeIds) || obj.nodeIds.length === 0 || obj.nodeIds.length > 50) {
-    return { ok: false, error: "nodeIds must be an array of 1 to 50 package node IDs" };
-  }
-
-  for (const id of obj.nodeIds) {
-    if (typeof id !== "string" || id.trim().length === 0 || id.length > 256) {
-      return { ok: false, error: "Every nodeId must be a non-empty string <= 256 characters" };
-    }
-  }
-
-  return {
-    ok: true,
-    value: {
-      nodeIds: obj.nodeIds.map((id) => (id as string).trim()),
     },
   };
 }

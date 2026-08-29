@@ -1,38 +1,32 @@
 /**
- * WebMCP Adaptive Tool Catalog & Schema Contract (WMCP-4B)
+ * WebMCP Adaptive Tool Catalog & Authority Binding Matrix (WMCP-4B / WMCP-4B-R2)
  *
- * Single authoritative static catalog for the entire canonical WebMCP tool vocabulary.
- * Defines strict JSON schemas, annotations, authority bindings, and execution readiness.
- * Follows WMCP-INV-001, WMCP-INV-004, WMCP-INV-016, WMCP-INV-017, WMCP-INV-019.
+ * Defines the static catalog for all 16 canonical WebMCP actions, their strict JSON schemas,
+ * annotations, authority bindings, and explicit schema readiness states.
+ * Follows WMCP-INV-001, WMCP-INV-004, WMCP-INV-017, WMCP-INV-021, and INV-WMCP4B-SCHEMA-001.
  */
 
 import { WebMcpActionName } from "../lifecycle/types";
 import {
-  OPEN_PACKAGE_GRAPH_SCHEMA,
   SEARCH_PACKAGES_SCHEMA,
+  OPEN_PACKAGE_GRAPH_SCHEMA,
 } from "./primitive-tools";
 
-/**
- * Authority classifications determining which subsystem owns actual behavior.
- */
 export type WebMcpToolAuthorityClassification =
   | "EXISTING_ACTION"
   | "EXISTING_READ_MODEL"
   | "EXISTING_UI_PROJECTION"
   | "FUTURE_DETERMINISTIC_CAPABILITY";
 
-/**
- * Binding execution status for the current repository revision.
- */
 export type WebMcpToolBindingStatus = "EXECUTABLE" | "DEFERRED";
 
-/**
- * Single catalog record defining a canonical WebMCP tool.
- */
-export interface WebMcpToolCatalogEntry {
+export type WebMcpSchemaStatus = "FROZEN" | "PENDING_DOMAIN_CONTRACT";
+
+export interface WebMcpFrozenToolCatalogEntry {
   readonly name: WebMcpActionName;
   readonly title: string;
   readonly description: string;
+  readonly schemaStatus: "FROZEN";
   readonly inputSchema: Record<string, unknown>;
   readonly annotations: {
     readonly readOnlyHint: boolean;
@@ -44,9 +38,25 @@ export interface WebMcpToolCatalogEntry {
   readonly futureDependency?: string;
 }
 
-/**
- * Strict JSON Input Schemas for Adaptive Tools
- */
+export interface WebMcpPendingSchemaToolCatalogEntry {
+  readonly name: WebMcpActionName;
+  readonly title: string;
+  readonly description: string;
+  readonly schemaStatus: "PENDING_DOMAIN_CONTRACT";
+  readonly inputSchema?: never;
+  readonly annotations: {
+    readonly readOnlyHint: boolean;
+    readonly untrustedContentHint: boolean;
+  };
+  readonly authority: string;
+  readonly classification: WebMcpToolAuthorityClassification;
+  readonly bindingStatus: "DEFERRED";
+  readonly futureDependency: string;
+}
+
+export type WebMcpToolCatalogEntry =
+  | WebMcpFrozenToolCatalogEntry
+  | WebMcpPendingSchemaToolCatalogEntry;
 
 export const SUMMARIZE_GRAPH_SCHEMA = {
   type: "object",
@@ -61,13 +71,13 @@ export const CALCULATE_BLAST_RADIUS_SCHEMA = {
       type: "string",
       minLength: 1,
       maxLength: 256,
-      description: "Optional package ID to calculate blast radius for. Defaults to root package.",
+      description: "Optional target package ID. Defaults to currently selected package.",
     },
     targetVersion: {
       type: "string",
       minLength: 1,
       maxLength: 128,
-      description: "Optional target version constraint to simulate upgrade impact.",
+      description: "Proposed version string to evaluate blast radius against.",
     },
   },
   additionalProperties: false,
@@ -80,41 +90,22 @@ export const TRACE_DEPENDENCY_PATH_SCHEMA = {
       type: "string",
       minLength: 1,
       maxLength: 256,
-      description: "Source package identifier in ecosystem:name format.",
+      description: "Source package identifier in the active graph.",
     },
     targetPackageId: {
       type: "string",
       minLength: 1,
       maxLength: 256,
-      description: "Target package identifier in ecosystem:name format.",
+      description: "Target package identifier to trace dependency path towards.",
     },
     maxDepth: {
       type: "integer",
       minimum: 1,
       maximum: 6,
-      description: "Maximum search depth for dependency traversal (default: 4).",
+      description: "Maximum hops to traverse when tracing paths.",
     },
   },
   required: ["sourcePackageId", "targetPackageId"],
-  additionalProperties: false,
-} as const;
-
-export const FOCUS_GRAPH_NODES_SCHEMA = {
-  type: "object",
-  properties: {
-    nodeIds: {
-      type: "array",
-      items: {
-        type: "string",
-        minLength: 1,
-        maxLength: 256,
-      },
-      minItems: 1,
-      maxItems: 50,
-      description: "Array of package node IDs to highlight/focus in the visual graph.",
-    },
-  },
-  required: ["nodeIds"],
   additionalProperties: false,
 } as const;
 
@@ -147,37 +138,6 @@ export const SIMULATE_API_CHANGES_SCHEMA = {
 export const INSPECT_SCENARIO_SCHEMA = {
   type: "object",
   properties: {},
-  additionalProperties: false,
-} as const;
-
-export const SET_SCENARIO_PRIORITY_SCHEMA = {
-  type: "object",
-  properties: {
-    priority: {
-      type: "string",
-      enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
-      description: "Business priority level for current simulation scenario.",
-    },
-  },
-  required: ["priority"],
-  additionalProperties: false,
-} as const;
-
-export const SET_SCENARIO_EXCLUSION_SCHEMA = {
-  type: "object",
-  properties: {
-    packageId: {
-      type: "string",
-      minLength: 1,
-      maxLength: 256,
-      description: "Package ID to exclude or include in current scenario.",
-    },
-    excluded: {
-      type: "boolean",
-      description: "True to exclude package from upgrade scenario; false to include.",
-    },
-  },
-  required: ["packageId", "excluded"],
   additionalProperties: false,
 } as const;
 
@@ -218,14 +178,31 @@ export const FOCUS_CRITICAL_PATH_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-/**
- * Authoritative Static WebMCP Tool Catalog
- */
-export const WEB_MCP_TOOL_CATALOG: Readonly<Record<WebMcpActionName, WebMcpToolCatalogEntry>> = {
+export const ALL_CANONICAL_ACTION_NAMES: readonly WebMcpActionName[] = [
+  "search_packages",
+  "open_package_graph",
+  "summarize_graph",
+  "calculate_blast_radius",
+  "trace_dependency_path",
+  "focus_graph_nodes",
+  "inspect_selected_package",
+  "simulate_api_changes",
+  "inspect_scenario",
+  "set_scenario_priority",
+  "set_scenario_exclusion",
+  "recalculate_scenario",
+  "generate_migration_plan",
+  "inspect_critical_paths",
+  "inspect_migration_plan",
+  "focus_critical_path",
+] as const;
+
+export const WEB_MCP_TOOL_CATALOG: Record<WebMcpActionName, WebMcpToolCatalogEntry> = {
   search_packages: {
     name: "search_packages",
     title: "Search Packages",
-    description: "Searches the package catalog by query string with optional ecosystem filtering and bounded limit.",
+    description: "Searches the package catalog by query string and ecosystem filter.",
+    schemaStatus: "FROZEN",
     inputSchema: SEARCH_PACKAGES_SCHEMA,
     annotations: {
       readOnlyHint: true,
@@ -239,6 +216,7 @@ export const WEB_MCP_TOOL_CATALOG: Readonly<Record<WebMcpActionName, WebMcpToolC
     name: "open_package_graph",
     title: "Open Package Graph",
     description: "Opens and computes the dependency graph for a specified root package and exploration depth.",
+    schemaStatus: "FROZEN",
     inputSchema: OPEN_PACKAGE_GRAPH_SCHEMA,
     annotations: {
       readOnlyHint: false,
@@ -251,13 +229,14 @@ export const WEB_MCP_TOOL_CATALOG: Readonly<Record<WebMcpActionName, WebMcpToolC
   summarize_graph: {
     name: "summarize_graph",
     title: "Summarize Graph",
-    description: "Returns summary metrics (node count, edge count, depth, root package) for the active dependency graph.",
+    description: "Returns summary metrics (node count, root package, graph ID) for the active dependency graph.",
+    schemaStatus: "FROZEN",
     inputSchema: SUMMARIZE_GRAPH_SCHEMA,
     annotations: {
       readOnlyHint: true,
       untrustedContentHint: true,
     },
-    authority: "WarRoomState.activeGraph",
+    authority: "WarRoomState.graph",
     classification: "EXISTING_READ_MODEL",
     bindingStatus: "EXECUTABLE",
   },
@@ -265,6 +244,7 @@ export const WEB_MCP_TOOL_CATALOG: Readonly<Record<WebMcpActionName, WebMcpToolC
     name: "calculate_blast_radius",
     title: "Calculate Blast Radius",
     description: "Calculates the version-aware transitive blast radius for a dependency change.",
+    schemaStatus: "FROZEN",
     inputSchema: CALCULATE_BLAST_RADIUS_SCHEMA,
     annotations: {
       readOnlyHint: true,
@@ -278,7 +258,8 @@ export const WEB_MCP_TOOL_CATALOG: Readonly<Record<WebMcpActionName, WebMcpToolC
   trace_dependency_path: {
     name: "trace_dependency_path",
     title: "Trace Dependency Path",
-    description: "Finds the shortest or critical dependency path between two package nodes in the active graph.",
+    description: "Finds the dependency path between two package nodes in the active graph.",
+    schemaStatus: "FROZEN",
     inputSchema: TRACE_DEPENDENCY_PATH_SCHEMA,
     annotations: {
       readOnlyHint: true,
@@ -292,19 +273,21 @@ export const WEB_MCP_TOOL_CATALOG: Readonly<Record<WebMcpActionName, WebMcpToolC
     name: "focus_graph_nodes",
     title: "Focus Graph Nodes",
     description: "Updates the shared visual graph projection to focus and highlight specific package nodes.",
-    inputSchema: FOCUS_GRAPH_NODES_SCHEMA,
+    schemaStatus: "PENDING_DOMAIN_CONTRACT",
     annotations: {
       readOnlyHint: true,
       untrustedContentHint: true,
     },
-    authority: "WarRoomProjectionStore.focusNodes",
-    classification: "EXISTING_UI_PROJECTION",
-    bindingStatus: "EXECUTABLE",
+    authority: "Visual Focus Projection Integration",
+    classification: "FUTURE_DETERMINISTIC_CAPABILITY",
+    bindingStatus: "DEFERRED",
+    futureDependency: "WMCP-12 (Visual Focus Integration; exact projection focus contract pending authoritative UI integration)",
   },
   inspect_selected_package: {
     name: "inspect_selected_package",
     title: "Inspect Selected Package",
-    description: "Inspects metadata, versions, and security advisories for the currently selected package node.",
+    description: "Inspects metadata and direct dependency links for the currently selected package node.",
+    schemaStatus: "FROZEN",
     inputSchema: INSPECT_SELECTED_PACKAGE_SCHEMA,
     annotations: {
       readOnlyHint: true,
@@ -318,6 +301,7 @@ export const WEB_MCP_TOOL_CATALOG: Readonly<Record<WebMcpActionName, WebMcpToolC
     name: "simulate_api_changes",
     title: "Simulate API Changes",
     description: "Analyzes AST-level breaking API changes between versions of a dependency.",
+    schemaStatus: "FROZEN",
     inputSchema: SIMULATE_API_CHANGES_SCHEMA,
     annotations: {
       readOnlyHint: false,
@@ -326,79 +310,85 @@ export const WEB_MCP_TOOL_CATALOG: Readonly<Record<WebMcpActionName, WebMcpToolC
     authority: "AST Breaking Change Analyzer",
     classification: "FUTURE_DETERMINISTIC_CAPABILITY",
     bindingStatus: "DEFERRED",
-    futureDependency: "WMCP-5 / WMCP-6 (AST Extraction & Change Engine)",
+    futureDependency: "WMCP-5 -> WMCP-6 -> WMCP-7 (Public API Extraction -> Persistence -> Counterfactual Breaking Detector)",
   },
   inspect_scenario: {
     name: "inspect_scenario",
     title: "Inspect Scenario",
-    description: "Inspects the active simulation scenario parameters, patched versions, and conflict status.",
+    description: "Inspects the active simulation scenario parameters and proposed versions.",
+    schemaStatus: "FROZEN",
     inputSchema: INSPECT_SCENARIO_SCHEMA,
     annotations: {
       readOnlyHint: true,
       untrustedContentHint: true,
     },
-    authority: "WarRoomState.activeScenario",
+    authority: "WarRoomState.scenario",
     classification: "EXISTING_READ_MODEL",
     bindingStatus: "EXECUTABLE",
   },
   set_scenario_priority: {
     name: "set_scenario_priority",
     title: "Set Scenario Priority",
-    description: "Sets the business criticality priority on the active scenario.",
-    inputSchema: SET_SCENARIO_PRIORITY_SCHEMA,
+    description: "Applies business priority classification to the active simulation scenario.",
+    schemaStatus: "PENDING_DOMAIN_CONTRACT",
     annotations: {
       readOnlyHint: false,
       untrustedContentHint: true,
     },
-    authority: "Scenario Business Priority Engine",
+    authority: "Human Business Review & Collaboration Layer",
     classification: "FUTURE_DETERMINISTIC_CAPABILITY",
     bindingStatus: "DEFERRED",
-    futureDependency: "WMCP-7 / WMCP-10 (Scenario Priority Engine)",
+    futureDependency: "WMCP-10 (Human Business Review; exact priority domain contract intentionally deferred)",
   },
   set_scenario_exclusion: {
     name: "set_scenario_exclusion",
     title: "Set Scenario Exclusion",
-    description: "Excludes or includes specific transitive packages in the active simulation scenario.",
-    inputSchema: SET_SCENARIO_EXCLUSION_SCHEMA,
+    description: "Configures package exclusion rules for upgrade simulation scenarios.",
+    schemaStatus: "PENDING_DOMAIN_CONTRACT",
     annotations: {
       readOnlyHint: false,
       untrustedContentHint: true,
     },
-    authority: "Scenario Exclusion Rules Engine",
+    authority: "Scenario Exclusion Engine",
     classification: "FUTURE_DETERMINISTIC_CAPABILITY",
     bindingStatus: "DEFERRED",
-    futureDependency: "WMCP-7 (Scenario Exclusion Engine)",
+    futureDependency: "WMCP-7 / WMCP-10 (Scenario Engine; exact exclusion domain contract intentionally deferred)",
   },
   recalculate_scenario: {
     name: "recalculate_scenario",
     title: "Recalculate Scenario",
-    description: "Triggers deterministic re-evaluation of the active scenario with current human review patches.",
+    description: "Re-runs scenario impact analysis against the current graph and package selections.",
+    schemaStatus: "FROZEN",
     inputSchema: RECALCULATE_SCENARIO_SCHEMA,
     annotations: {
       readOnlyHint: false,
       untrustedContentHint: true,
     },
-    authority: "WarRoomActions.recalculateScenario",
-    classification: "EXISTING_ACTION",
-    bindingStatus: "EXECUTABLE",
+    authority: "Scenario Analysis Engine",
+    classification: "FUTURE_DETERMINISTIC_CAPABILITY",
+    bindingStatus: "DEFERRED",
+    futureDependency: "WMCP-7 / WMCP-8 (Counterfactual Scenario Analysis & Exposure Engine)",
   },
   generate_migration_plan: {
     name: "generate_migration_plan",
     title: "Generate Migration Plan",
-    description: "Synthesizes an ordered, deterministic step-by-step dependency migration plan.",
+    description: "Synthesizes an actionable migration plan from approved human reviews and analysis runs.",
+    schemaStatus: "FROZEN",
     inputSchema: GENERATE_MIGRATION_PLAN_SCHEMA,
     annotations: {
       readOnlyHint: false,
       untrustedContentHint: true,
     },
-    authority: "WarRoomActions.generateMigrationPlan",
-    classification: "EXISTING_ACTION",
-    bindingStatus: "EXECUTABLE",
+    authority: "Migration Planning Engine",
+    classification: "FUTURE_DETERMINISTIC_CAPABILITY",
+    bindingStatus: "DEFERRED",
+    futureDependency: "WMCP-11 (Migration Planning & Remediation Synthesis)",
   },
   inspect_critical_paths: {
     name: "inspect_critical_paths",
     title: "Inspect Critical Paths",
-    description: "Inspects high-risk business paths and bottleneck packages under human review.",
+    description: "Identifies top migration blockers and deep dependency chains.",
+    schemaStatus: "FROZEN",
     inputSchema: INSPECT_CRITICAL_PATHS_SCHEMA,
     annotations: {
       readOnlyHint: true,
@@ -412,20 +402,22 @@ export const WEB_MCP_TOOL_CATALOG: Readonly<Record<WebMcpActionName, WebMcpToolC
   inspect_migration_plan: {
     name: "inspect_migration_plan",
     title: "Inspect Migration Plan",
-    description: "Inspects the generated migration plan steps, verification gates, and rollout order.",
+    description: "Inspects canonical migration plan reference metadata.",
+    schemaStatus: "FROZEN",
     inputSchema: INSPECT_MIGRATION_PLAN_SCHEMA,
     annotations: {
       readOnlyHint: true,
       untrustedContentHint: true,
     },
-    authority: "WarRoomState.migrationPlan",
+    authority: "WarRoomState.plan",
     classification: "EXISTING_READ_MODEL",
     bindingStatus: "EXECUTABLE",
   },
   focus_critical_path: {
     name: "focus_critical_path",
     title: "Focus Critical Path",
-    description: "Visually focuses and highlights the critical migration path in the graph UI.",
+    description: "Highlights the nodes and edges belonging to a critical migration path in the UI projection.",
+    schemaStatus: "FROZEN",
     inputSchema: FOCUS_CRITICAL_PATH_SCHEMA,
     annotations: {
       readOnlyHint: true,
@@ -438,13 +430,10 @@ export const WEB_MCP_TOOL_CATALOG: Readonly<Record<WebMcpActionName, WebMcpToolC
   },
 };
 
-/**
- * Returns the catalog entry for a canonical WebMCP tool.
- */
 export function getToolCatalogEntry(name: WebMcpActionName): WebMcpToolCatalogEntry {
   const entry = WEB_MCP_TOOL_CATALOG[name];
   if (!entry) {
-    throw new Error(`Unknown WebMCP tool: ${name}`);
+    throw new Error(`Unknown WebMCP tool action name: '${name}'`);
   }
   return entry;
 }

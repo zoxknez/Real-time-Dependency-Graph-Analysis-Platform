@@ -1,10 +1,11 @@
 /**
- * WebMCP Adaptive Tool Definitions & Factory (WMCP-4B)
+ * WebMCP Adaptive Tool Definitions & Factory (WMCP-4B / WMCP-4B-R2)
  *
  * Produces executable WebMcpPlatformToolDefinition instances for all EXECUTABLE tools
- * by delegating to WarRoomActions, WarRoomState, and WarRoomProjectionStore.
- * Fails closed for DEFERRED capabilities without faking business logic.
- * Follows WMCP-INV-001, WMCP-INV-002, WMCP-INV-003, WMCP-INV-004, WMCP-INV-016, WMCP-INV-017, WMCP-INV-019.
+ * by delegating to WarRoomActions and WarRoomState canonical read models.
+ * Fails closed for DEFERRED capabilities and PENDING_DOMAIN_CONTRACT tools without faking business logic.
+ * Follows WMCP-INV-001, WMCP-INV-002, WMCP-INV-003, WMCP-INV-004, WMCP-INV-016, WMCP-INV-017, WMCP-INV-019,
+ * INV-WMCP4B-DEF-001, INV-WMCP4B-DEF-002, and INV-WMCP4B-DEF-003.
  */
 
 import { WarRoomStatePort } from "../../war-room/state/store";
@@ -21,7 +22,6 @@ import {
 } from "./adaptive-catalog";
 import {
   validateEmptyObjectInput,
-  validateFocusGraphNodesInput,
   validateTraceDependencyPathInput,
 } from "./adaptive-validation";
 import {
@@ -32,15 +32,10 @@ import {
   createPrimitiveTools,
 } from "./primitive-tools";
 
-export interface AdaptiveVisualFocusPort {
-  focusNodes(nodeIds: readonly string[]): void;
-}
-
 export interface AdaptiveToolContext {
   readonly statePort: WarRoomStatePort;
   readonly actions: WarRoomActions;
   readonly projectionStore?: WarRoomGraphProjectionStore;
-  readonly visualFocusPort?: AdaptiveVisualFocusPort;
 }
 
 function getPrimitiveContext(context: AdaptiveToolContext) {
@@ -62,8 +57,8 @@ function getPrimitiveContext(context: AdaptiveToolContext) {
 /**
  * Creates an executable platform tool definition for a canonical WebMCP tool.
  *
- * - For EXECUTABLE tools: delegates to WarRoomActions, canonical read model, or visual projection.
- * - For DEFERRED tools: fails closed with an informative error rather than faking execution.
+ * - For EXECUTABLE tools with FROZEN schemas: delegates to WarRoomActions or canonical read model.
+ * - For DEFERRED tools or PENDING_DOMAIN_CONTRACT tools: fails closed immediately on instantiation.
  */
 export function createAdaptiveToolDefinition(
   name: WebMcpActionName,
@@ -71,9 +66,10 @@ export function createAdaptiveToolDefinition(
 ): WebMcpPlatformToolDefinition<Record<string, unknown>, unknown> {
   const entry = getToolCatalogEntry(name);
 
+  // INV-WMCP4B-DEF-001 & INV-WMCP4B-DEF-002: Deferred and pending-contract tools cannot produce executable definitions.
   if (entry.bindingStatus === "DEFERRED") {
     throw new Error(
-      `Tool '${name}' is deferred to ${entry.futureDependency ?? "a future phase"} and cannot be instantiated as an executable definition in WMCP-4B.`
+      `Tool '${name}' is deferred (${entry.futureDependency ?? "future capability"}) and cannot be instantiated as an executable definition in WMCP-4B.`
     );
   }
 
@@ -172,35 +168,6 @@ export function createAdaptiveToolDefinition(
       };
     }
 
-    case "focus_graph_nodes": {
-      return {
-        name: "focus_graph_nodes",
-        description: entry.description,
-        inputSchema: entry.inputSchema,
-        annotations: entry.annotations,
-        execute: async (input: Record<string, unknown>) => {
-          const state = statePort.getState();
-          const valRes = validateFocusGraphNodesInput(input);
-          if (!valRes.ok) {
-            return formatToolFailure("focus_graph_nodes", state.contextRevision, "INVALID_INPUT", valRes.error);
-          }
-
-          if (!("graph" in state) || !state.graph) {
-            return formatToolFailure("focus_graph_nodes", state.contextRevision, "INVALID_STATE", "Cannot focus nodes when no graph is active.");
-          }
-
-          if (context.visualFocusPort) {
-            context.visualFocusPort.focusNodes(valRes.value.nodeIds);
-          }
-
-          return formatToolSuccess("focus_graph_nodes", false, state.contextRevision, {
-            focusedNodeCount: valRes.value.nodeIds.length,
-            nodeIds: valRes.value.nodeIds,
-          });
-        },
-      };
-    }
-
     case "inspect_selected_package": {
       return {
         name: "inspect_selected_package",
@@ -288,92 +255,6 @@ export function createAdaptiveToolDefinition(
       };
     }
 
-    case "recalculate_scenario": {
-      return {
-        name: "recalculate_scenario",
-        description: entry.description,
-        inputSchema: entry.inputSchema,
-        annotations: entry.annotations,
-        execute: async (input: Record<string, unknown>, execContext?: WebMcpPlatformExecutionContext) => {
-          const state = statePort.getState();
-          const valRes = validateEmptyObjectInput(input, "recalculate_scenario");
-          if (!valRes.ok) {
-            return formatToolFailure("recalculate_scenario", state.contextRevision, "INVALID_INPUT", valRes.error);
-          }
-
-          const invocation: WarRoomInvocationContext = {
-            channel: "AGENT",
-            capturedContextRevision: state.contextRevision,
-            signal: execContext?.signal,
-          };
-
-          try {
-            const actionRes = await actions.recalculateScenario(invocation);
-            if (!actionRes.ok) {
-              return formatToolFailure("recalculate_scenario", actionRes.contextRevision, actionRes.error.code, actionRes.error.message);
-            }
-
-            return formatToolSuccess("recalculate_scenario", actionRes.changed, actionRes.contextRevision, {
-              analysisId: actionRes.data.id,
-              scenarioId: actionRes.data.scenarioId,
-              recalculated: true,
-              contextRevision: actionRes.contextRevision,
-            });
-          } catch (err: unknown) {
-            return formatToolFailure(
-              "recalculate_scenario",
-              state.contextRevision,
-              "INTERNAL_ERROR",
-              err instanceof Error ? err.message : "Unexpected error"
-            );
-          }
-        },
-      };
-    }
-
-    case "generate_migration_plan": {
-      return {
-        name: "generate_migration_plan",
-        description: entry.description,
-        inputSchema: entry.inputSchema,
-        annotations: entry.annotations,
-        execute: async (input: Record<string, unknown>, execContext?: WebMcpPlatformExecutionContext) => {
-          const state = statePort.getState();
-          const valRes = validateEmptyObjectInput(input, "generate_migration_plan");
-          if (!valRes.ok) {
-            return formatToolFailure("generate_migration_plan", state.contextRevision, "INVALID_INPUT", valRes.error);
-          }
-
-          const invocation: WarRoomInvocationContext = {
-            channel: "AGENT",
-            capturedContextRevision: state.contextRevision,
-            signal: execContext?.signal,
-          };
-
-          try {
-            const actionRes = await actions.generateMigrationPlan(invocation);
-            if (!actionRes.ok) {
-              return formatToolFailure("generate_migration_plan", actionRes.contextRevision, actionRes.error.code, actionRes.error.message);
-            }
-
-            return formatToolSuccess("generate_migration_plan", actionRes.changed, actionRes.contextRevision, {
-              planId: actionRes.data.id,
-              scenarioId: actionRes.data.scenarioId,
-              planGenerated: true,
-              contextRevision: actionRes.contextRevision,
-            });
-          } catch (err: unknown) {
-            return formatToolFailure(
-              "generate_migration_plan",
-              state.contextRevision,
-              "INTERNAL_ERROR",
-              err instanceof Error ? err.message : "Unexpected error"
-            );
-          }
-        },
-      };
-    }
-
     case "inspect_migration_plan": {
       return {
         name: "inspect_migration_plan",
@@ -403,7 +284,7 @@ export function createAdaptiveToolDefinition(
     }
 
     default: {
-      throw new Error(`Unhandled tool definition: ${name}`);
+      throw new Error(`Unhandled or deferred tool definition: ${name}`);
     }
   }
 }

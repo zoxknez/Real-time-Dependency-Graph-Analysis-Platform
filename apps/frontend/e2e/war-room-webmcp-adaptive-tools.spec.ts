@@ -1,18 +1,32 @@
+/**
+ * WebMCP Adaptive Tool Catalog & Authority Binding Verification (WMCP-4B / WMCP-4B-R2)
+ *
+ * Deterministic test suite verifying:
+ * - 16 canonical tools in catalog
+ * - Exact 7 EXECUTABLE vs 9 DEFERRED authority bindings
+ * - Exact 13 FROZEN vs 3 PENDING_DOMAIN_CONTRACT schema readiness states
+ * - Invariant: EXECUTABLE requires FROZEN schema
+ * - Fail-closed deferred and pending tool factory behavior
+ * - Strict schema properties and security parameter rejection
+ * - Execution parity and non-duplication of domain logic
+ * Follows WMCP-INV-001, WMCP-INV-002, WMCP-INV-003, WMCP-INV-004, WMCP-INV-016, WMCP-INV-017, WMCP-INV-021,
+ * INV-WMCP4B-SCHEMA-001, INV-WMCP4B-DEF-001, INV-WMCP4B-DEF-002, and INV-WMCP4B-DEF-003.
+ */
+
 import { test, expect } from "@playwright/test";
 import {
+  ALL_CANONICAL_ACTION_NAMES,
   WEB_MCP_TOOL_CATALOG,
   getToolCatalogEntry,
-  createAdaptiveToolDefinition,
   WebMcpActionName,
   SEARCH_PACKAGES_SCHEMA,
   OPEN_PACKAGE_GRAPH_SCHEMA,
+  createAdaptiveToolDefinition,
   validateTraceDependencyPathInput,
-  validateFocusGraphNodesInput,
   validateEmptyObjectInput,
 } from "../src/lib/webmcp";
 import { createWarRoomStore, createWarRoomStatePort } from "../src/lib/war-room/state/store";
 import { createWarRoomActions } from "../src/lib/war-room/application/actions";
-import { createWarRoomProjectionStore } from "../src/lib/war-room/integration/graph-projection";
 import {
   WarRoomSecurityContextPort,
   WarRoomAuthorizationPort,
@@ -21,27 +35,6 @@ import {
   WarRoomScenarioAnalysisPort,
   WarRoomMigrationPlanningPort,
 } from "../src/lib/war-room/application/ports";
-import * as fs from "fs";
-import * as path from "path";
-
-const ALL_CANONICAL_ACTION_NAMES: readonly WebMcpActionName[] = [
-  "search_packages",
-  "open_package_graph",
-  "summarize_graph",
-  "calculate_blast_radius",
-  "trace_dependency_path",
-  "focus_graph_nodes",
-  "inspect_selected_package",
-  "simulate_api_changes",
-  "inspect_scenario",
-  "set_scenario_priority",
-  "set_scenario_exclusion",
-  "recalculate_scenario",
-  "generate_migration_plan",
-  "inspect_critical_paths",
-  "inspect_migration_plan",
-  "focus_critical_path",
-];
 
 function createMockServicePorts() {
   const securityPort: WarRoomSecurityContextPort = {
@@ -180,35 +173,23 @@ function setupTestHarness() {
 
   actions.initialize();
 
-  const focusedNodes = new Set<string>();
-  const visualFocusPort = {
-    focusNodes(nodeIds: readonly string[]) {
-      focusedNodes.clear();
-      for (const id of nodeIds) {
-        focusedNodes.add(id);
-      }
-    },
-    getFocusedNodes() {
-      return focusedNodes;
-    },
-  };
-
   return {
+    store,
     statePort,
     actions,
-    visualFocusPort,
   };
 }
 
-test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B)", () => {
-  test("1. Catalog Completeness: All canonical action names have exactly one catalog entry", () => {
+test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", () => {
+  test("R2-T1. Catalog Completeness: All 16 canonical action names have exactly one catalog entry", () => {
+    expect(ALL_CANONICAL_ACTION_NAMES.length).toBe(16);
+
     for (const name of ALL_CANONICAL_ACTION_NAMES) {
       const entry = WEB_MCP_TOOL_CATALOG[name];
       expect(entry).toBeDefined();
       expect(entry.name).toBe(name);
       expect(entry.title.length).toBeGreaterThan(0);
       expect(entry.description.length).toBeGreaterThan(0);
-      expect(entry.inputSchema).toBeDefined();
       expect(entry.annotations).toBeDefined();
       expect(typeof entry.annotations.readOnlyHint).toBe("boolean");
       expect(typeof entry.annotations.untrustedContentHint).toBe("boolean");
@@ -219,16 +200,90 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B)", () =
     expect(catalogKeys.sort()).toEqual([...ALL_CANONICAL_ACTION_NAMES].sort());
   });
 
-  test("2. Schema Strictness: All schemas enforce additionalProperties: false and strict types", () => {
-    for (const name of ALL_CANONICAL_ACTION_NAMES) {
+  test("R2-T2 & R2-T3. Authority Matrix: Exactly 7 EXECUTABLE vs 9 DEFERRED tools", () => {
+    const expectedExecutable: WebMcpActionName[] = [
+      "search_packages",
+      "open_package_graph",
+      "summarize_graph",
+      "trace_dependency_path",
+      "inspect_selected_package",
+      "inspect_scenario",
+      "inspect_migration_plan",
+    ];
+
+    const expectedDeferred: WebMcpActionName[] = [
+      "calculate_blast_radius",
+      "focus_graph_nodes",
+      "simulate_api_changes",
+      "set_scenario_priority",
+      "set_scenario_exclusion",
+      "recalculate_scenario",
+      "generate_migration_plan",
+      "inspect_critical_paths",
+      "focus_critical_path",
+    ];
+
+    const actualExecutable = ALL_CANONICAL_ACTION_NAMES.filter(
+      (name) => WEB_MCP_TOOL_CATALOG[name].bindingStatus === "EXECUTABLE"
+    );
+    const actualDeferred = ALL_CANONICAL_ACTION_NAMES.filter(
+      (name) => WEB_MCP_TOOL_CATALOG[name].bindingStatus === "DEFERRED"
+    );
+
+    expect(actualExecutable.sort()).toEqual([...expectedExecutable].sort());
+    expect(actualDeferred.sort()).toEqual([...expectedDeferred].sort());
+    expect(actualExecutable.length).toBe(7);
+    expect(actualDeferred.length).toBe(9);
+  });
+
+  test("R2-T7, R2-T8, R2-T9. Schema Readiness: Exactly 13 FROZEN vs 3 PENDING_DOMAIN_CONTRACT", () => {
+    const expectedPending: WebMcpActionName[] = [
+      "focus_graph_nodes",
+      "set_scenario_priority",
+      "set_scenario_exclusion",
+    ];
+
+    const actualPending = ALL_CANONICAL_ACTION_NAMES.filter(
+      (name) => WEB_MCP_TOOL_CATALOG[name].schemaStatus === "PENDING_DOMAIN_CONTRACT"
+    );
+    const actualFrozen = ALL_CANONICAL_ACTION_NAMES.filter(
+      (name) => WEB_MCP_TOOL_CATALOG[name].schemaStatus === "FROZEN"
+    );
+
+    expect(actualPending.sort()).toEqual([...expectedPending].sort());
+    expect(actualPending.length).toBe(3);
+    expect(actualFrozen.length).toBe(13);
+
+    // Pending tools MUST NOT expose inputSchema
+    for (const name of expectedPending) {
       const entry = WEB_MCP_TOOL_CATALOG[name];
-      const schema = entry.inputSchema as { type?: string; additionalProperties?: boolean };
-      expect(schema.type).toBe("object");
-      expect(schema.additionalProperties).toBe(false);
+      expect(entry.schemaStatus).toBe("PENDING_DOMAIN_CONTRACT");
+      expect((entry as any).inputSchema).toBeUndefined();
     }
   });
 
-  test("3. Primitive Schema Preservation: search_packages and open_package_graph match WMCP-3B", () => {
+  test("R2-T11. Invariant: Every EXECUTABLE tool MUST have schemaStatus = FROZEN", () => {
+    for (const name of ALL_CANONICAL_ACTION_NAMES) {
+      const entry = WEB_MCP_TOOL_CATALOG[name];
+      if (entry.bindingStatus === "EXECUTABLE") {
+        expect(entry.schemaStatus).toBe("FROZEN");
+        expect(entry.inputSchema).toBeDefined();
+      }
+    }
+  });
+
+  test("R2-T12. Strict Schema Validation: All FROZEN schemas enforce additionalProperties: false", () => {
+    for (const name of ALL_CANONICAL_ACTION_NAMES) {
+      const entry = WEB_MCP_TOOL_CATALOG[name];
+      if (entry.schemaStatus === "FROZEN") {
+        const schema = entry.inputSchema as { type?: string; additionalProperties?: boolean };
+        expect(schema.type).toBe("object");
+        expect(schema.additionalProperties).toBe(false);
+      }
+    }
+  });
+
+  test("R2-T13. Primitive Schema Preservation: search_packages and open_package_graph match WMCP-3B", () => {
     const searchEntry = getToolCatalogEntry("search_packages");
     expect(searchEntry.inputSchema).toBe(SEARCH_PACKAGES_SCHEMA);
 
@@ -236,44 +291,36 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B)", () =
     expect(openEntry.inputSchema).toBe(OPEN_PACKAGE_GRAPH_SCHEMA);
   });
 
-  test("4. Authority & Binding Classification Matrix: 10 Executable vs 6 Deferred", () => {
-    const executableTools: WebMcpActionName[] = [
-      "search_packages",
-      "open_package_graph",
-      "summarize_graph",
-      "trace_dependency_path",
-      "focus_graph_nodes",
-      "inspect_selected_package",
-      "inspect_scenario",
-      "recalculate_scenario",
-      "generate_migration_plan",
-      "inspect_migration_plan",
-    ];
+  test("R2-T14. simulate_api_changes metadata includes WMCP-7 as implementation authority", () => {
+    const simEntry = getToolCatalogEntry("simulate_api_changes");
+    expect(simEntry.futureDependency).toBeDefined();
+    expect(simEntry.futureDependency).toContain("WMCP-7");
+    expect(simEntry.futureDependency).toContain("WMCP-5 -> WMCP-6 -> WMCP-7");
+  });
+
+  test("R2-T4, R2-T5, R2-T6, R2-T10. Deferred & Pending Tool Factory: Fails closed on instantiation", () => {
+    const harness = setupTestHarness();
 
     const deferredTools: WebMcpActionName[] = [
       "calculate_blast_radius",
+      "focus_graph_nodes",
       "simulate_api_changes",
       "set_scenario_priority",
       "set_scenario_exclusion",
+      "recalculate_scenario",
+      "generate_migration_plan",
       "inspect_critical_paths",
       "focus_critical_path",
     ];
 
-    for (const name of executableTools) {
-      const entry = getToolCatalogEntry(name);
-      expect(entry.bindingStatus).toBe("EXECUTABLE");
-    }
-
     for (const name of deferredTools) {
-      const entry = getToolCatalogEntry(name);
-      expect(entry.bindingStatus).toBe("DEFERRED");
-      expect(entry.classification).toBe("FUTURE_DETERMINISTIC_CAPABILITY");
-      expect(entry.futureDependency).toBeDefined();
-      expect(entry.futureDependency!.length).toBeGreaterThan(0);
+      expect(() => createAdaptiveToolDefinition(name, harness)).toThrowError(
+        /is deferred.*cannot be instantiated as an executable definition/i
+      );
     }
   });
 
-  test("5. Input Validation: Rejects security parameters, contextRevision, and unknown fields", () => {
+  test("R2-T15. Input Validation: Rejects security parameters, contextRevision, and unknown fields", () => {
     // Empty object validator
     expect(validateEmptyObjectInput(null, "summarize_graph").ok).toBe(true);
     expect(validateEmptyObjectInput({}, "summarize_graph").ok).toBe(true);
@@ -296,14 +343,9 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B)", () =
       }).ok
     ).toBe(false);
     expect(validateTraceDependencyPathInput({ sourcePackageId: "npm:a" }).ok).toBe(false);
-
-    // Focus graph nodes validator
-    expect(validateFocusGraphNodesInput({ nodeIds: ["npm:a", "npm:b"] }).ok).toBe(true);
-    expect(validateFocusGraphNodesInput({ nodeIds: [] }).ok).toBe(false);
-    expect(validateFocusGraphNodesInput({ nodeIds: ["npm:a"], tenantId: "t1" }).ok).toBe(false);
   });
 
-  test("6. Executable Tool Factory: summarize_graph read model execution", async () => {
+  test("R2-T16. Executable Tool Factory: summarize_graph read model execution", async () => {
     const harness = setupTestHarness();
     const tool = createAdaptiveToolDefinition("summarize_graph", harness);
 
@@ -324,7 +366,7 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B)", () =
     expect((successRes as any).data.packageCount).toBe(2);
   });
 
-  test("7. Executable Tool Factory: trace_dependency_path action execution", async () => {
+  test("R2-T16. Executable Tool Factory: trace_dependency_path action execution", async () => {
     const harness = setupTestHarness();
     const tool = createAdaptiveToolDefinition("trace_dependency_path", harness);
 
@@ -338,27 +380,7 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B)", () =
     expect((res as any).data.path).toContain("npm:intermediate");
   });
 
-  test("8. Executable Tool Factory: focus_graph_nodes visual projection execution", async () => {
-    const harness = setupTestHarness();
-    const tool = createAdaptiveToolDefinition("focus_graph_nodes", harness);
-
-    // Open graph first
-    await harness.actions.openPackageGraph(
-      { channel: "AGENT", capturedContextRevision: harness.statePort.getState().contextRevision },
-      { rootPackageId: "npm:express" }
-    );
-
-    const res = await tool.execute({
-      nodeIds: ["npm:express", "npm:dep-1"],
-    });
-
-    expect(res.ok).toBe(true);
-    expect(harness.visualFocusPort.getFocusedNodes()).toEqual(
-      new Set(["npm:express", "npm:dep-1"])
-    );
-  });
-
-  test("9. Executable Tool Factory: inspect_selected_package context-bound action execution", async () => {
+  test("R2-T16. Executable Tool Factory: inspect_selected_package context-bound action execution", async () => {
     const harness = setupTestHarness();
     const tool = createAdaptiveToolDefinition("inspect_selected_package", harness);
 
@@ -392,10 +414,10 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B)", () =
     expect((successRes as any).data.name).toBe("express");
   });
 
-  test("10. Executable Tool Factory: scenario & migration plan tool executions", async () => {
+  test("R2-T16. Executable Tool Factory: inspect_scenario & inspect_migration_plan read model execution", async () => {
     const harness = setupTestHarness();
 
-    // 1. inspect_scenario when none active
+    // 1. inspect_scenario when none active -> INVALID_STATE
     const inspectScenarioTool = createAdaptiveToolDefinition("inspect_scenario", harness);
     const failScenario = await inspectScenarioTool.execute({});
     expect(failScenario.ok).toBe(false);
@@ -431,73 +453,72 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B)", () =
       }
     );
 
-    // inspect_scenario when active
+    // inspect_scenario when active -> success
     const okScenario = await inspectScenarioTool.execute({});
     expect(okScenario.ok).toBe(true);
     expect((okScenario as any).data.scenarioId).toBe("sc-1");
 
-    // recalculate_scenario
-    const recalcTool = createAdaptiveToolDefinition("recalculate_scenario", harness);
-    const recalcRes = await recalcTool.execute({});
-    expect(recalcRes.ok).toBe(true);
-    expect((recalcRes as any).data.recalculated).toBe(true);
+    // 2. inspect_migration_plan when none active -> INVALID_STATE
+    const inspectPlanTool = createAdaptiveToolDefinition("inspect_migration_plan", harness);
+    const failPlan = await inspectPlanTool.execute({});
+    expect(failPlan.ok).toBe(false);
+    expect((failPlan as any).error.code).toBe("INVALID_STATE");
 
-    // attach human review to advance to HUMAN_REVIEW phase
-    await harness.actions.attachHumanReview(
-      { channel: "AGENT", capturedContextRevision: harness.statePort.getState().contextRevision },
-      {
+    // Transition state through review and plan creation directly to test inspect_migration_plan read model
+    harness.store.getState().commitContextBound(harness.statePort.getState().contextRevision, {
+      type: "HUMAN_ANNOTATED",
+      payload: {
         review: {
           id: "rev-1",
           scenarioId: "sc-1",
           bindings: [],
         },
-      }
-    );
+      },
+    });
 
-    // generate_migration_plan
-    const genPlanTool = createAdaptiveToolDefinition("generate_migration_plan", harness);
-    const planRes = await genPlanTool.execute({});
-    expect(planRes.ok).toBe(true);
-    expect((planRes as any).data.planGenerated).toBe(true);
+    harness.store.getState().commitContextBound(harness.statePort.getState().contextRevision, {
+      type: "PLAN_GENERATED",
+      payload: {
+        plan: {
+          id: "plan-1",
+          scenarioId: "sc-1",
+          sourceReviewId: "rev-1",
+          sourceContextRevision: harness.statePort.getState().contextRevision,
+        },
+      },
+    });
 
-    // inspect_migration_plan
-    const inspectPlanTool = createAdaptiveToolDefinition("inspect_migration_plan", harness);
-    const inspectPlanRes = await inspectPlanTool.execute({});
-    expect(inspectPlanRes.ok).toBe(true);
-    expect((inspectPlanRes as any).data.planId).toBeDefined();
+    const okPlan = await inspectPlanTool.execute({});
+    expect(okPlan.ok).toBe(true);
+    expect((okPlan as any).data.planId).toBe("plan-1");
   });
 
-  test("11. Deferred Tool Factory: Fails closed and throws on instantiation", () => {
-    const harness = setupTestHarness();
-    const deferredTools: WebMcpActionName[] = [
-      "calculate_blast_radius",
-      "simulate_api_changes",
-      "set_scenario_priority",
-      "set_scenario_exclusion",
-      "inspect_critical_paths",
-      "focus_critical_path",
+  test("R2-T17. Architectural Boundary Guard: WebMCP layer contains zero business algorithms", () => {
+    const fs = require("fs");
+    const path = require("path");
+
+    const bridgeDir = path.join(__dirname, "../src/lib/webmcp/bridge");
+    const files = fs.readdirSync(bridgeDir).filter((f: string) => f.endsWith(".ts"));
+
+    const forbiddenTerms = [
+      "bfs",
+      "dfs",
+      "shortestPath",
+      "dijkstra",
+      "astParse",
+      "babel",
+      "acorn",
+      "semver",
+      "calculateBlastRadius",
+      "synthesizePlan",
+      "evaluateConflict",
     ];
 
-    for (const name of deferredTools) {
-      expect(() => createAdaptiveToolDefinition(name, harness)).toThrowError(
-        /is deferred to/
-      );
-    }
-  });
-
-  test("12. Architectural Boundary Guard: WebMCP layer contains zero business algorithms", () => {
-    const webmcpDir = path.resolve(__dirname, "../src/lib/webmcp");
-    const files = fs.readdirSync(path.join(webmcpDir, "bridge"));
-
     for (const file of files) {
-      if (!file.endsWith(".ts")) continue;
-      const content = fs.readFileSync(path.join(webmcpDir, "bridge", file), "utf-8");
-
-      // Guard against AST parsers, custom semver math, direct blast radius calculations in WebMCP
-      expect(content).not.toContain("babel");
-      expect(content).not.toContain("acorn");
-      expect(content).not.toContain("typescript.createSourceFile");
-      expect(content).not.toContain("semver.satisfies");
+      const content = fs.readFileSync(path.join(bridgeDir, file), "utf8");
+      for (const term of forbiddenTerms) {
+        expect(content.toLowerCase()).not.toContain(term.toLowerCase());
+      }
     }
   });
 });
