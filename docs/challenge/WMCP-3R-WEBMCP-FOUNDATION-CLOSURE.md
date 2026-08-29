@@ -44,7 +44,19 @@ The purpose of WMCP-3R is not to add new features or begin WMCP-4 adaptive lifec
 
 ---
 
-## 4. Git Lineage & Commit Chain
+## 4. WMCP-3R-R1 Independent Review
+
+- **Reviewed HEAD**: `11f0303039831d4386eb18949aa49628a848e10c`
+- **Verdict**: `PASS WITH CORRECTIONS - NOT CLOSED`
+- **Independent Findings**:
+  1. All substantive forensic contract corrections were independently accepted (normative vs local WebIDL/TypeScript, executeTool signature, RegisteredTool members, security boundary isolation, exact schema bounds, locked WMCP-4 state-machine tools, exact 25 invariant titles and definitions).
+  2. One non-ASCII character (U+2014 EM DASH) remained in the Total Automated Tests table row despite gate 3R-R1-64 claiming zero.
+  3. No production, test, architectural, or security defect was identified.
+  4. WMCP-3R-R2 performs ASCII evidence consistency micro-correction.
+
+---
+
+## 5. Git Lineage & Commit Chain
 
 Ancestry from WMCP-2 final closure (`1ae87969743e1d9f2a71cc0d89402090c133f0d8`) through WMCP-3B closure to WMCP-3R:
 
@@ -72,6 +84,8 @@ c0a0847 [WMCP-3B-R4] test(webmcp): prove two-request browser overlap
 565c7a8 [WMCP-3B-R5 Closure] test(webmcp): restore production apollo concurrency
   |
 55c83b6 [WMCP-3R Initial] docs(challenge): record WMCP-3 foundation review
+  |
+11f0303 [WMCP-3R-R1] docs(challenge): correct WMCP-3 foundation evidence
 ```
 
 - **Linear Ancestry**: Verified linear commit history without branching, rebasing, or hidden merges.
@@ -405,7 +419,7 @@ Every invariant is evaluated against its authoritative definition in `docs/chall
 | **2C Integration Adapters** | `e2e/war-room-integration.spec.ts` | 30 | **30 / 30 PASS** |
 | **2C Human UI Graph Workflow** | `e2e/war-room-human-ui.spec.ts` | 5 | **5 / 5 PASS** |
 | **Homepage Progressive Enhancement** | `e2e/homepage.spec.ts` | 8 | **8 / 8 PASS** |
-| **Total Automated Tests** | — | **211** | **211 / 211 PASS** |
+| **Total Automated Tests** | - | **211** | **211 / 211 PASS** |
 
 - **TypeScript**: 0 errors (`npx tsc --noEmit -p apps/frontend/tsconfig.json`; `e2e/**` is excluded from tsconfig).
 - **ESLint**: 0 errors, 0 warnings (`npm run lint`).
@@ -434,80 +448,29 @@ With the completion and verification of the WebMCP Foundation:
 3. Invocation-time revision capture, atomic context-bound commits, and stale context rejection are proven across independent Agent races and shared-transport Human/Agent browser concurrency.
 4. Progressive enhancement and SSR safety are verified.
 5. Invariant matrix, tool schemas, output shapes, and security boundaries are forensically exact.
-6. All 64 Acceptance Gates are satisfied.
+6. All Acceptance Gates are satisfied.
 
 **Conclusion**: The WebMCP Foundation is complete, proven, and ready for **WMCP-4 (Adaptive Tool Surface & Registration Lifecycle)**.
 
 ---
 
-## 23. Acceptance Gates Matrix (3R-R1-1 to 3R-R1-64)
+## 23. Acceptance Gates Matrix (3R-R2-1 to 3R-R2-13)
 
 | Gate ID | Requirement Description | Status |
 | :--- | :--- | :--- |
-| **3R-R1-1** | Starting HEAD exact `55c83b69c0759d2b24fcafc794cea768410da59f` | **PASS** |
-| **3R-R1-2** | Upstream WebMCP main rechecked | **PASS** |
-| **3R-R1-3** | Upstream SHA recorded exactly (`41d12f057167ccf5954dbcf49d99502cb6c84491`) | **PASS** |
-| **3R-R1-4** | Normative `Document.modelContext` documented non-optional | **PASS** |
-| **3R-R1-5** | Local TypeScript optionality documented separately | **PASS** |
-| **3R-R1-6** | Normative `registerTool` return documented `Promise<undefined>` | **PASS** |
-| **3R-R1-7** | Local `registerTool` representation documented `Promise<void>` | **PASS** |
-| **3R-R1-8** | `executeTool` first argument corrected to `RegisteredTool` | **PASS** |
-| **3R-R1-9** | `executeTool` `Promise<DOMString>` / local `Promise<string>` distinction correct | **PASS** |
-| **3R-R1-10** | `RegisteredTool` `window` documented | **PASS** |
-| **3R-R1-11** | `RegisteredTool` `origin` documented | **PASS** |
-| **3R-R1-12** | `RegisteredTool` `inputSchema` object semantics documented | **PASS** |
-| **3R-R1-13** | Required callback `AbortSignal` preserved | **PASS** |
-| **3R-R1-14** | Local WebMCP type identifiers match source exactly | **PASS** |
-| **3R-R1-15** | Application platform type identifiers match source exactly | **PASS** |
-| **3R-R1-16** | `WarRoomWebMcpBridge` documented as host/composition layer | **PASS** |
-| **3R-R1-17** | `primitive-tools` documented as execution callback bridge | **PASS** |
-| **3R-R1-18** | `WarRoomInvocationContext` not conflated with security identity | **PASS** |
-| **3R-R1-19** | `WarRoomSecurityContextPort` documented as trusted identity source | **PASS** |
-| **3R-R1-20** | `searchPackages` action signature corrected (`invocation, request`) | **PASS** |
-| **3R-R1-21** | `openPackageGraph` action signature corrected (`invocation, request`) | **PASS** |
-| **3R-R1-22** | `search_packages` `query` max 120 | **PASS** |
-| **3R-R1-23** | `search_packages` ecosystem exact `PY_PI` | **PASS** |
-| **3R-R1-24** | `search_packages` ecosystem exact `NU_GET` included | **PASS** |
-| **3R-R1-25** | `search_packages` `limit` max 8 | **PASS** |
-| **3R-R1-26** | `open_package_graph` `rootPackageId` max 256 | **PASS** |
-| **3R-R1-27** | `open_package_graph` `depth` max 4 | **PASS** |
-| **3R-R1-28** | Runtime defaults 5 and 2 documented | **PASS** |
-| **3R-R1-29** | No unsupported prototype-injection hardening claim | **PASS** |
-| **3R-R1-30** | Full open graph output shape correct | **PASS** |
-| **3R-R1-31** | Compact open graph output shape correct | **PASS** |
-| **3R-R1-32** | WMCP-2 closure commit message corrected (`docs(challenge): correct WMCP-2 review evidence`) | **PASS** |
-| **3R-R1-33** | 3A correction history no longer falsely assigns DOMString to initial commit | **PASS** |
-| **3R-R1-34** | WMCP-4 `IDLE` tool set exact (`search_packages`, `open_package_graph`) | **PASS** |
-| **3R-R1-35** | WMCP-4 `GRAPH_READY` tool set exact (`summarize_graph`, `calculate_blast_radius`, `trace_dependency_path`, `focus_graph_nodes`, `open_package_graph`) | **PASS** |
-| **3R-R1-36** | No invented `expand_node` tool | **PASS** |
-| **3R-R1-37** | No invented `inspect_package` logical target in `GRAPH_READY` | **PASS** |
-| **3R-R1-38** | No invented `close_graph` logical target in `GRAPH_READY` | **PASS** |
-| **3R-R1-39** | All 25 invariant IDs use exact authoritative titles | **PASS** |
-| **3R-R1-40** | INV-005 classification matches original contract (WMCP-7) | **PASS** |
-| **3R-R1-41** | INV-006 classification matches original contract (WMCP-9) | **PASS** |
-| **3R-R1-42** | INV-007 classification matches original contract (WMCP-10) | **PASS** |
-| **3R-R1-43** | INV-010 classification matches original contract (WMCP-7) | **PASS** |
-| **3R-R1-44** | INV-012 classification matches original contract (WMCP-9) | **PASS** |
-| **3R-R1-45** | INV-014 correctly describes generation independence | **PASS** |
-| **3R-R1-46** | INV-015 correctly describes retirement/drain | **PASS** |
-| **3R-R1-47** | INV-018 classification matches original contract (WMCP-11) | **PASS** |
-| **3R-R1-48** | INV-019 correctly describes deterministic tool availability | **PASS** |
-| **3R-R1-49** | INV-020 classification matches original contract (WMCP-12) | **PASS** |
-| **3R-R1-50** | INV-022 correct title and WMCP-4 full-enforcement note | **PASS** |
-| **3R-R1-51** | INV-023 correct title and WMCP-4 full-enforcement note | **PASS** |
-| **3R-R1-52** | WMCP-2 graph projection supersession preserved | **PASS** |
-| **3R-R1-53** | Apollo 4.2.0 truth preserved | **PASS** |
-| **3R-R1-54** | Production dedup fidelity preserved | **PASS** |
-| **3R-R1-55** | Physical vs logical tool distinction preserved | **PASS** |
-| **3R-R1-56** | `ToolRegistry` still not claimed implemented | **PASS** |
-| **3R-R1-57** | Generation lifecycle still not claimed implemented | **PASS** |
-| **3R-R1-58** | Remote CI evidence remains truthful | **PASS** |
-| **3R-R1-59** | Independent `55c83b` review recorded | **PASS** |
-| **3R-R1-60** | No production changes (0 lines diff) | **PASS** |
-| **3R-R1-61** | No test changes (0 lines diff) | **PASS** |
-| **3R-R1-62** | README unchanged | **PASS** |
-| **3R-R1-63** | Only closure document modified | **PASS** |
-| **3R-R1-64** | ASCII hyphen rule PASS (zero non-ASCII dashes) | **PASS** |
+| **3R-R2-1** | Starting HEAD exact `11f0303039831d4386eb18949aa49628a848e10c` | **PASS** |
+| **3R-R2-2** | Upstream WebMCP pin rechecked (`41d12f057167ccf5954dbcf49d99502cb6c84491`) | **PASS** |
+| **3R-R2-3** | No production changes (0 lines diff) | **PASS** |
+| **3R-R2-4** | No test changes (0 lines diff) | **PASS** |
+| **3R-R2-5** | README unchanged | **PASS** |
+| **3R-R2-6** | R1 substantive corrections preserved | **PASS** |
+| **3R-R2-7** | U+2013 count = 0 | **PASS** |
+| **3R-R2-8** | U+2014 count = 0 | **PASS** |
+| **3R-R2-9** | Known Total Automated Tests EM DASH replaced with ASCII hyphen | **PASS** |
+| **3R-R2-10** | R1 independent review recorded | **PASS** |
+| **3R-R2-11** | R1 gate-64 contradiction recorded truthfully | **PASS** |
+| **3R-R2-12** | Final status remains pending independent verification | **PASS** |
+| **3R-R2-13** | Only one file modified (`WMCP-3R-WEBMCP-FOUNDATION-CLOSURE.md`) | **PASS** |
 
 ---
 
