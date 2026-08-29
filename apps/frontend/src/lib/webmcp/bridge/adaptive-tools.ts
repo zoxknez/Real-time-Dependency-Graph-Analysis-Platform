@@ -1,12 +1,13 @@
 /**
- * WebMCP Adaptive Tool Definitions & Factory (WMCP-4B / WMCP-4C)
+ * WebMCP Adaptive Tool Definitions & Factory (WMCP-4B / WMCP-4C / WMCP-4C-R1)
  *
  * Produces executable WebMcpPlatformToolDefinition instances for all EXECUTABLE tools
  * by delegating to WarRoomActions and WarRoomState canonical read models.
  * Enforces invocation-time logical surface admission and execution policies.
  * Fails closed for DEFERRED capabilities and PENDING_DOMAIN_CONTRACT tools without faking business logic.
  * Follows WMCP-INV-001, WMCP-INV-002, WMCP-INV-003, WMCP-INV-004, WMCP-INV-016, WMCP-INV-017, WMCP-INV-019,
- * INV-WMCP4B-DEF-001, INV-WMCP4B-DEF-002, INV-WMCP4B-DEF-003, and INV-WMCP4C-EXEC-001 through INV-WMCP4C-EXEC-012.
+ * INV-WMCP4B-DEF-001, INV-WMCP4B-DEF-002, INV-WMCP4B-DEF-003, INV-WMCP4C-EXEC-001 through INV-WMCP4C-EXEC-012,
+ * and INV-WMCP4C-MUT-001.
  */
 
 import { WarRoomStatePort } from "../../war-room/state/store";
@@ -160,30 +161,35 @@ export function createAdaptiveToolDefinition(
           try {
             const actionRes = await actions.openPackageGraph(invocation, valRes.value);
 
+            if (actionRes.ok) {
+              // INV-WMCP4C-MUT-001: Authoritative canonical commit has succeeded.
+              // Post-commit abort must not override committed SUCCESS or discard projection.
+              let projectionActivated = false;
+              if (projectionStore) {
+                projectionActivated = projectionStore.activateProjection(signal, actionRes.data.id);
+              }
+
+              return buildBudgetedOpenGraphOutput(
+                "open_package_graph",
+                actionRes.contextRevision,
+                actionRes.changed,
+                actionRes.data.id,
+                actionRes.data.rootPackage,
+                actionRes.data.packageIds.length,
+                projectionActivated
+              );
+            }
+
+            // Mutation did not commit (actionRes.ok === false)
+            if (projectionStore) {
+              projectionStore.discardProjection(signal);
+            }
+
             if (signal.aborted) {
-              if (projectionStore) projectionStore.discardProjection(signal);
               return formatToolFailure("open_package_graph", snapshot.contextRevision, "CANCELLED", "Operation was cancelled during graph opening");
             }
 
-            if (!actionRes.ok) {
-              if (projectionStore) projectionStore.discardProjection(signal);
-              return formatToolFailure("open_package_graph", actionRes.contextRevision, actionRes.error.code, actionRes.error.message);
-            }
-
-            let projectionActivated = false;
-            if (projectionStore) {
-              projectionActivated = projectionStore.activateProjection(signal, actionRes.data.id);
-            }
-
-            return buildBudgetedOpenGraphOutput(
-              "open_package_graph",
-              actionRes.contextRevision,
-              actionRes.changed,
-              actionRes.data.id,
-              actionRes.data.rootPackage,
-              actionRes.data.packageIds.length,
-              projectionActivated
-            );
+            return formatToolFailure("open_package_graph", actionRes.contextRevision, actionRes.error.code, actionRes.error.message);
           } catch (err: unknown) {
             if (projectionStore) projectionStore.discardProjection(signal);
             return formatToolFailure(

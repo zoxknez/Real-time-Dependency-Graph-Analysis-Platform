@@ -734,4 +734,43 @@ test.describe("WebMCP Adaptive Execution Admission & Context Guards (WMCP-4C)", 
     const successRes = await searchTool.execute({ query: "express" });
     expect(JSON.stringify(successRes).length).toBeLessThanOrEqual(1500);
   });
+
+  test("4C-T23. Synchronous Post-Commit Abort on open_package_graph Preserves Committed SUCCESS and Projection (INV-WMCP4C-MUT-001)", async () => {
+    const harness = setupTestHarness();
+    const controller = new AbortController();
+
+    // Store subscriber: when GRAPH_OPENED commits to GRAPH_READY, synchronously abort the execution controller
+    const unsubscribe = harness.store.subscribe(() => {
+      const currentState = harness.statePort.getState();
+      if (currentState.phase === "GRAPH_READY") {
+        controller.abort();
+      }
+    });
+
+    const openTool = createAdaptiveToolDefinition("open_package_graph", harness);
+    const initialRevision = harness.statePort.getState().contextRevision;
+
+    const res = await openTool.execute({ rootPackageId: "npm:express" }, { signal: controller.signal });
+    unsubscribe();
+
+    // Verify signal state
+    expect(controller.signal.aborted).toBe(true);
+
+    // Verify canonical state
+    expect(harness.statePort.getState().phase).toBe("GRAPH_READY");
+    expect(harness.statePort.getState().graph?.id).toBe("graph-npm:express");
+    expect(harness.statePort.getState().contextRevision).toBe(initialRevision + 1);
+
+    // Verify tool result: Must report committed SUCCESS, NOT false CANCELLED
+    expect(res.ok).toBe(true);
+    expect((res as any).tool).toBe("open_package_graph");
+    expect((res as any).contextRevision).toBe(initialRevision + 1);
+    expect((res as any).changed).toBe(true);
+    expect((res as any).data.projectionActivated).toBe(true);
+
+    // Verify projection store: Must NOT be discarded, must match canonical graph
+    const visibleProjection = harness.projectionStore.getProjection("graph-npm:express");
+    expect(visibleProjection).not.toBeNull();
+    expect(visibleProjection?.graphId).toBe("graph-npm:express");
+  });
 });
