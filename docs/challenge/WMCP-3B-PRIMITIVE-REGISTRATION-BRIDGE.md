@@ -296,24 +296,52 @@ WebMCP Platform (document.modelContext)
 
 ---
 
-## 13. WMCP-3B-R4 Explicit Two-Request Barrier & Final Forensic Closure
+## 13. WMCP-3B-R4 Explicit Two-Request Barrier (Test-Stress Review)
 
 ### 13.1 Two-Request Barrier Architecture
-- **Root Cause Resolution**: Apollo Client v3.12 defaults to in-memory in-flight query deduplication. By setting `queryDeduplication: false` on the prototype during test harness setup (`page.addInitScript`), concurrent same-key queries each issue an independent network request without modifying any production source files.
-- **Explicit Two-Request Gating**:
-  - Request 1 (Agent): Intercepted at `GetReverseDependents`, increments `networkArrivalCount` to 1, resolves `firstArrival`, and blocks on `firstGate`.
-  - Request 2 (Human): Intercepted at `GetReverseDependents`, increments `networkArrivalCount` to 2, resolves `secondArrival`, and blocks on `secondGate`.
-  - Unexpected Request 3+: Throws an explicit error.
-- **Deterministic Execution Order**:
-  1. Agent starts `open_package_graph` tool -> `await firstArrival; expect(networkArrivalCount).toBe(1);`
-  2. Human triggers UI input (`fill` and `click`) -> `await secondArrival; expect(networkArrivalCount).toBe(2);`
-  3. Both requests confirmed simultaneously blocked while Human UI spinner (`.animate-spin`) is visible.
-  4. Only `firstGate` is released -> Agent wins canonical commit (`contextRevision = 2`) and projection activation (`agentResult.data.projectionActivated === true`).
-  5. Human is confirmed still pending before second gate release (`expect(loadingSpinner).toBeVisible()`).
-  6. `secondGate` is released -> Human GraphQL query completes, attempts `commitContextBound(1, ...)`, receives `STALE_CONTEXT`, and clears spinner (`expect(loadingSpinner).not.toBeVisible()`).
-  7. Final State Parity is asserted only after both callers have fully settled (`canonicalRoot === projectionRoot === "npm:same-package"`).
+- **Stress-Test Gating**: In R4, `queryDeduplication: false` was injected via prototype mutation to force Apollo into issuing two separate physical network requests for concurrent same-key queries.
+- **Wired Gates**:
+  - Request 1 (Agent): Intercepted at `GetReverseDependents`, incremented `networkArrivalCount` to 1, resolved `firstArrival`, and blocked on `firstGate`.
+  - Request 2 (Human): Intercepted at `GetReverseDependents`, incremented `networkArrivalCount` to 2, resolved `secondArrival`, and blocked on `secondGate`.
+- **R4 Matrix Verification**: Verified winner execution, projection activation, and state parity under forced multi-request stress conditions.
 
-### 13.2 Quality Suite Execution (211/211 PASS)
+---
+
+## 14. WMCP-3B-R4 Independent Review
+
+- **Reviewed HEAD**: `c0a0847396e527b67596dd6bda236df749bf9c0f`
+- **Verdict**: `PASS WITH CORRECTIONS - NOT CLOSED`
+- **Findings**:
+  1. R4 correctly wired `firstArrival`/`secondArrival` and `firstGate`/`secondGate`.
+  2. R4 correctly proved an artificial two-network-request stress scenario.
+  3. However it forced `queryDeduplication: false` by mutating `Object.prototype` in the page test harness.
+  4. Production `ApolloClient` does not use `queryDeduplication: false`.
+  5. Therefore R4 browser evidence altered the transport behavior it intended to verify.
+  6. Evidence also incorrectly referenced Apollo Client v3.12; the installed dependency is `@apollo/client` 4.2.0.
+  7. No production WebMCP or War Room defect was identified. R5 restores production fidelity without altering production source code.
+
+---
+
+## 15. WMCP-3B-R5 Production-Fidelity Apollo Dedup & Final Evidence Closure
+
+### 15.1 Production Apollo Fidelity
+- **Installed Package**: `@apollo/client` version `4.2.0`.
+- **Production Configuration**: `apps/frontend/src/lib/apollo-wrapper.tsx` creates `ApolloClient` with default options (`queryDeduplication: true`).
+- **Test Harness Safety**: Completely eliminated `Object.prototype` mutations (0 occurrences). The only shim injected in Chromium is `document.modelContext` to provide standard WebMCP capabilities.
+- **Transport vs Invocation Identity**: Transport-level query deduplication (sharing an in-flight network fetch for identical queries) is an expected feature of Apollo Client. In the War Room runtime, each caller maintains an independent invocation context (`AGENT` vs `HUMAN`), captured context revision, and revision-bound transaction commit logic.
+
+### 15.2 Production Browser Concurrency Sequence (Test 7)
+1. **Initial State**: Container revision is verified at initial revision (`data-war-room-revision === "1"`).
+2. **Agent Query Arrival**: Agent starts `open_package_graph({ rootPackageId: "npm:same-package", depth: 2 })`. Its `GetReverseDependents` GraphQL query reaches the shared network barrier (`reverseDependentsArrivalCount === 1`).
+3. **Concurrent Human Action**: While the Agent query is blocked, the Human triggers `npm:same-package` via search input and button click. The Human loading spinner (`.animate-spin`) becomes visible.
+4. **Pre-Release Invariant**: Container revision remains `"1"` (no commit occurs while network response is held).
+5. **Deterministic Release**: The shared network barrier is released.
+6. **Settlement**: Agent tool result settles and Human spinner disappears.
+7. **Race Resolution**: Agent result is restricted to `SUCCESS` (with `projectionActivated: true`) or `STALE_CONTEXT`.
+8. **Final Parity**: Final revision increments exactly once (`1 -> 2`), phase is `GRAPH_READY`, and canonical root equals projection root (`"npm:same-package"`).
+9. **Deduplication Evidence**: `reverseDependentsArrivalCount === 1`, proving Apollo deduplicated the concurrent in-flight query.
+
+### 15.3 Full Quality Suite Execution (211/211 PASS)
 - **Agent UI E2E**: 7/7 tests PASS (`war-room-webmcp-agent-ui.spec.ts`)
 - **Human UI E2E**: 5/5 tests PASS (`war-room-human-ui.spec.ts`)
 - **Homepage E2E**: 8/8 tests PASS (`homepage.spec.ts`)
@@ -327,57 +355,59 @@ WebMCP Platform (document.modelContext)
 - **Next.js Build**: 15/15 static pages successfully generated (`next build`)
 - **npm audit**: 0 vulnerabilities
 
-### 13.3 Acceptance Gates Matrix (3B-R4-1 to 3B-R4-44)
+### 15.4 Acceptance Gates Matrix (3B-R5-1 to 3B-R5-46)
 
 | Gate ID | Requirement Description | Status |
 | :--- | :--- | :--- |
-| **3B-R4-1** | Starting HEAD exact `91b244fb2be94d5f1cc546827a7e6a58eee766d6` | **PASS** |
-| **3B-R4-2** | Upstream pin reverified (`41d12f057167ccf5954dbcf49d99502cb6c84491`) | **PASS** |
-| **3B-R4-3** | Zero executable production diff across all production modules | **PASS** |
-| **3B-R4-4** | Agent action uses registered `open_package_graph` tool | **PASS** |
-| **3B-R4-5** | Human action uses actual UI search input and button controls | **PASS** |
-| **3B-R4-6** | Both callers request same package `npm:same-package` with depth 2 | **PASS** |
-| **3B-R4-7** | Agent `firstArrival` explicitly awaited in test | **PASS** |
-| **3B-R4-8** | `networkArrivalCount === 1` asserted before Human UI action | **PASS** |
-| **3B-R4-9** | Human `secondArrival` explicitly awaited in test | **PASS** |
-| **3B-R4-10** | `networkArrivalCount === 2` asserted before any gate release | **PASS** |
-| **3B-R4-11** | First network request blocked on `firstGate` | **PASS** |
-| **3B-R4-12** | Second network request blocked on `secondGate` | **PASS** |
-| **3B-R4-13** | Both requests simultaneously blocked before release | **PASS** |
-| **3B-R4-14** | Human UI spinner visible while both requests are blocked | **PASS** |
-| **3B-R4-15** | `firstGate` released without releasing `secondGate` | **PASS** |
-| **3B-R4-16** | Agent winner result awaited and evaluated | **PASS** |
-| **3B-R4-17** | Agent winner result `ok === true` (SUCCESS) | **PASS** |
-| **3B-R4-18** | Agent `projectionActivated === true` | **PASS** |
-| **3B-R4-19** | Human spinner remains visible before `secondGate` release | **PASS** |
-| **3B-R4-20** | `secondGate` released only after Agent winner evidence confirmed | **PASS** |
-| **3B-R4-21** | Human spinner deterministically disappears after `secondGate` release | **PASS** |
-| **3B-R4-22** | Final canonical assertion after Human settlement | **PASS** |
-| **3B-R4-23** | Final projection assertion after Human settlement | **PASS** |
-| **3B-R4-24** | Final canonical root equals projection root | **PASS** |
-| **3B-R4-25** | Final root is `npm:same-package` | **PASS** |
-| **3B-R4-26** | No fixed sleep concurrency authority (`setTimeout`) | **PASS** |
-| **3B-R4-27** | Dead R3 synchronization variables removed | **PASS** |
-| **3B-R4-28** | A-first unit race preserved in registration spec (Test 33) | **PASS** |
-| **3B-R4-29** | B-first unit race preserved in registration spec (Test 34) | **PASS** |
-| **3B-R4-30** | Output budget regressions preserved (5000-char, 50000-char, search) | **PASS** |
-| **3B-R4-31** | General stale E2E preserved (Test 5) | **PASS** |
-| **3B-R4-32** | Cancellation E2E preserved (Test 6) | **PASS** |
-| **3B-R4-33** | 3B Agent UI suite PASS (7/7) | **PASS** |
-| **3B-R4-34** | 3B Registration suite PASS (40/40) | **PASS** |
-| **3B-R4-35** | 3A Platform regression PASS (42/42) | **PASS** |
-| **3B-R4-36** | WMCP-2 regression PASS (Domain 28/28, Actions 51/51, Adapters 30/30, Human UI 5/5) | **PASS** |
-| **3B-R4-37** | TypeScript PASS (0 errors) | **PASS** |
-| **3B-R4-38** | ESLint PASS (0 errors, 0 warnings) | **PASS** |
-| **3B-R4-39** | Build PASS (15/15 static pages) | **PASS** |
-| **3B-R4-40** | npm audit PASS (0 vulnerabilities) | **PASS** |
-| **3B-R4-41** | R3 independent review recorded truthfully | **PASS** |
-| **3B-R4-42** | Evidence no longer overclaims R3 overlap proof | **PASS** |
-| **3B-R4-43** | README remains pending independent verification | **PASS** |
-| **3B-R4-44** | Only the two authorized files committed | **PASS** |
+| **3B-R5-1** | Starting HEAD exact `c0a0847396e527b67596dd6bda236df749bf9c0f` | **PASS** |
+| **3B-R5-2** | WebMCP upstream pin reverified (`41d12f057167ccf5954dbcf49d99502cb6c84491`) | **PASS** |
+| **3B-R5-3** | Actual Apollo installed version recorded from package metadata (`@apollo/client` 4.2.0) | **PASS** |
+| **3B-R5-4** | Production Apollo config inspected (no explicit queryDeduplication: false) | **PASS** |
+| **3B-R5-5** | `Object.prototype` queryDeduplication mutation removed completely | **PASS** |
+| **3B-R5-6** | Zero `Object.prototype` mutations remain in Agent UI E2E | **PASS** |
+| **3B-R5-7** | Production Apollo queryDeduplication behavior left unmodified | **PASS** |
+| **3B-R5-8** | Fake `document.modelContext` remains the only required protocol shim | **PASS** |
+| **3B-R5-9** | Agent starts actual registered `open_package_graph` tool | **PASS** |
+| **3B-R5-10** | Agent identical GraphQL request explicitly reaches shared barrier | **PASS** |
+| **3B-R5-11** | Network arrival count equals 1 while shared request is blocked | **PASS** |
+| **3B-R5-12** | Human actual UI workflow starts while Agent request is blocked | **PASS** |
+| **3B-R5-13** | Human spinner visible before network release | **PASS** |
+| **3B-R5-14** | Canonical revision unchanged before network release | **PASS** |
+| **3B-R5-15** | No artificial second network request required | **PASS** |
+| **3B-R5-16** | Shared network request released deterministically | **PASS** |
+| **3B-R5-17** | Agent logical workflow settles | **PASS** |
+| **3B-R5-18** | Human logical workflow settles | **PASS** |
+| **3B-R5-19** | Agent outcome restricted to SUCCESS or STALE_CONTEXT | **PASS** |
+| **3B-R5-20** | If Agent SUCCESS then projectionActivated true | **PASS** |
+| **3B-R5-21** | Final canonical revision increments exactly once (1 -> 2) | **PASS** |
+| **3B-R5-22** | Final phase is GRAPH_READY | **PASS** |
+| **3B-R5-23** | Final canonical root is `npm:same-package` | **PASS** |
+| **3B-R5-24** | Final projection root is `npm:same-package` | **PASS** |
+| **3B-R5-25** | Canonical root equals projection root | **PASS** |
+| **3B-R5-26** | Final reverse-dependents physical request count equals actual production dedup behavior | **PASS** |
+| **3B-R5-27** | Expected production dedup count 1 verified | **PASS** |
+| **3B-R5-28** | Agent A-first unit race preserved in registration spec (Test 33) | **PASS** |
+| **3B-R5-29** | Agent B-first unit race preserved in registration spec (Test 34) | **PASS** |
+| **3B-R5-30** | Output budget regressions preserved (5000-char, 50000-char, search) | **PASS** |
+| **3B-R5-31** | General stale E2E preserved (Test 5) | **PASS** |
+| **3B-R5-32** | Cancellation E2E preserved (Test 6) | **PASS** |
+| **3B-R5-33** | 3B Agent UI 7/7 PASS | **PASS** |
+| **3B-R5-34** | 3B registration 40/40 PASS | **PASS** |
+| **3B-R5-35** | 3A Platform regression PASS (42/42) | **PASS** |
+| **3B-R5-36** | WMCP-2 regressions PASS (Domain 28/28, Actions 51/51, Adapters 30/30, Human UI 5/5) | **PASS** |
+| **3B-R5-37** | TypeScript PASS (0 errors) | **PASS** |
+| **3B-R5-38** | ESLint PASS (0 errors, 0 warnings) | **PASS** |
+| **3B-R5-39** | Build PASS (15/15 static pages) | **PASS** |
+| **3B-R5-40** | npm audit PASS (0 vulnerabilities) | **PASS** |
+| **3B-R5-41** | R4 independent review recorded truthfully | **PASS** |
+| **3B-R5-42** | Apollo version evidence corrected to `@apollo/client` 4.2.0 | **PASS** |
+| **3B-R5-43** | Two-network-request requirement superseded truthfully | **PASS** |
+| **3B-R5-44** | No global prototype manipulation remains | **PASS** |
+| **3B-R5-45** | README remains pending independent verification | **PASS** |
+| **3B-R5-46** | Only two authorized files committed | **PASS** |
 
 ---
 
-## 14. Final Status
+## 16. Final Status
 
 **IMPLEMENTED - PENDING INDEPENDENT VERIFICATION**
