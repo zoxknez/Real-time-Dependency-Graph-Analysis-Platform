@@ -31,6 +31,7 @@ mod health;
 mod onnx_model;
 mod proto_gen;
 pub mod public_api;
+pub mod api_snapshot;
 
 use anyhow::{Context, Result};
 use config::{Config, ParserConfig};
