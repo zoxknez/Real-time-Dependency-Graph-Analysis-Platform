@@ -590,6 +590,7 @@ mod tests {
             generics: vec![],
             annotations: vec![],
             is_exported: true,
+            is_overload_signature: false,
         }
     }
 

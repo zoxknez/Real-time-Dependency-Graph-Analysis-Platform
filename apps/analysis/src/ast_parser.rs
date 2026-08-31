@@ -112,6 +112,9 @@ pub struct ExtractedSymbol {
     pub annotations: Vec<String>,
     /// Is exported (JS/TS specific)
     pub is_exported: bool,
+    /// Is overload signature without body (TS specific)
+    #[serde(default)]
+    pub is_overload_signature: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -518,6 +521,7 @@ impl ParserPool {
             generics,
             annotations: vec![],
             is_exported: visibility.is_public(),
+            is_overload_signature: false,
         })
     }
 
@@ -564,6 +568,7 @@ impl ParserPool {
             generics,
             annotations: vec![],
             is_exported: visibility.is_public(),
+            is_overload_signature: false,
         })
     }
 
@@ -600,6 +605,7 @@ impl ParserPool {
             generics: vec![],
             annotations: vec![],
             is_exported: visibility.is_public(),
+            is_overload_signature: false,
         })
     }
 
@@ -636,6 +642,7 @@ impl ParserPool {
             generics: vec![],
             annotations: vec![],
             is_exported: visibility.is_public(),
+            is_overload_signature: false,
         })
     }
 
@@ -682,6 +689,7 @@ impl ParserPool {
             generics: vec![],
             annotations: vec![],
             is_exported: visibility.is_public(),
+            is_overload_signature: false,
         })
     }
 
@@ -718,6 +726,7 @@ impl ParserPool {
             generics: vec![],
             annotations: vec![],
             is_exported: visibility.is_public(),
+            is_overload_signature: false,
         })
     }
 
@@ -1063,6 +1072,8 @@ impl ParserPool {
             format!("{}.{}", module_path, name)
         };
 
+        let is_overload_signature = node.kind() == "function_signature";
+
         Some(ExtractedSymbol {
             name,
             qualified_path,
@@ -1082,6 +1093,7 @@ impl ParserPool {
             generics: vec![],
             annotations: vec![],
             is_exported,
+            is_overload_signature,
         })
     }
 
@@ -1122,6 +1134,7 @@ impl ParserPool {
             generics: vec![],
             annotations: vec![],
             is_exported,
+            is_overload_signature: false,
         })
     }
 
@@ -1168,6 +1181,7 @@ impl ParserPool {
                             generics: vec![],
                             annotations: vec![],
                             is_exported,
+                            is_overload_signature: false,
                         });
                     }
                 }
@@ -1371,6 +1385,7 @@ impl ParserPool {
             generics: vec![],
             annotations: vec![],
             is_exported: !is_private,
+            is_overload_signature: false,
         })
     }
 
@@ -1412,6 +1427,7 @@ impl ParserPool {
             generics: vec![],
             annotations: vec![],
             is_exported: !is_private,
+            is_overload_signature: false,
         })
     }
 
@@ -1614,6 +1630,7 @@ impl ParserPool {
                             generics: Vec::new(),
                             annotations: Vec::new(),
                             is_exported: false,
+                            is_overload_signature: false,
                         });
                     }
                 }
@@ -1665,6 +1682,7 @@ impl ParserPool {
                             generics: Vec::new(),
                             annotations: Vec::new(),
                             is_exported: false,
+                            is_overload_signature: false,
                         });
                     }
                 }
@@ -1748,6 +1766,7 @@ impl ParserPool {
                             generics: Vec::new(),
                             annotations: Vec::new(),
                             is_exported: false,
+                            is_overload_signature: false,
                         });
 
                         class_stack.push((name, visibility));
@@ -1797,6 +1816,7 @@ impl ParserPool {
                         generics: Vec::new(),
                         annotations: Vec::new(),
                         is_exported: false,
+                        is_overload_signature: false,
                     });
                 }
             }
