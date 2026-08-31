@@ -437,8 +437,8 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
         return Ok(analysis_events);
     };
 
-    // 2. Stream source files from the archive without unpacking the whole package.
-    let source_files = match extract_source_files(&tarball_path, &config.parser).await {
+    // 2. Stream source and metadata files from the archive without unpacking the whole package.
+    let extracted_files = match extract_source_files(&tarball_path, &config.parser).await {
         Ok(files) => files,
         Err(err) => {
             cleanup_tarball(&tarball_path).await;
@@ -447,7 +447,10 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
     };
     cleanup_tarball(&tarball_path).await;
 
-    // 3. Parse source and extract public API
+    let source_files = extracted_files.source_files;
+    let metadata_files = extracted_files.metadata_files;
+
+    // 3. Parse source and extract public API (AST parser receives ONLY source_files, zero metadata)
     let mut api_snapshot = PublicApiSnapshot::new(event.package_id.clone(), event.version.clone());
 
     for (file_path, content) in &source_files {
@@ -516,19 +519,22 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
         })
         .unwrap_or(Language::JavaScript);
 
-    // Resolve authoritative package entry points (no all-files blind injection)
-    let extracted_package_surface =
-        resolve_package_entry_points(&source_files, &event.package_id, primary_lang).and_then(
-            |entry_points| {
-                public_api::PublicApiExtractor::extract_package(
-                    &config.parser_pool,
-                    &event.package_id,
-                    primary_lang,
-                    &entry_points,
-                )
-                .ok()
-            },
-        );
+    // Resolve authoritative package entry points (anchored to manifest root)
+    let extracted_package_surface = resolve_package_entry_points(
+        &source_files,
+        &metadata_files,
+        &event.package_id,
+        primary_lang,
+    )
+    .and_then(|entry_points| {
+        public_api::PublicApiExtractor::extract_package(
+            &config.parser_pool,
+            &event.package_id,
+            primary_lang,
+            &entry_points,
+        )
+        .ok()
+    });
 
     // 5. Detect breaking changes (if previous version exists)
     if let Some(ref prev_version) = event.previous_version {
@@ -661,24 +667,32 @@ async fn download_tarball(url: &str, max_bytes: usize) -> Result<Option<String>>
     Ok(Some(file_path.to_string_lossy().to_string()))
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExtractedPackageFiles {
+    /// Only programming language source files suitable for AST parser input
+    pub source_files: Vec<(String, String)>,
+    /// Only package manifest metadata files (e.g. package.json, Cargo.toml)
+    pub metadata_files: Vec<(String, String)>,
+}
+
 async fn extract_source_files(
     tarball_path: &str,
     parser_config: &ParserConfig,
-) -> Result<Vec<(String, String)>> {
-    debug!(path = tarball_path, "Extracting source files");
+) -> Result<ExtractedPackageFiles> {
+    debug!(path = tarball_path, "Extracting source and metadata files");
     let tarball_path = tarball_path.to_string();
     let max_file_size = parser_config.max_file_size;
     let max_files = parser_config.max_files_per_package;
     let max_unpacked_size = parser_config.max_unpacked_size_bytes;
 
-    let files = tokio::task::spawn_blocking(move || -> Result<Vec<(String, String)>> {
+    let extracted = tokio::task::spawn_blocking(move || -> Result<ExtractedPackageFiles> {
         use std::io::Read;
 
         let file = std::fs::File::open(&tarball_path)?;
         let decoder = flate2::read::GzDecoder::new(file);
         let mut archive = tar::Archive::new(decoder);
 
-        let mut results = Vec::new();
+        let mut results = ExtractedPackageFiles::default();
         let mut inspected_unpacked_bytes = 0usize;
 
         for entry in archive.entries()? {
@@ -706,10 +720,20 @@ async fn extract_source_files(
                 continue;
             };
 
-            let Some(ext) = Path::new(&rel_path).extension().and_then(|e| e.to_str()) else {
-                continue;
-            };
-            if Language::from_extension(ext).is_none() {
+            let file_name = Path::new(&rel_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+
+            let is_supported_metadata = file_name == "package.json" || file_name == "Cargo.toml";
+
+            let is_source = Path::new(&rel_path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .and_then(Language::from_extension)
+                .is_some();
+
+            if !is_source && !is_supported_metadata {
                 continue;
             }
 
@@ -744,8 +768,13 @@ async fn extract_source_files(
                 Err(_) => continue,
             };
 
-            results.push((rel_path, content));
-            if results.len() >= max_files {
+            if is_supported_metadata {
+                results.metadata_files.push((rel_path, content));
+            } else if is_source {
+                results.source_files.push((rel_path, content));
+            }
+
+            if results.source_files.len() + results.metadata_files.len() >= max_files {
                 debug!(
                     max_files,
                     "Stopping package extraction because file limit was reached"
@@ -758,7 +787,7 @@ async fn extract_source_files(
     })
     .await??;
 
-    Ok(files)
+    Ok(extracted)
 }
 
 fn safe_relative_path(path: &Path) -> Option<String> {
@@ -813,13 +842,14 @@ fn snapshot_path(package_id: &str, version: &str) -> PathBuf {
 
 fn resolve_package_entry_points<'a>(
     source_files: &'a [(String, String)],
+    metadata_files: &'a [(String, String)],
     _package_id: &str,
     lang: Language,
 ) -> Option<Vec<(&'a str, &'a str, &'a str)>> {
     match lang {
         Language::JavaScript | Language::TypeScript => {
-            // Must have exactly ONE unique package.json candidate
-            let pkg_json_candidates: Vec<&'a (String, String)> = source_files
+            // Must have exactly ONE unique package.json in metadata_files
+            let pkg_json_candidates: Vec<&'a (String, String)> = metadata_files
                 .iter()
                 .filter(|(p, _)| p == "package.json" || p.ends_with("/package.json"))
                 .collect();
@@ -828,13 +858,20 @@ fn resolve_package_entry_points<'a>(
                 return None;
             }
 
-            let (_, content) = pkg_json_candidates[0];
+            let (manifest_path, content) = pkg_json_candidates[0];
             let v: serde_json::Value = serde_json::from_str(content).ok()?;
 
             // If "exports" is present at all, return None (unsupported for production Package snapshot in WMCP-6)
             if v.get("exports").is_some() {
                 return None;
             }
+
+            // Derive manifest directory relative to archive root
+            let manifest_dir = if manifest_path == "package.json" {
+                ""
+            } else {
+                manifest_path.strip_suffix("/package.json").unwrap_or("")
+            };
 
             let mut resolved_targets = Vec::new();
 
@@ -859,16 +896,21 @@ fn resolve_package_entry_points<'a>(
                         return None;
                     }
 
-                    // Find matching source file uniquely
+                    // Compute expected archive-relative path anchored to manifest_dir
+                    let expected_path = if manifest_dir.is_empty() {
+                        normalized.to_string()
+                    } else {
+                        format!("{}/{}", manifest_dir, normalized)
+                    };
+
+                    // Exact path match only (no global suffix or sibling escape)
                     let matches: Vec<&'a (String, String)> = source_files
                         .iter()
-                        .filter(|(p, _)| {
-                            p == normalized || p.ends_with(&format!("/{}", normalized))
-                        })
+                        .filter(|(p, _)| p == &expected_path)
                         .collect();
 
                     if matches.len() != 1 {
-                        // 0 matches (missing target) or >1 matches (ambiguous) -> fail closed
+                        // 0 matches (missing target) or >1 matches -> fail closed
                         return None;
                     }
 
@@ -896,8 +938,8 @@ fn resolve_package_entry_points<'a>(
             )])
         }
         Language::Rust => {
-            // Must have exactly ONE unique Cargo.toml candidate
-            let cargo_candidates: Vec<&'a (String, String)> = source_files
+            // Must have exactly ONE unique Cargo.toml in metadata_files
+            let cargo_candidates: Vec<&'a (String, String)> = metadata_files
                 .iter()
                 .filter(|(p, _)| p == "Cargo.toml" || p.ends_with("/Cargo.toml"))
                 .collect();
@@ -906,17 +948,31 @@ fn resolve_package_entry_points<'a>(
                 return None;
             }
 
-            let (_, cargo_content) = cargo_candidates[0];
+            let (manifest_path, cargo_content) = cargo_candidates[0];
 
             // If Cargo.toml contains custom [lib] section, skip to avoid incorrect fallback
             if cargo_content.contains("[lib]") {
                 return None;
             }
 
-            // Standard Cargo library root: src/lib.rs
+            // Derive manifest directory relative to archive root
+            let manifest_dir = if manifest_path == "Cargo.toml" {
+                ""
+            } else {
+                manifest_path.strip_suffix("/Cargo.toml").unwrap_or("")
+            };
+
+            // Standard Cargo library root: src/lib.rs anchored to manifest_dir
+            let expected_lib_path = if manifest_dir.is_empty() {
+                "src/lib.rs".to_string()
+            } else {
+                format!("{}/src/lib.rs", manifest_dir)
+            };
+
+            // Exact path match only
             let lib_matches: Vec<&'a (String, String)> = source_files
                 .iter()
-                .filter(|(p, _)| p == "src/lib.rs" || p.ends_with("/src/lib.rs"))
+                .filter(|(p, _)| p == &expected_lib_path)
                 .collect();
 
             if lib_matches.len() == 1 {
@@ -962,9 +1018,9 @@ mod tests {
     }
 
     #[test]
-    fn test_6r3_t1_through_t23_strict_package_authority_resolution() {
-        // 6R3-T1: JS/TS without package.json -> None (no filename fallback)
-        let files_no_manifest = vec![
+    fn test_6r4_t1_through_t14_metadata_preservation_and_root_binding() {
+        // 6R4-T1 & 6R4-T3: JS/TS without metadata_files -> None
+        let sources_no_meta = vec![
             (
                 "src/index.ts".to_string(),
                 "export function pubFn() {}".to_string(),
@@ -974,159 +1030,344 @@ mod tests {
                 "export function privFn() {}".to_string(),
             ),
         ];
+        let meta_empty = vec![];
         assert!(
-            resolve_package_entry_points(&files_no_manifest, "pkg", Language::TypeScript).is_none()
+            resolve_package_entry_points(
+                &sources_no_meta,
+                &meta_empty,
+                "pkg",
+                Language::TypeScript
+            )
+            .is_none()
         );
 
-        // 6R3-T2: JS/TS malformed package.json -> None
-        let files_bad_json = vec![
-            ("package.json".to_string(), "{ invalid json".to_string()),
-            (
-                "src/index.ts".to_string(),
-                "export function pubFn() {}".to_string(),
-            ),
-        ];
-        assert!(
-            resolve_package_entry_points(&files_bad_json, "pkg", Language::TypeScript).is_none()
-        );
-
-        // 6R3-T3: JS/TS explicit missing main -> None (no fallback to src/index.ts)
-        let files_missing_main = vec![
-            (
-                "package.json".to_string(),
-                r#"{"main": "./dist/missing.js"}"#.to_string(),
-            ),
-            (
-                "src/index.ts".to_string(),
-                "export function pubFn() {}".to_string(),
-            ),
-        ];
-        assert!(
-            resolve_package_entry_points(&files_missing_main, "pkg", Language::TypeScript)
-                .is_none()
-        );
-
-        // 6R3-T4..T6: JS/TS exports present -> None (safely unsupported in WMCP-6)
-        let files_exports = vec![
-            ("package.json".to_string(), r#"{"name": "foo", "exports": {".": "./src/index.ts", "./feature": "./src/feature.ts"}}"#.to_string()),
-            ("src/index.ts".to_string(), "export function pubFn() {}".to_string()),
-            ("src/feature.ts".to_string(), "export function feat() {}".to_string()),
-        ];
-        assert!(
-            resolve_package_entry_points(&files_exports, "foo", Language::TypeScript).is_none()
-        );
-
-        // 6R3-T7: JS/TS valid single explicit main -> exact entry
-        let files_valid_main = vec![
-            (
-                "package.json".to_string(),
-                r#"{"main": "./src/index.ts"}"#.to_string(),
-            ),
-            (
-                "src/index.ts".to_string(),
-                "export function pubFn() {}".to_string(),
-            ),
-            (
-                "src/internal.ts".to_string(),
-                "export function privFn() {}".to_string(),
-            ),
-        ];
-        let ep =
-            resolve_package_entry_points(&files_valid_main, "foo", Language::TypeScript).unwrap();
+        // 6R4-T6: Root JS manifest resolves root-relative target
+        let meta_root_js = vec![(
+            "package.json".to_string(),
+            r#"{"main": "./src/index.ts"}"#.to_string(),
+        )];
+        let ep = resolve_package_entry_points(
+            &sources_no_meta,
+            &meta_root_js,
+            "pkg",
+            Language::TypeScript,
+        )
+        .unwrap();
         assert_eq!(ep.len(), 1);
         assert_eq!(ep[0].0, "src/index.ts");
 
-        // 6R3-T8: JS/TS conflicting distinct main / types -> None
-        let files_conflict = vec![
+        // 6R4-T7: Nested JS manifest resolves nested target
+        let sources_nested = vec![
             (
-                "package.json".to_string(),
-                r#"{"main": "./src/runtime.js", "types": "./src/types.d.ts"}"#.to_string(),
+                "packages/a/src/index.ts".to_string(),
+                "export function a() {}".to_string(),
             ),
             (
-                "src/runtime.js".to_string(),
-                "module.exports = {};".to_string(),
-            ),
-            (
-                "src/types.d.ts".to_string(),
-                "export declare const x: number;".to_string(),
+                "packages/b/src/index.ts".to_string(),
+                "export function b() {}".to_string(),
             ),
         ];
+        let meta_nested_a = vec![(
+            "packages/a/package.json".to_string(),
+            r#"{"main": "./src/index.ts"}"#.to_string(),
+        )];
+        let ep_nested = resolve_package_entry_points(
+            &sources_nested,
+            &meta_nested_a,
+            "pkg",
+            Language::TypeScript,
+        )
+        .unwrap();
+        assert_eq!(ep_nested.len(), 1);
+        assert_eq!(ep_nested[0].0, "packages/a/src/index.ts");
+
+        // 6R4-T8: Sibling package collision rejected (packages/a manifest + packages/b source only)
+        let sources_b_only = vec![(
+            "packages/b/src/index.ts".to_string(),
+            "export function b() {}".to_string(),
+        )];
         assert!(
-            resolve_package_entry_points(&files_conflict, "foo", Language::TypeScript).is_none()
+            resolve_package_entry_points(
+                &sources_b_only,
+                &meta_nested_a,
+                "pkg",
+                Language::TypeScript,
+            )
+            .is_none()
         );
 
-        // 6R3-T9: JS/TS path traversal -> None
-        let files_traversal = vec![
-            (
-                "package.json".to_string(),
-                r#"{"main": "../outside.js"}"#.to_string(),
-            ),
-            ("outside.js".to_string(), "export const x = 1;".to_string()),
-        ];
-        assert!(
-            resolve_package_entry_points(&files_traversal, "foo", Language::TypeScript).is_none()
-        );
-
-        // 6R3-T12: Rust without Cargo.toml -> None (even if src/lib.rs exists)
-        let files_rs_no_cargo = vec![("src/lib.rs".to_string(), "pub fn run() {}".to_string())];
-        assert!(
-            resolve_package_entry_points(&files_rs_no_cargo, "crate_a", Language::Rust).is_none()
-        );
-
-        // 6R3-T13: Rust unique Cargo.toml + default src/lib.rs -> exact entry
-        let files_rs_valid = vec![
-            (
-                "Cargo.toml".to_string(),
-                "[package]\nname = \"crate_a\"\nversion = \"0.1.0\"".to_string(),
-            ),
+        // 6R4-T9: Root Cargo manifest resolves src/lib.rs
+        let sources_rs = vec![
             ("src/lib.rs".to_string(), "pub fn run() {}".to_string()),
             (
                 "src/internal.rs".to_string(),
                 "pub fn helper() {}".to_string(),
             ),
         ];
+        let meta_root_cargo = vec![(
+            "Cargo.toml".to_string(),
+            "[package]\nname = \"crate_a\"\nversion = \"0.1.0\"".to_string(),
+        )];
         let ep_rs =
-            resolve_package_entry_points(&files_rs_valid, "crate_a", Language::Rust).unwrap();
+            resolve_package_entry_points(&sources_rs, &meta_root_cargo, "crate_a", Language::Rust)
+                .unwrap();
         assert_eq!(ep_rs.len(), 1);
         assert_eq!(ep_rs[0].0, "src/lib.rs");
 
-        // 6R3-T14: Rust binary-only package -> None
-        let files_rs_bin = vec![
+        // 6R4-T10: Nested Cargo manifest resolves its own src/lib.rs
+        let sources_nested_rs = vec![
             (
-                "Cargo.toml".to_string(),
-                "[package]\nname = \"bin_pkg\"\nversion = \"0.1.0\"".to_string(),
+                "crates/core/src/lib.rs".to_string(),
+                "pub fn core_fn() {}".to_string(),
             ),
-            ("src/main.rs".to_string(), "fn main() {}".to_string()),
+            (
+                "crates/other/src/lib.rs".to_string(),
+                "pub fn other_fn() {}".to_string(),
+            ),
         ];
-        assert!(resolve_package_entry_points(&files_rs_bin, "bin_pkg", Language::Rust).is_none());
+        let meta_nested_cargo = vec![(
+            "crates/core/Cargo.toml".to_string(),
+            "[package]\nname = \"core\"\nversion = \"0.1.0\"".to_string(),
+        )];
+        let ep_nested_rs = resolve_package_entry_points(
+            &sources_nested_rs,
+            &meta_nested_cargo,
+            "core",
+            Language::Rust,
+        )
+        .unwrap();
+        assert_eq!(ep_nested_rs.len(), 1);
+        assert_eq!(ep_nested_rs[0].0, "crates/core/src/lib.rs");
 
-        // 6R3-T15: Rust custom [lib] section -> None
-        let files_rs_custom_lib = vec![
+        // 6R4-T11: Rust sibling collision rejected
+        let sources_other_only = vec![(
+            "crates/other/src/lib.rs".to_string(),
+            "pub fn other_fn() {}".to_string(),
+        )];
+        assert!(
+            resolve_package_entry_points(
+                &sources_other_only,
+                &meta_nested_cargo,
+                "core",
+                Language::Rust,
+            )
+            .is_none()
+        );
+
+        // 6R4-T12: JS traversal target rejected
+        let meta_traversal = vec![(
+            "package.json".to_string(),
+            r#"{"main": "../outside.js"}"#.to_string(),
+        )];
+        let sources_traversal = vec![("outside.js".to_string(), "export const x = 1;".to_string())];
+        assert!(
+            resolve_package_entry_points(
+                &sources_traversal,
+                &meta_traversal,
+                "pkg",
+                Language::TypeScript,
+            )
+            .is_none()
+        );
+
+        // 6R4-T13: Duplicate package manifests ambiguous
+        let meta_duplicate_js = vec![
             (
-                "Cargo.toml".to_string(),
-                "[package]\nname = \"pkg\"\n[lib]\npath = \"custom/lib.rs\"".to_string(),
+                "packages/a/package.json".to_string(),
+                r#"{"main": "./src/index.ts"}"#.to_string(),
             ),
-            ("src/lib.rs".to_string(), "pub fn old() {}".to_string()),
             (
-                "custom/lib.rs".to_string(),
-                "pub fn custom() {}".to_string(),
+                "packages/b/package.json".to_string(),
+                r#"{"main": "./src/index.ts"}"#.to_string(),
             ),
         ];
         assert!(
-            resolve_package_entry_points(&files_rs_custom_lib, "pkg", Language::Rust).is_none()
+            resolve_package_entry_points(
+                &sources_nested,
+                &meta_duplicate_js,
+                "pkg",
+                Language::TypeScript,
+            )
+            .is_none()
         );
 
-        // 6R3-T16..T19: Python, Java, Go unsupported for production Package snapshot integration -> None
-        let files_py = vec![("__init__.py".to_string(), "def f(): pass".to_string())];
-        assert!(resolve_package_entry_points(&files_py, "py_pkg", Language::Python).is_none());
+        // 6R4-T14: Duplicate Cargo manifests ambiguous
+        let meta_duplicate_cargo = vec![
+            (
+                "crates/a/Cargo.toml".to_string(),
+                "[package]\nname=\"a\"".to_string(),
+            ),
+            (
+                "crates/b/Cargo.toml".to_string(),
+                "[package]\nname=\"b\"".to_string(),
+            ),
+        ];
+        assert!(
+            resolve_package_entry_points(
+                &sources_nested_rs,
+                &meta_duplicate_cargo,
+                "pkg",
+                Language::Rust,
+            )
+            .is_none()
+        );
+    }
 
-        let files_java = vec![(
-            "module-info.java".to_string(),
-            "module com.foo {}".to_string(),
+    #[tokio::test]
+    async fn test_6r4_t15_through_t27_e2e_package_snapshot_persistence_valid_and_zero_write() {
+        let temp_dir = std::env::temp_dir().join(format!("r4_e2e_{}", uuid::Uuid::new_v4()));
+        let repo = api_snapshot::SnapshotRepository::open(&temp_dir).unwrap();
+        let pool = ast_parser::ParserPool::new(std::time::Duration::from_secs(5), 1024 * 1024);
+
+        // 6R4-T15: Valid JS archive produces committed Package snapshot
+        let js_sources = vec![
+            (
+                "src/index.ts".to_string(),
+                "export function publicFn(): number { return 42; }".to_string(),
+            ),
+            (
+                "src/internal.ts".to_string(),
+                "export function secret(): void {}".to_string(),
+            ),
+        ];
+        let js_meta = vec![(
+            "package.json".to_string(),
+            r#"{"name": "test-pkg", "main": "./src/index.ts"}"#.to_string(),
         )];
-        assert!(resolve_package_entry_points(&files_java, "java_pkg", Language::Java).is_none());
+        let ep_js =
+            resolve_package_entry_points(&js_sources, &js_meta, "test-pkg", Language::TypeScript)
+                .unwrap();
+        let surface_js = public_api::PublicApiExtractor::extract_package(
+            &pool,
+            "test-pkg",
+            Language::TypeScript,
+            &ep_js,
+        )
+        .unwrap();
+        let rec_js = repo
+            .put(
+                "test-pkg",
+                surface_js.scope.clone(),
+                "1.0.0",
+                surface_js,
+                1000,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rec_js.subject, "test-pkg");
 
-        let files_go = vec![("main.go".to_string(), "package main".to_string())];
-        assert!(resolve_package_entry_points(&files_go, "go_pkg", Language::Go).is_none());
+        // 6R4-T16: Valid Rust archive produces committed Package snapshot
+        let rs_sources = vec![
+            (
+                "src/lib.rs".to_string(),
+                "pub fn library_fn() -> i32 { 100 }".to_string(),
+            ),
+            (
+                "src/internal.rs".to_string(),
+                "fn internal_fn() {}".to_string(),
+            ),
+        ];
+        let rs_meta = vec![(
+            "Cargo.toml".to_string(),
+            "[package]\nname = \"test-rs\"\nversion = \"1.0.0\"".to_string(),
+        )];
+        let ep_rs =
+            resolve_package_entry_points(&rs_sources, &rs_meta, "test-rs", Language::Rust).unwrap();
+        let surface_rs = public_api::PublicApiExtractor::extract_package(
+            &pool,
+            "test-rs",
+            Language::Rust,
+            &ep_rs,
+        )
+        .unwrap();
+        let rec_rs = repo
+            .put(
+                "test-rs",
+                surface_rs.scope.clone(),
+                "1.0.0",
+                surface_rs,
+                1000,
+            )
+            .await
+            .unwrap();
+        assert_eq!(rec_rs.subject, "test-rs");
+
+        // 6R4-T17..T23: Zero-write verification for all unsupported / ambiguous cases
+        let zero_write_repo_dir =
+            std::env::temp_dir().join(format!("r4_zero_{}", uuid::Uuid::new_v4()));
+        let zero_repo = api_snapshot::SnapshotRepository::open(&zero_write_repo_dir).unwrap();
+
+        // JS no manifest
+        assert!(
+            resolve_package_entry_points(&js_sources, &[], "zero-pkg", Language::TypeScript)
+                .is_none()
+        );
+        // JS exports
+        let js_meta_exports = vec![(
+            "package.json".to_string(),
+            r#"{"exports": "./src/index.ts"}"#.to_string(),
+        )];
+        assert!(
+            resolve_package_entry_points(
+                &js_sources,
+                &js_meta_exports,
+                "zero-pkg",
+                Language::TypeScript
+            )
+            .is_none()
+        );
+        // JS broken target
+        let js_meta_broken = vec![(
+            "package.json".to_string(),
+            r#"{"main": "./missing.ts"}"#.to_string(),
+        )];
+        assert!(
+            resolve_package_entry_points(
+                &js_sources,
+                &js_meta_broken,
+                "zero-pkg",
+                Language::TypeScript
+            )
+            .is_none()
+        );
+        // Rust no Cargo.toml
+        assert!(
+            resolve_package_entry_points(&rs_sources, &[], "zero-pkg", Language::Rust).is_none()
+        );
+        // Python, Java, Go
+        assert!(
+            resolve_package_entry_points(
+                &[("__init__.py".to_string(), "def f(): pass".to_string())],
+                &[],
+                "zero-pkg",
+                Language::Python
+            )
+            .is_none()
+        );
+        assert!(
+            resolve_package_entry_points(
+                &[("module-info.java".to_string(), "module foo {}".to_string())],
+                &[],
+                "zero-pkg",
+                Language::Java
+            )
+            .is_none()
+        );
+        assert!(
+            resolve_package_entry_points(
+                &[("main.go".to_string(), "package main".to_string())],
+                &[],
+                "zero-pkg",
+                Language::Go
+            )
+            .is_none()
+        );
+
+        // Verify zero writes in repository
+        let history = zero_repo.list_history("zero-pkg").await.unwrap();
+        assert!(history.is_empty());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let _ = std::fs::remove_dir_all(&zero_write_repo_dir);
     }
 }

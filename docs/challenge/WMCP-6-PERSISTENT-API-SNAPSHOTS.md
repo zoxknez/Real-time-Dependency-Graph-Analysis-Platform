@@ -2,10 +2,16 @@
 
 ## 1. Purpose & Scope
 
-This document establishes the durable, immutable, and fail-closed persistence authority for authoritative public API observations (**WMCP-6 / WMCP-6-R3**):
-- **Strict Package Authority Gating (`resolve_package_entry_points`)**: Complete Package snapshots are persisted only when the production integration can prove package API entry authority from source-grounded metadata. Zero filename heuristics (`src/index.ts`, `lib.rs`, `__init__.py`, `module-info.java`, `main.go`, `lib.go`) are accepted without surrounding manifest authority.
-  - **TypeScript / JavaScript**: Requires a unique valid `package.json` with supported string `main`, `types`, or `typings` resolving to a single matching source file. If `package.json` is missing, malformed, contains `"exports"`, has conflicting roots, or has missing targets, the integration returns `None` and skips Package snapshot creation.
-  - **Rust**: Requires a unique `Cargo.toml` without custom `[lib]` overrides and standard `src/lib.rs`. Binary-only crates and non-Cargo sources return `None`.
+This document establishes the durable, immutable, and fail-closed persistence authority for authoritative public API observations (**WMCP-6 / WMCP-6-R4**):
+- **Archive Extraction & Metadata Isolation (`ExtractedPackageFiles`)**: Archive extraction separates extracted files into `source_files` (files with programming language extensions recognized by `Language::from_extension`) and `metadata_files` (strictly `package.json` and `Cargo.toml`).
+  - AST `ParserPool::parse` receives **ONLY** `source_files`, ensuring complete parser isolation and preventing non-source files from polluting AST parsing.
+  - Non-authority metadata files (e.g. `tsconfig.json`, `package-lock.json`, `config.toml`, `rustfmt.toml`) are ignored during extraction.
+- **Manifest Root Binding & Exact Target Resolution (`resolve_package_entry_points`)**: Package entry targets are resolved relative to the directory containing the unique package manifest (`manifest_dir.join(normalized_target)`), with exact archive-relative path matching against `source_files`.
+  - Suffix matching across the archive is eliminated; a manifest at `packages/a/package.json` cannot resolve to `packages/b/src/index.js`.
+  - Common archive prefixes (e.g. `package/package.json` -> `package/src/index.js`, `crate-1.0.0/Cargo.toml` -> `crate-1.0.0/src/lib.rs`) resolve naturally.
+- **Strict Authority Gating**:
+  - **TypeScript / JavaScript**: Requires a unique valid `package.json` with supported string `main`, `types`, or `typings` resolving to a single matching source file within the manifest subtree. If `package.json` is missing, malformed, contains `"exports"`, has conflicting roots, has path traversal, or has missing targets, the integration returns `None` and skips Package snapshot creation.
+  - **Rust**: Requires a unique `Cargo.toml` without custom `[lib]` overrides and standard `src/lib.rs` within the manifest subtree. Binary-only crates and non-Cargo sources return `None`.
   - **Python / Java / Go**: Production Package snapshot integration is strictly `UNSUPPORTED` in WMCP-6 (returns `None`), preventing the persistence of false Complete package surfaces. Parser support for these languages in WMCP-5 remains fully active.
 - **Real OS Advisory File Locking (`fs2`)**: Lock acquisition holds an exclusive kernel-level OS file lock on `locks/<safe_subject>.lock`. Non-blocking `try_lock_exclusive` retries in a 15ms loop until acquired or until the configured 10-second acquisition timeout expires (`SnapshotError::LockTimeout`). No custom leases, no age-based lock stealing, and no file deletion on release.
 - **Manifest as Commit Authority**: The history manifest (`history/<safe_subject>.json`) is the sole commit authority. Snapshot files (`snapshots/<snapshot_id>.json`) are immutable content blobs. Both `get_by_coordinate` and `get_by_id` enforce manifest commitment, rejecting uncommitted orphan blobs.
@@ -26,8 +32,8 @@ This document establishes the durable, immutable, and fail-closed persistence au
 
 - **Repository**: `zoxknez/Real-time-Dependency-Graph-Analysis-Platform`
 - **Branch**: `feature/webmcp-challenge-2026`
-- **Starting HEAD**: `78d650d2b4deb8cfe625aebda456b7a2fd4b1f87`
-- **Parent HEAD**: `69b1fc5cbb812482715c67753400bbad833557d5`
+- **Starting HEAD**: `2f04d005731c3decfa35bd7f4a7549a923dbad8d`
+- **Parent HEAD**: `78d650d2b4deb8cfe625aebda456b7a2fd4b1f87`
 - **WMCP-5 Closure HEAD**: `a8fb93e44261e08be7faa10bd18241034a4bf639`
 - **WMCP-4 Closure HEAD**: `2d208c94612ffe1c920d08a0a74c66653c8ee965`
 - **Pinned Upstream Reference**:
@@ -50,8 +56,8 @@ This document establishes the durable, immutable, and fail-closed persistence au
 
 ## 4. Test & Verification Evidence
 
-- **Rust Analysis Test Suite**: **46 / 46 PASS** (0 failed).
-- **Workspace Cargo Suite**: **148 / 148 PASS** (0 failed).
+- **Rust Analysis Test Suite**: **47 / 47 PASS** (0 failed).
+- **Workspace Cargo Suite**: **149 / 149 PASS** (0 failed).
 - **Workspace Quality Check**: `cargo check --workspace --all-targets` -> **0 errors** (Exit 0).
 - **Frontend Regression Suite**: `npm --prefix apps/frontend run build` -> **PASS** (Exit 0).
 - **ASCII Scan**: 0 non-ASCII hyphens across all deliverable files.
@@ -60,4 +66,4 @@ This document establishes the durable, immutable, and fail-closed persistence au
 
 ## 5. Status
 
-**WMCP-6-R3 IMPLEMENTED - PENDING FINAL NARROW RE-VERIFICATION**
+**WMCP-6-R4 IMPLEMENTED - PENDING FINAL CLOSURE RE-VERIFICATION**
