@@ -25,6 +25,7 @@ mod breaking_change_predictor;
 mod breaking_detector;
 mod config;
 mod consumer;
+pub mod counterfactual;
 mod embeddings;
 mod feature_extraction;
 mod health;
