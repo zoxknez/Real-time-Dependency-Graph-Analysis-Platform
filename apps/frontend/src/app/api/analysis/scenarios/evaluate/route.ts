@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
         Accept: "application/json",
       },
       body: JSON.stringify(body),
+      signal: request.signal,
     });
 
     const data = await backendResponse.json();

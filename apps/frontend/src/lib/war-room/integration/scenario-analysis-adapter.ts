@@ -155,6 +155,9 @@ export function createHttpScenarioAnalysisPort(
           baseline_surface_hash: string;
           candidate_surface_hash: string;
           changed: boolean;
+          total_breaking_changes?: number;
+          returned_breaking_changes?: number;
+          breaking_changes_truncated?: boolean;
           breaking_changes: Array<{
             change_type: string;
             symbol_path: string;
@@ -178,6 +181,10 @@ export function createHttpScenarioAnalysisPort(
           migrationHint: bc.migration_hint,
         }));
 
+        const totalCount = data.total_breaking_changes ?? breakingChanges.length;
+        const returnedCount = data.returned_breaking_changes ?? breakingChanges.length;
+        const isTruncated = data.breaking_changes_truncated ?? (totalCount > returnedCount);
+
         const analysisRef: WarRoomAnalysisRef = {
           id: `analysis-${scenario.id}-${sourceContextRevision}`,
           scenarioId: scenario.id,
@@ -186,6 +193,9 @@ export function createHttpScenarioAnalysisPort(
           baselineSurfaceHash: data.baseline_surface_hash,
           candidateSurfaceHash: data.candidate_surface_hash,
           changed: data.changed,
+          totalBreakingChanges: totalCount,
+          returnedBreakingChanges: returnedCount,
+          breakingChangesTruncated: isTruncated,
           breakingChanges,
         };
 

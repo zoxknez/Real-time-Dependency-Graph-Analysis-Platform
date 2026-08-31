@@ -237,6 +237,9 @@ test.describe("WMCP-7B: Production War Room Scenario Integration", () => {
       expect(res.data.baselineSurfaceHash).toBe("hash_base_123");
       expect(res.data.candidateSurfaceHash).toBe("hash_cand_456");
       expect(res.data.changed).toBe(true);
+      expect(res.data.totalBreakingChanges).toBe(1);
+      expect(res.data.returnedBreakingChanges).toBe(1);
+      expect(res.data.breakingChangesTruncated).toBe(false);
       expect(res.data.breakingChanges?.length).toBe(1);
       expect(res.data.breakingChanges?.[0].changeType).toBe("RemovedSymbol");
       expect(res.data.affectedEntityIds).toEqual([]); // 7B-T27: Truthful, zero speculative downstream claims

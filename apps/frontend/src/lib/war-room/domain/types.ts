@@ -123,6 +123,9 @@ export interface WarRoomAnalysisRef {
   readonly baselineSurfaceHash?: string;
   readonly candidateSurfaceHash?: string;
   readonly changed?: boolean;
+  readonly totalBreakingChanges?: number;
+  readonly returnedBreakingChanges?: number;
+  readonly breakingChangesTruncated?: boolean;
   readonly breakingChanges?: readonly WarRoomBreakingChangeDto[];
 }
 
