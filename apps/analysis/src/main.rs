@@ -818,84 +818,120 @@ fn resolve_package_entry_points<'a>(
 ) -> Option<Vec<(&'a str, &'a str, &'a str)>> {
     match lang {
         Language::JavaScript | Language::TypeScript => {
-            // Check for package.json metadata
-            if let Some((_, content)) = source_files
+            // Must have exactly ONE unique package.json candidate
+            let pkg_json_candidates: Vec<&'a (String, String)> = source_files
                 .iter()
-                .find(|(p, _)| p.ends_with("package.json") || p == "package.json")
-            {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(content) {
-                    if let Some(main) = v.get("main").and_then(|m| m.as_str()) {
-                        let normalized = main.trim_start_matches("./");
-                        if let Some((p, c)) =
-                            source_files.iter().find(|(p, _)| p.ends_with(normalized))
-                        {
-                            return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
-                        }
+                .filter(|(p, _)| p == "package.json" || p.ends_with("/package.json"))
+                .collect();
+
+            if pkg_json_candidates.len() != 1 {
+                return None;
+            }
+
+            let (_, content) = pkg_json_candidates[0];
+            let v: serde_json::Value = serde_json::from_str(content).ok()?;
+
+            // If "exports" is present at all, return None (unsupported for production Package snapshot in WMCP-6)
+            if v.get("exports").is_some() {
+                return None;
+            }
+
+            let mut resolved_targets = Vec::new();
+
+            for field in &["main", "types", "typings"] {
+                if let Some(target_val) = v.get(*field) {
+                    let target_str = target_val.as_str()?;
+                    let trimmed = target_str.trim();
+                    if trimmed.is_empty() {
+                        return None;
                     }
-                    if let Some(types) = v
-                        .get("types")
-                        .or_else(|| v.get("typings"))
-                        .and_then(|t| t.as_str())
+                    // Path containment check: reject path traversal and absolute paths
+                    if trimmed.starts_with('/')
+                        || trimmed.starts_with('\\')
+                        || trimmed.contains("../")
+                        || trimmed.contains("..\\")
+                        || (trimmed.len() >= 2 && trimmed.as_bytes()[1] == b':')
                     {
-                        let normalized = types.trim_start_matches("./");
-                        if let Some((p, c)) =
-                            source_files.iter().find(|(p, _)| p.ends_with(normalized))
-                        {
-                            return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
-                        }
+                        return None;
                     }
+                    let normalized = trimmed.trim_start_matches("./");
+                    if normalized.is_empty() {
+                        return None;
+                    }
+
+                    // Find matching source file uniquely
+                    let matches: Vec<&'a (String, String)> = source_files
+                        .iter()
+                        .filter(|(p, _)| {
+                            p == normalized || p.ends_with(&format!("/{}", normalized))
+                        })
+                        .collect();
+
+                    if matches.len() != 1 {
+                        // 0 matches (missing target) or >1 matches (ambiguous) -> fail closed
+                        return None;
+                    }
+
+                    resolved_targets.push(matches[0]);
                 }
             }
-            // Standard convention roots
-            for standard in &[
-                "src/index.ts",
-                "src/index.js",
-                "index.ts",
-                "index.js",
-                "lib/index.ts",
-                "lib/index.js",
-            ] {
-                if let Some((p, c)) = source_files.iter().find(|(p, _)| p.ends_with(standard)) {
-                    return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
+
+            if resolved_targets.is_empty() {
+                return None;
+            }
+
+            // All present metadata fields must resolve to the EXACT same source file
+            let first_match = resolved_targets[0];
+            for other in &resolved_targets[1..] {
+                if other.0 != first_match.0 {
+                    // Conflicting distinct roots (e.g. main vs types) -> fail closed
+                    return None;
                 }
             }
-            None
+
+            Some(vec![(
+                first_match.0.as_str(),
+                first_match.0.as_str(),
+                first_match.1.as_str(),
+            )])
         }
         Language::Rust => {
-            // Standard crate roots
-            for standard in &["src/lib.rs", "lib.rs"] {
-                if let Some((p, c)) = source_files.iter().find(|(p, _)| p.ends_with(standard)) {
-                    return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
-                }
-            }
-            None
-        }
-        Language::Python => {
-            for standard in &["__init__.py", "src/__init__.py"] {
-                if let Some((p, c)) = source_files.iter().find(|(p, _)| p.ends_with(standard)) {
-                    return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
-                }
-            }
-            None
-        }
-        Language::Java => {
-            if let Some((p, c)) = source_files
+            // Must have exactly ONE unique Cargo.toml candidate
+            let cargo_candidates: Vec<&'a (String, String)> = source_files
                 .iter()
-                .find(|(p, _)| p.ends_with("module-info.java"))
-            {
-                return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
+                .filter(|(p, _)| p == "Cargo.toml" || p.ends_with("/Cargo.toml"))
+                .collect();
+
+            if cargo_candidates.len() != 1 {
+                return None;
             }
-            None
-        }
-        Language::Go => {
-            if let Some((p, c)) = source_files
+
+            let (_, cargo_content) = cargo_candidates[0];
+
+            // If Cargo.toml contains custom [lib] section, skip to avoid incorrect fallback
+            if cargo_content.contains("[lib]") {
+                return None;
+            }
+
+            // Standard Cargo library root: src/lib.rs
+            let lib_matches: Vec<&'a (String, String)> = source_files
                 .iter()
-                .find(|(p, _)| p.ends_with("main.go") || p.ends_with("lib.go"))
-            {
-                return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
+                .filter(|(p, _)| p == "src/lib.rs" || p.ends_with("/src/lib.rs"))
+                .collect();
+
+            if lib_matches.len() == 1 {
+                let lib_file = lib_matches[0];
+                Some(vec![(
+                    lib_file.0.as_str(),
+                    lib_file.0.as_str(),
+                    lib_file.1.as_str(),
+                )])
+            } else {
+                None
             }
-            None
         }
+        // Python, Java, Go: Unsupported for production Package snapshot integration in WMCP-6
+        Language::Python | Language::Java | Language::Go => None,
     }
 }
 
@@ -926,66 +962,171 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_package_entry_points_metadata_and_conventions() {
-        // 6R2-T14 & 6R2-T15: TS package with package.json pointing to index.ts while internal.ts exists
-        let files_ts = vec![
-            (
-                "package.json".to_string(),
-                r#"{"name": "foo", "main": "src/index.ts"}"#.to_string(),
-            ),
+    fn test_6r3_t1_through_t23_strict_package_authority_resolution() {
+        // 6R3-T1: JS/TS without package.json -> None (no filename fallback)
+        let files_no_manifest = vec![
             (
                 "src/index.ts".to_string(),
-                "export function publicFn() {}".to_string(),
+                "export function pubFn() {}".to_string(),
             ),
             (
                 "src/internal.ts".to_string(),
-                "export function secretInternal() {}".to_string(),
-            ),
-        ];
-        let ep_ts = resolve_package_entry_points(&files_ts, "foo", Language::TypeScript).unwrap();
-        assert_eq!(ep_ts.len(), 1);
-        assert_eq!(ep_ts[0].0, "src/index.ts");
-
-        // 6R2-T16: Ambiguous / missing entry points returns None
-        let files_ambiguous = vec![
-            (
-                "src/helper1.ts".to_string(),
-                "export const A = 1;".to_string(),
-            ),
-            (
-                "src/helper2.ts".to_string(),
-                "export const B = 2;".to_string(),
+                "export function privFn() {}".to_string(),
             ),
         ];
         assert!(
-            resolve_package_entry_points(&files_ambiguous, "foo", Language::TypeScript).is_none()
+            resolve_package_entry_points(&files_no_manifest, "pkg", Language::TypeScript).is_none()
         );
 
-        // 6R2-T17: Rust crate root resolves src/lib.rs
-        let files_rs = vec![
+        // 6R3-T2: JS/TS malformed package.json -> None
+        let files_bad_json = vec![
+            ("package.json".to_string(), "{ invalid json".to_string()),
+            (
+                "src/index.ts".to_string(),
+                "export function pubFn() {}".to_string(),
+            ),
+        ];
+        assert!(
+            resolve_package_entry_points(&files_bad_json, "pkg", Language::TypeScript).is_none()
+        );
+
+        // 6R3-T3: JS/TS explicit missing main -> None (no fallback to src/index.ts)
+        let files_missing_main = vec![
+            (
+                "package.json".to_string(),
+                r#"{"main": "./dist/missing.js"}"#.to_string(),
+            ),
+            (
+                "src/index.ts".to_string(),
+                "export function pubFn() {}".to_string(),
+            ),
+        ];
+        assert!(
+            resolve_package_entry_points(&files_missing_main, "pkg", Language::TypeScript)
+                .is_none()
+        );
+
+        // 6R3-T4..T6: JS/TS exports present -> None (safely unsupported in WMCP-6)
+        let files_exports = vec![
+            ("package.json".to_string(), r#"{"name": "foo", "exports": {".": "./src/index.ts", "./feature": "./src/feature.ts"}}"#.to_string()),
+            ("src/index.ts".to_string(), "export function pubFn() {}".to_string()),
+            ("src/feature.ts".to_string(), "export function feat() {}".to_string()),
+        ];
+        assert!(
+            resolve_package_entry_points(&files_exports, "foo", Language::TypeScript).is_none()
+        );
+
+        // 6R3-T7: JS/TS valid single explicit main -> exact entry
+        let files_valid_main = vec![
+            (
+                "package.json".to_string(),
+                r#"{"main": "./src/index.ts"}"#.to_string(),
+            ),
+            (
+                "src/index.ts".to_string(),
+                "export function pubFn() {}".to_string(),
+            ),
+            (
+                "src/internal.ts".to_string(),
+                "export function privFn() {}".to_string(),
+            ),
+        ];
+        let ep =
+            resolve_package_entry_points(&files_valid_main, "foo", Language::TypeScript).unwrap();
+        assert_eq!(ep.len(), 1);
+        assert_eq!(ep[0].0, "src/index.ts");
+
+        // 6R3-T8: JS/TS conflicting distinct main / types -> None
+        let files_conflict = vec![
+            (
+                "package.json".to_string(),
+                r#"{"main": "./src/runtime.js", "types": "./src/types.d.ts"}"#.to_string(),
+            ),
+            (
+                "src/runtime.js".to_string(),
+                "module.exports = {};".to_string(),
+            ),
+            (
+                "src/types.d.ts".to_string(),
+                "export declare const x: number;".to_string(),
+            ),
+        ];
+        assert!(
+            resolve_package_entry_points(&files_conflict, "foo", Language::TypeScript).is_none()
+        );
+
+        // 6R3-T9: JS/TS path traversal -> None
+        let files_traversal = vec![
+            (
+                "package.json".to_string(),
+                r#"{"main": "../outside.js"}"#.to_string(),
+            ),
+            ("outside.js".to_string(), "export const x = 1;".to_string()),
+        ];
+        assert!(
+            resolve_package_entry_points(&files_traversal, "foo", Language::TypeScript).is_none()
+        );
+
+        // 6R3-T12: Rust without Cargo.toml -> None (even if src/lib.rs exists)
+        let files_rs_no_cargo = vec![("src/lib.rs".to_string(), "pub fn run() {}".to_string())];
+        assert!(
+            resolve_package_entry_points(&files_rs_no_cargo, "crate_a", Language::Rust).is_none()
+        );
+
+        // 6R3-T13: Rust unique Cargo.toml + default src/lib.rs -> exact entry
+        let files_rs_valid = vec![
+            (
+                "Cargo.toml".to_string(),
+                "[package]\nname = \"crate_a\"\nversion = \"0.1.0\"".to_string(),
+            ),
             ("src/lib.rs".to_string(), "pub fn run() {}".to_string()),
             (
-                "src/internal_mod.rs".to_string(),
+                "src/internal.rs".to_string(),
                 "pub fn helper() {}".to_string(),
             ),
         ];
-        let ep_rs = resolve_package_entry_points(&files_rs, "rust_crate", Language::Rust).unwrap();
+        let ep_rs =
+            resolve_package_entry_points(&files_rs_valid, "crate_a", Language::Rust).unwrap();
         assert_eq!(ep_rs.len(), 1);
         assert_eq!(ep_rs[0].0, "src/lib.rs");
 
-        // 6R2-T18: Python package root resolves __init__.py
-        let files_py = vec![
+        // 6R3-T14: Rust binary-only package -> None
+        let files_rs_bin = vec![
             (
-                "src/__init__.py".to_string(),
-                "def main(): pass".to_string(),
+                "Cargo.toml".to_string(),
+                "[package]\nname = \"bin_pkg\"\nversion = \"0.1.0\"".to_string(),
             ),
+            ("src/main.rs".to_string(), "fn main() {}".to_string()),
+        ];
+        assert!(resolve_package_entry_points(&files_rs_bin, "bin_pkg", Language::Rust).is_none());
+
+        // 6R3-T15: Rust custom [lib] section -> None
+        let files_rs_custom_lib = vec![
             (
-                "src/internal.py".to_string(),
-                "def hidden(): pass".to_string(),
+                "Cargo.toml".to_string(),
+                "[package]\nname = \"pkg\"\n[lib]\npath = \"custom/lib.rs\"".to_string(),
+            ),
+            ("src/lib.rs".to_string(), "pub fn old() {}".to_string()),
+            (
+                "custom/lib.rs".to_string(),
+                "pub fn custom() {}".to_string(),
             ),
         ];
-        let ep_py = resolve_package_entry_points(&files_py, "py_pkg", Language::Python).unwrap();
-        assert_eq!(ep_py.len(), 1);
-        assert_eq!(ep_py[0].0, "src/__init__.py");
+        assert!(
+            resolve_package_entry_points(&files_rs_custom_lib, "pkg", Language::Rust).is_none()
+        );
+
+        // 6R3-T16..T19: Python, Java, Go unsupported for production Package snapshot integration -> None
+        let files_py = vec![("__init__.py".to_string(), "def f(): pass".to_string())];
+        assert!(resolve_package_entry_points(&files_py, "py_pkg", Language::Python).is_none());
+
+        let files_java = vec![(
+            "module-info.java".to_string(),
+            "module com.foo {}".to_string(),
+        )];
+        assert!(resolve_package_entry_points(&files_java, "java_pkg", Language::Java).is_none());
+
+        let files_go = vec![("main.go".to_string(), "package main".to_string())];
+        assert!(resolve_package_entry_points(&files_go, "go_pkg", Language::Go).is_none());
     }
 }
