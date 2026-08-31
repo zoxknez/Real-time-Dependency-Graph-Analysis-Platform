@@ -2,16 +2,15 @@
 
 ## 1. Purpose & Scope
 
-This document establishes the durable, immutable, and fail-closed persistence authority for authoritative public API observations (**WMCP-6 / WMCP-6-R1**):
-- **Authoritative Snapshot Envelope V1 (`wmcp-api-snapshot-v1`)**: Wraps validated WMCP-5 `PublicApiSurface` observations with explicit schema versioning, deterministic snapshot identity, and scoped coordinates. Speculative `parent_snapshot_id` has been removed from V1.
-- **Manifest as Commit Authority**: The history manifest (`history/<safe_subject>.json`) is the sole commit authority. Snapshot files (`snapshots/<snapshot_id>.json`) are immutable content blobs. An uncommitted snapshot blob is treated as an uncommitted orphan and is never exposed through history or coordinate lookups.
-- **Cross-Process & Multi-Instance Locking**: Manifest mutations and coordinate conflict checks are serialized via `SubjectFileLock` (cross-process file lock with stale-lock recovery), preventing last-writer-wins and lost history entries across multiple instances or processes.
+This document establishes the durable, immutable, and fail-closed persistence authority for authoritative public API observations (**WMCP-6 / WMCP-6-R2**):
+- **Real OS Advisory File Locking (`fs2`)**: Lock acquisition holds an exclusive kernel-level OS file lock on `locks/<safe_subject>.lock`. No custom leases, no 15-second age thresholds, no age-based lock stealing, and no file deletion on release.
+- **Manifest as Commit Authority**: The history manifest (`history/<safe_subject>.json`) is the sole commit authority. Snapshot files (`snapshots/<snapshot_id>.json`) are immutable content blobs. Both `get_by_coordinate` and `get_by_id` enforce manifest commitment, rejecting uncommitted orphan blobs.
+- **Breaking Detector Baseline Progression (`surface_to_snapshot`)**: A lossless compatibility adapter converts authoritative V1 `PublicApiSurface` into `PublicApiSnapshot` for breaking change baseline resolution. The pipeline resolves baselines V1-first with legacy read-only fallback (`L -> A -> B -> C`), keeping the detector baseline active without writing legacy data.
+- **Authoritative Package Entry-Point Resolution (`resolve_package_entry_points`)**: Enforces WMCP-5 caller-designated package entry points from package metadata (`package.json`, `Cargo.toml`, `__init__.py`) or standard root conventions, preventing blind injection of internal modules as package public API.
 - **Complete Coordinate Authority**: Coordinates explicitly include `(subject, PublicApiScope, revision)`. Module and Package observations for the same subject/revision coexist without collision.
 - **Explicit Storage Root Configuration**: Production requires explicit configuration via `ANALYSIS_SNAPSHOT_DIR` (`SnapshotRepository::open_from_env()`). Missing configuration fails closed rather than silently falling back to ephemeral OS temp storage.
-- **Retirement of Legacy Production Writer**: Legacy `save_snapshot` has been retired from the active event consumer in `main.rs`. All authoritative public API persistence flows through `SnapshotRepository`.
+- **Retirement of Legacy Production Writer**: Legacy `save_snapshot` has been completely removed from `apps/analysis/src/main.rs`. All authoritative public API persistence flows through `SnapshotRepository`.
 - **Fail-Closed Admission**: Rejects `AnalysisStatus::Partial` and `AnalysisStatus::Unsupported` at the repository boundary; only `AnalysisStatus::Complete` surfaces enter authoritative history.
-- **Full Read Verification**: Deserialization re-validates schema version, `AnalysisStatus::Complete`, canonical WMCP-5 surface hash, and deterministic snapshot ID.
-- **Deterministic History Sequence**: Exposes history ordered strictly by recording/capture sequence, without performing SemVer or PEP 440 parsing.
 
 ### Non-Goals
 - **No Breaking Change Detection / Scenario Engine**: Counterfactual simulations and breaking change evaluation belong to **WMCP-7**.
@@ -24,8 +23,8 @@ This document establishes the durable, immutable, and fail-closed persistence au
 
 - **Repository**: `zoxknez/Real-time-Dependency-Graph-Analysis-Platform`
 - **Branch**: `feature/webmcp-challenge-2026`
-- **Starting HEAD**: `69c86d720d0d93b9200665d861211399261c49e1`
-- **Parent HEAD**: `a8fb93e44261e08be7faa10bd18241034a4bf639`
+- **Starting HEAD**: `69b1fc5cbb812482715c67753400bbad833557d5`
+- **Parent HEAD**: `69c86d720d0d93b9200665d861211399261c49e1`
 - **WMCP-5 Closure HEAD**: `a8fb93e44261e08be7faa10bd18241034a4bf639`
 - **WMCP-4 Closure HEAD**: `2d208c94612ffe1c920d08a0a74c66653c8ee965`
 - **Pinned Upstream Reference**:
@@ -38,9 +37,9 @@ This document establishes the durable, immutable, and fail-closed persistence au
 
 | Component | Path | Responsibility | Production Reachability | Format |
 | :--- | :--- | :--- | :--- | :--- |
-| `PublicApiSnapshot` | `apps/analysis/src/ast_parser.rs` | Legacy in-memory snapshot representation | In-memory only | Legacy struct |
+| `PublicApiSnapshot` | `apps/analysis/src/ast_parser.rs` | In-memory snapshot representation | In-memory only | Struct |
 | `save_snapshot` | `apps/analysis/src/main.rs` | **RETIRED & REMOVED** | **REMOVED** | Legacy JSON |
-| `load_previous_snapshot` | `apps/analysis/src/main.rs` | Read-only legacy file reader for breaking detector | Production-Reachable (Read-only) | Legacy JSON |
+| `load_previous_snapshot` | `apps/analysis/src/main.rs` | Read-only legacy fallback reader | Production-Reachable (Fallback) | Legacy JSON |
 | `SnapshotRepository` | `apps/analysis/src/api_snapshot.rs` | **Sole authoritative persistence engine** | **PRODUCTION (Authoritative)** | Versioned V1 Envelope JSON (`wmcp-api-snapshot-v1`) |
 
 ### Authoritative Call Graph
@@ -48,24 +47,28 @@ This document establishes the durable, immutable, and fail-closed persistence au
 Source Code Tarball
         |
         v
-WMCP-5 PublicApiExtractor::extract_package / extract_module
+resolve_package_entry_points (package metadata / conventions)
+        |
+        v
+WMCP-5 PublicApiExtractor::extract_package
         |
         v
 PublicApiSurface (AnalysisStatus::Complete)
         |
-        v
-SnapshotRepository::open_from_env() -> SnapshotRepository::put(subject, scope, revision, surface)
-        |
    +----+----+
    |         |
-Immutable  Commit Manifest
-Content    (history/<subject>.json under SubjectFileLock)
-Blob         |
-(snapshots/  v
- <id>.json)  get_by_coordinate / list_history
-        |
-        v
-Future WMCP-7 / WMCP-8 Consumers
+   |         v
+   |    SnapshotRepository::get_by_coordinate(prev_ver) -> surface_to_snapshot
+   |         |
+   |         v
+   |    breaking_detector.detect_breaking_changes
+   |
+   v
+SnapshotRepository::put(subject, scope, revision, surface)
+   |
+   +--> snapshots/<snapshot_id>.json (immutable blob)
+   |
+   +--> history/<subject>.json (commit manifest under fs2 OS file lock)
 ```
 
 ---
@@ -83,62 +86,42 @@ Configured via `ANALYSIS_SNAPSHOT_DIR` environment variable. In production, miss
   ├── history/
   │   └── <safe_subject>.json               # Authoritative SubjectHistoryManifest (Commit Authority)
   ├── _locks/
-  │   └── <safe_subject>.lock               # Cross-process advisory lock file
+  │   └── <safe_subject>.lock               # Persistent OS file lock target (fs2)
   └── _tmp/                                 # Isolated staging directory for atomic renames
 ```
 
 ---
 
-## 5. Snapshot Envelope V1 Schema & Deterministic Identity
+## 5. Breaking Detector Losslessness Matrix
 
-### Schema Definition
-```json
-{
-  "schema_version": "wmcp-api-snapshot-v1",
-  "snapshot_id": "9f8a...",
-  "subject": "my-package",
-  "scope": {
-    "Package": {
-      "package_id": "my-package",
-      "entry_points": ["src/lib.rs"]
-    }
-  },
-  "revision": "1.0.0",
-  "captured_at_epoch_ms": 1725091200000,
-  "surface": { ... }
-}
-```
-
-### Deterministic Snapshot ID Preimage (`compute_snapshot_id`)
-Encoded via `CanonicalHashWriter`:
-1. `SNAPSHOT_ID_DOMAIN` (`wmcp-api-snapshot-v1`, length-prefixed).
-2. `subject` (length-prefixed UTF-8 string).
-3. `scope` (tag `0` + `module_path` for Module; tag `1` + `package_id` + count + entry points for Package).
-4. `revision` (opaque length-prefixed string).
-5. `surface.surface_hash` (64-character lowercase hex string).
+| Detector Field | Required by Detector | Available in V1 Surface | Lossless Mapping |
+| :--- | :--- | :--- | :--- |
+| `name` | YES | `PublicApiSymbol.exported_name` | **YES** |
+| `qualified_path` | YES | `PublicApiSymbol.qualified_name` | **YES** |
+| `kind` | YES | `PublicApiSymbol.kind` | **YES** |
+| `visibility` | YES | `Visibility::Public` | **YES** |
+| `signature` | YES | `sig.normalized_signature` | **YES** |
+| `raw_signature` | YES | `sig.raw_signature` | **YES** |
+| `start_line` / `end_line` | Optional diagnostic | `sym.provenance` | **YES** |
+| `parameters` | YES | `sig.parameters` (1:1 with `ParameterInfo`) | **YES** |
+| `return_type` | YES | `sig.return_type` | **YES** |
+| `generics` | YES | `sig.generics` | **YES** |
+| `annotations` | YES | `sig.annotations` | **YES** |
+| `is_exported` | YES | `true` | **YES** |
+| `is_overload_signature`| YES | boolean flag | **YES** |
 
 ---
 
-## 6. Failure & Security Invariants
+## 6. Test & Verification Evidence
 
-1. **Complete-Only Admission**: Attempting to persist `AnalysisStatus::Partial` returns `SnapshotError::IncompleteAnalysis`; attempting `AnalysisStatus::Unsupported` returns `SnapshotError::UnsupportedAnalysis`.
-2. **Surface Hash Tamper Rejection**: Pre-admission and on-read validation recompute the canonical WMCP-5 surface hash from normalized symbols. Mismatches return `SnapshotError::SurfaceHashMismatch`.
-3. **Conflict Detection**: Same coordinate `(subject, scope, revision)` with different surface hash returns `SnapshotError::SnapshotConflict` (fails closed, zero overwrite).
-4. **Path Traversal Immunity**: Coordinates and subjects are mapped through `safe_segment` (human-readable sanitized prefix + SHA-256 hash), preventing `../` traversal, separator injection, and Windows reserved filenames (`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`).
-5. **Foreign File Preservation**: Repository operations touch only managed snapshot artifacts; foreign files located in storage roots are preserved.
-
----
-
-## 7. Test & Verification Evidence
-
-- **Rust Analysis Test Suite**: **47 / 47 PASS** (0 failed).
-- **Workspace Cargo Suite**: **149 / 149 PASS** (0 failed).
+- **Rust Analysis Test Suite**: **46 / 46 PASS** (0 failed).
+- **Workspace Cargo Suite**: **148 / 148 PASS** (0 failed).
 - **Workspace Quality Check**: `cargo check --workspace --all-targets` -> **0 errors** (Exit 0).
 - **Frontend Regression Suite**: `npm --prefix apps/frontend run build` -> **PASS** (Exit 0).
 - **ASCII Scan**: 0 non-ASCII hyphens across all deliverable files.
 
 ---
 
-## 8. Status
+## 7. Status
 
-**WMCP-6-R1 IMPLEMENTED - PENDING INDEPENDENT RE-VERIFICATION**
+**WMCP-6-R2 IMPLEMENTED - PENDING FINAL INDEPENDENT RE-VERIFICATION**

@@ -505,56 +505,63 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
         }
     }
 
-    // Persist authoritative API snapshot if storage root is configured
-    if let Ok(snapshot_repo) = api_snapshot::SnapshotRepository::open_from_env() {
-        let files_slice: Vec<(&str, &str, &str)> = source_files
-            .iter()
-            .map(|(p, c)| (p.as_str(), p.as_str(), c.as_str()))
-            .collect();
+    // Detect primary language
+    let primary_lang = source_files
+        .iter()
+        .find_map(|(p, _)| {
+            std::path::Path::new(p)
+                .extension()
+                .and_then(|e| e.to_str())
+                .and_then(Language::from_extension)
+        })
+        .unwrap_or(Language::JavaScript);
 
-        // Detect primary language
-        let primary_lang = source_files
-            .iter()
-            .find_map(|(p, _)| {
-                std::path::Path::new(p)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .and_then(Language::from_extension)
-            })
-            .unwrap_or(Language::JavaScript);
-
-        if let Ok(surface) = public_api::PublicApiExtractor::extract_package(
-            &config.parser_pool,
-            &event.package_id,
-            primary_lang,
-            &files_slice,
-        ) {
-            if surface.status == public_api::AnalysisStatus::Complete {
-                let now_ms = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
-
-                let scope = surface.scope.clone();
-                if let Err(e) = snapshot_repo
-                    .put(&event.package_id, scope, &event.version, surface, now_ms)
-                    .await
-                {
-                    warn!(error = %e, "Failed to persist authoritative API snapshot");
-                }
-            }
-        }
-    }
+    // Resolve authoritative package entry points (no all-files blind injection)
+    let extracted_package_surface =
+        resolve_package_entry_points(&source_files, &event.package_id, primary_lang).and_then(
+            |entry_points| {
+                public_api::PublicApiExtractor::extract_package(
+                    &config.parser_pool,
+                    &event.package_id,
+                    primary_lang,
+                    &entry_points,
+                )
+                .ok()
+            },
+        );
 
     // 5. Detect breaking changes (if previous version exists)
     if let Some(ref prev_version) = event.previous_version {
         debug!(previous = %prev_version, "Checking for breaking changes");
 
-        // Load previous API snapshot (from cache/storage)
-        if let Some(prev_snapshot) = load_previous_snapshot(&event.package_id, prev_version).await {
+        let mut prev_snapshot: Option<PublicApiSnapshot> = None;
+
+        // V1-first baseline resolution from authoritative snapshot repository
+        if let Ok(snapshot_repo) = api_snapshot::SnapshotRepository::open_from_env() {
+            if let Some(ref current_surface) = extracted_package_surface {
+                if let Ok(prev_env) = snapshot_repo
+                    .get_by_coordinate(&event.package_id, &current_surface.scope, prev_version)
+                    .await
+                {
+                    prev_snapshot = Some(api_snapshot::surface_to_snapshot(
+                        &prev_env.surface,
+                        &event.package_id,
+                        prev_version,
+                    ));
+                }
+            }
+        }
+
+        // Legacy read-only fallback if V1 snapshot was not found
+        if prev_snapshot.is_none() {
+            prev_snapshot = load_previous_snapshot(&event.package_id, prev_version).await;
+        }
+
+        // Run breaking change detection if a baseline was resolved
+        if let Some(ref prev) = prev_snapshot {
             let changes = config
                 .breaking_detector
-                .detect_breaking_changes(&prev_snapshot, &api_snapshot);
+                .detect_breaking_changes(prev, &api_snapshot);
 
             if !changes.is_empty() {
                 let breaking_count = changes
@@ -574,6 +581,26 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
                     previous_version: prev_version.clone(),
                     changes: changes.into_iter().map(|c| c.into()).collect(),
                 });
+            }
+        }
+    }
+
+    // Persist current authoritative API snapshot if Complete
+    if let Some(surface) = extracted_package_surface {
+        if surface.status == public_api::AnalysisStatus::Complete {
+            if let Ok(snapshot_repo) = api_snapshot::SnapshotRepository::open_from_env() {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+
+                let scope = surface.scope.clone();
+                if let Err(e) = snapshot_repo
+                    .put(&event.package_id, scope, &event.version, surface, now_ms)
+                    .await
+                {
+                    warn!(error = %e, "Failed to persist authoritative API snapshot");
+                }
             }
         }
     }
@@ -784,6 +811,94 @@ fn snapshot_path(package_id: &str, version: &str) -> PathBuf {
         .join(format!("{}.json", sanitize_segment(version)))
 }
 
+fn resolve_package_entry_points<'a>(
+    source_files: &'a [(String, String)],
+    _package_id: &str,
+    lang: Language,
+) -> Option<Vec<(&'a str, &'a str, &'a str)>> {
+    match lang {
+        Language::JavaScript | Language::TypeScript => {
+            // Check for package.json metadata
+            if let Some((_, content)) = source_files
+                .iter()
+                .find(|(p, _)| p.ends_with("package.json") || p == "package.json")
+            {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(content) {
+                    if let Some(main) = v.get("main").and_then(|m| m.as_str()) {
+                        let normalized = main.trim_start_matches("./");
+                        if let Some((p, c)) =
+                            source_files.iter().find(|(p, _)| p.ends_with(normalized))
+                        {
+                            return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
+                        }
+                    }
+                    if let Some(types) = v
+                        .get("types")
+                        .or_else(|| v.get("typings"))
+                        .and_then(|t| t.as_str())
+                    {
+                        let normalized = types.trim_start_matches("./");
+                        if let Some((p, c)) =
+                            source_files.iter().find(|(p, _)| p.ends_with(normalized))
+                        {
+                            return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
+                        }
+                    }
+                }
+            }
+            // Standard convention roots
+            for standard in &[
+                "src/index.ts",
+                "src/index.js",
+                "index.ts",
+                "index.js",
+                "lib/index.ts",
+                "lib/index.js",
+            ] {
+                if let Some((p, c)) = source_files.iter().find(|(p, _)| p.ends_with(standard)) {
+                    return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
+                }
+            }
+            None
+        }
+        Language::Rust => {
+            // Standard crate roots
+            for standard in &["src/lib.rs", "lib.rs"] {
+                if let Some((p, c)) = source_files.iter().find(|(p, _)| p.ends_with(standard)) {
+                    return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
+                }
+            }
+            None
+        }
+        Language::Python => {
+            for standard in &["__init__.py", "src/__init__.py"] {
+                if let Some((p, c)) = source_files.iter().find(|(p, _)| p.ends_with(standard)) {
+                    return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
+                }
+            }
+            None
+        }
+        Language::Java => {
+            if let Some((p, c)) = source_files
+                .iter()
+                .find(|(p, _)| p.ends_with("module-info.java"))
+            {
+                return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
+            }
+            None
+        }
+        Language::Go => {
+            if let Some((p, c)) = source_files
+                .iter()
+                .find(|(p, _)| p.ends_with("main.go") || p.ends_with("lib.go"))
+            {
+                return Some(vec![(p.as_str(), p.as_str(), c.as_str())]);
+            }
+            None
+        }
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // TESTS
 // ═══════════════════════════════════════════════════════════════
@@ -808,5 +923,69 @@ mod tests {
         let work_item = WorkItem::new(event.clone());
         assert_eq!(work_item.event.package_id, "test-package");
         assert_eq!(work_item.retry_count, 0);
+    }
+
+    #[test]
+    fn test_resolve_package_entry_points_metadata_and_conventions() {
+        // 6R2-T14 & 6R2-T15: TS package with package.json pointing to index.ts while internal.ts exists
+        let files_ts = vec![
+            (
+                "package.json".to_string(),
+                r#"{"name": "foo", "main": "src/index.ts"}"#.to_string(),
+            ),
+            (
+                "src/index.ts".to_string(),
+                "export function publicFn() {}".to_string(),
+            ),
+            (
+                "src/internal.ts".to_string(),
+                "export function secretInternal() {}".to_string(),
+            ),
+        ];
+        let ep_ts = resolve_package_entry_points(&files_ts, "foo", Language::TypeScript).unwrap();
+        assert_eq!(ep_ts.len(), 1);
+        assert_eq!(ep_ts[0].0, "src/index.ts");
+
+        // 6R2-T16: Ambiguous / missing entry points returns None
+        let files_ambiguous = vec![
+            (
+                "src/helper1.ts".to_string(),
+                "export const A = 1;".to_string(),
+            ),
+            (
+                "src/helper2.ts".to_string(),
+                "export const B = 2;".to_string(),
+            ),
+        ];
+        assert!(
+            resolve_package_entry_points(&files_ambiguous, "foo", Language::TypeScript).is_none()
+        );
+
+        // 6R2-T17: Rust crate root resolves src/lib.rs
+        let files_rs = vec![
+            ("src/lib.rs".to_string(), "pub fn run() {}".to_string()),
+            (
+                "src/internal_mod.rs".to_string(),
+                "pub fn helper() {}".to_string(),
+            ),
+        ];
+        let ep_rs = resolve_package_entry_points(&files_rs, "rust_crate", Language::Rust).unwrap();
+        assert_eq!(ep_rs.len(), 1);
+        assert_eq!(ep_rs[0].0, "src/lib.rs");
+
+        // 6R2-T18: Python package root resolves __init__.py
+        let files_py = vec![
+            (
+                "src/__init__.py".to_string(),
+                "def main(): pass".to_string(),
+            ),
+            (
+                "src/internal.py".to_string(),
+                "def hidden(): pass".to_string(),
+            ),
+        ];
+        let ep_py = resolve_package_entry_points(&files_py, "py_pkg", Language::Python).unwrap();
+        assert_eq!(ep_py.len(), 1);
+        assert_eq!(ep_py[0].0, "src/__init__.py");
     }
 }
