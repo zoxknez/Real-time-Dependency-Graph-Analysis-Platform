@@ -6,7 +6,6 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 #![allow(unused_parens)]
-#![allow(clippy::all)]
 
 pub mod api_snapshot;
 pub mod ast_parser;

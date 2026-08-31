@@ -1055,10 +1055,13 @@ impl ParserPool {
             .child_by_field_name("return_type")
             .map(|t| self.get_node_text(&t, source));
 
-        let param_str: Vec<String> = params.iter().map(|p| match &p.type_annotation {
-            Some(t) => format!("{}: {}", p.name, t),
-            None => p.name.clone(),
-        }).collect();
+        let param_str: Vec<String> = params
+            .iter()
+            .map(|p| match &p.type_annotation {
+                Some(t) => format!("{}: {}", p.name, t),
+                None => p.name.clone(),
+            })
+            .collect();
 
         let sig = if let Some(ret) = &return_type {
             format!("function {}({}): {}", name, param_str.join(", "), ret)
@@ -1778,7 +1781,10 @@ impl ParserPool {
                     .map(|n| self.get_node_text(&n, source))
                     .unwrap_or_else(|| {
                         if kind == "constructor_declaration" {
-                            class_stack.last().map(|(c, _)| c.clone()).unwrap_or_default()
+                            class_stack
+                                .last()
+                                .map(|(c, _)| c.clone())
+                                .unwrap_or_default()
                         } else {
                             String::new()
                         }
