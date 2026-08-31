@@ -19,6 +19,7 @@
 #![allow(unused_variables)]
 #![allow(unused_parens)]
 
+pub mod api_snapshot;
 mod ast_parser;
 mod breaking_change_predictor;
 mod breaking_detector;
@@ -31,7 +32,6 @@ mod health;
 mod onnx_model;
 mod proto_gen;
 pub mod public_api;
-pub mod api_snapshot;
 
 use anyhow::{Context, Result};
 use config::{Config, ParserConfig};
@@ -505,16 +505,45 @@ async fn process_work_item(item: &WorkItem, config: &WorkerCfg) -> Result<Vec<An
         }
     }
 
-    // Persist snapshot for future comparisons
-    if let Err(e) = save_snapshot(
-        &api_snapshot,
-        config.parser.snapshot_max_bytes,
-        config.parser.snapshot_versions_per_package,
-        config.parser.snapshot_total_max_bytes,
-    )
-    .await
-    {
-        warn!(error = %e, "Failed to persist API snapshot");
+    // Persist authoritative API snapshot if storage root is configured
+    if let Ok(snapshot_repo) = api_snapshot::SnapshotRepository::open_from_env() {
+        let files_slice: Vec<(&str, &str, &str)> = source_files
+            .iter()
+            .map(|(p, c)| (p.as_str(), p.as_str(), c.as_str()))
+            .collect();
+
+        // Detect primary language
+        let primary_lang = source_files
+            .iter()
+            .find_map(|(p, _)| {
+                std::path::Path::new(p)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .and_then(Language::from_extension)
+            })
+            .unwrap_or(Language::JavaScript);
+
+        if let Ok(surface) = public_api::PublicApiExtractor::extract_package(
+            &config.parser_pool,
+            &event.package_id,
+            primary_lang,
+            &files_slice,
+        ) {
+            if surface.status == public_api::AnalysisStatus::Complete {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+
+                let scope = surface.scope.clone();
+                if let Err(e) = snapshot_repo
+                    .put(&event.package_id, scope, &event.version, surface, now_ms)
+                    .await
+                {
+                    warn!(error = %e, "Failed to persist authoritative API snapshot");
+                }
+            }
+        }
     }
 
     // 5. Detect breaking changes (if previous version exists)
@@ -753,119 +782,6 @@ fn snapshot_path(package_id: &str, version: &str) -> PathBuf {
     let pkg = sanitize_segment(package_id);
     base.join(pkg)
         .join(format!("{}.json", sanitize_segment(version)))
-}
-
-async fn save_snapshot(
-    snapshot: &PublicApiSnapshot,
-    max_bytes: usize,
-    keep_versions: usize,
-    total_max_bytes: usize,
-) -> Result<()> {
-    let path = snapshot_path(&snapshot.package_id, &snapshot.version);
-    let base_dir = snapshot_base_dir();
-    if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent).await?;
-    }
-    let data = serde_json::to_string(snapshot)?;
-    if data.len() > max_bytes {
-        warn!(
-            package_id = %snapshot.package_id,
-            version = %snapshot.version,
-            snapshot_bytes = data.len(),
-            max_bytes,
-            "Skipping oversized API snapshot cache write"
-        );
-        return Ok(());
-    }
-    tokio::fs::write(path, data).await?;
-    if let Some(parent) = snapshot_path(&snapshot.package_id, &snapshot.version).parent() {
-        prune_package_snapshots(parent, keep_versions).await?;
-    }
-    prune_snapshot_cache(base_dir, total_max_bytes).await?;
-    Ok(())
-}
-
-async fn prune_package_snapshots(package_dir: &Path, keep_versions: usize) -> Result<()> {
-    if keep_versions == 0 {
-        tokio::fs::remove_dir_all(package_dir).await.ok();
-        return Ok(());
-    }
-
-    let mut entries = match tokio::fs::read_dir(package_dir).await {
-        Ok(entries) => entries,
-        Err(_) => return Ok(()),
-    };
-    let mut files = Vec::new();
-
-    while let Some(entry) = entries.next_entry().await? {
-        let metadata = match entry.metadata().await {
-            Ok(metadata) if metadata.is_file() => metadata,
-            _ => continue,
-        };
-        let modified = metadata
-            .modified()
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-        files.push((modified, entry.path()));
-    }
-
-    files.sort_by_key(|a| std::cmp::Reverse(a.0));
-    for (_, path) in files.into_iter().skip(keep_versions) {
-        let _ = tokio::fs::remove_file(path).await;
-    }
-
-    Ok(())
-}
-
-async fn prune_snapshot_cache(base_dir: PathBuf, max_total_bytes: usize) -> Result<()> {
-    if max_total_bytes == 0 {
-        tokio::fs::remove_dir_all(base_dir).await.ok();
-        return Ok(());
-    }
-
-    tokio::task::spawn_blocking(move || -> Result<()> {
-        let mut total_bytes = 0u64;
-        let mut files = Vec::new();
-
-        for entry in walkdir::WalkDir::new(&base_dir)
-            .min_depth(1)
-            .into_iter()
-            .filter_map(|entry| entry.ok())
-        {
-            if !entry.file_type().is_file() {
-                continue;
-            }
-
-            let metadata = match entry.metadata() {
-                Ok(metadata) => metadata,
-                Err(_) => continue,
-            };
-            let len = metadata.len();
-            total_bytes = total_bytes.saturating_add(len);
-            let modified = metadata
-                .modified()
-                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-            files.push((modified, len, entry.path().to_path_buf()));
-        }
-
-        if total_bytes <= max_total_bytes as u64 {
-            return Ok(());
-        }
-
-        files.sort_by_key(|a| a.0);
-        for (_, len, path) in files {
-            if total_bytes <= max_total_bytes as u64 {
-                break;
-            }
-            if std::fs::remove_file(&path).is_ok() {
-                total_bytes = total_bytes.saturating_sub(len);
-            }
-        }
-
-        Ok(())
-    })
-    .await??;
-
-    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════
