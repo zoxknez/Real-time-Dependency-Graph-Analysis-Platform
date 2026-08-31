@@ -41,7 +41,7 @@ impl Language {
     }
 
     /// Get tree-sitter language (uses file extension for TSX vs TS).
-    fn tree_sitter_language_for_file(&self, file_path: &str) -> tree_sitter::Language {
+    pub(crate) fn tree_sitter_language_for_file(&self, file_path: &str) -> tree_sitter::Language {
         let ext = Path::new(file_path)
             .extension()
             .and_then(|s| s.to_str())
@@ -933,7 +933,7 @@ impl ParserPool {
                         );
                     }
                 }
-                "function_declaration" | "arrow_function" | "function" => {
+                "function_declaration" | "function_signature" | "arrow_function" | "function" => {
                     if let Some(sym) =
                         self.parse_js_function(&node, source, file_path, module_path, false)
                     {
@@ -990,7 +990,7 @@ impl ParserPool {
         _is_typescript: bool,
     ) {
         match node.kind() {
-            "function_declaration" => {
+            "function_declaration" | "function_signature" => {
                 if let Some(mut sym) =
                     self.parse_js_function(node, source, file_path, module_path, is_exported)
                 {
@@ -1042,8 +1042,20 @@ impl ParserPool {
             .map(|p| self.parse_js_parameters(&p, source))
             .unwrap_or_default();
 
-        let param_str: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
-        let sig = format!("function {}({})", name, param_str.join(", "));
+        let return_type = node
+            .child_by_field_name("return_type")
+            .map(|t| self.get_node_text(&t, source));
+
+        let param_str: Vec<String> = params.iter().map(|p| match &p.type_annotation {
+            Some(t) => format!("{}: {}", p.name, t),
+            None => p.name.clone(),
+        }).collect();
+
+        let sig = if let Some(ret) = &return_type {
+            format!("function {}({}): {}", name, param_str.join(", "), ret)
+        } else {
+            format!("function {}({})", name, param_str.join(", "))
+        };
 
         let qualified_path = if module_path.is_empty() {
             name.clone()
@@ -1066,7 +1078,7 @@ impl ParserPool {
             end_line: node.end_position().row as u32 + 1,
             documentation: self.get_jsdoc_comment(node, source),
             parameters: params,
-            return_type: None,
+            return_type,
             generics: vec![],
             annotations: vec![],
             is_exported,
@@ -1173,15 +1185,39 @@ impl ParserPool {
         if cursor.goto_first_child() {
             loop {
                 let child = cursor.node();
-                if child.kind() == "identifier" || child.kind() == "rest_pattern" {
-                    let name = self.get_node_text(&child, source);
-                    params.push(ParameterInfo {
-                        name,
-                        type_annotation: None,
-                        default_value: None,
-                        is_optional: false,
-                        is_variadic: child.kind() == "rest_pattern",
-                    });
+                match child.kind() {
+                    "required_parameter" | "optional_parameter" => {
+                        let pattern = child
+                            .child_by_field_name("pattern")
+                            .or_else(|| child.child(0));
+                        let name = pattern
+                            .map(|p| self.get_node_text(&p, source))
+                            .unwrap_or_default();
+                        let type_annotation = child
+                            .child_by_field_name("type")
+                            .map(|t| self.get_node_text(&t, source));
+                        let is_optional = child.kind() == "optional_parameter";
+                        if !name.is_empty() {
+                            params.push(ParameterInfo {
+                                name,
+                                type_annotation,
+                                default_value: None,
+                                is_optional,
+                                is_variadic: false,
+                            });
+                        }
+                    }
+                    "identifier" | "rest_pattern" => {
+                        let name = self.get_node_text(&child, source);
+                        params.push(ParameterInfo {
+                            name,
+                            type_annotation: None,
+                            default_value: None,
+                            is_optional: false,
+                            is_variadic: child.kind() == "rest_pattern",
+                        });
+                    }
+                    _ => {}
                 }
                 if !cursor.goto_next_sibling() {
                     break;
@@ -1666,7 +1702,7 @@ impl ParserPool {
         &self,
         cursor: &mut tree_sitter::TreeCursor,
         source: &str,
-        class_stack: &mut Vec<String>,
+        class_stack: &mut Vec<(String, Visibility)>,
         symbols: &mut Vec<ExtractedSymbol>,
     ) {
         loop {
@@ -1714,7 +1750,7 @@ impl ParserPool {
                             is_exported: false,
                         });
 
-                        class_stack.push(name);
+                        class_stack.push((name, visibility));
                     }
                 }
             } else if matches!(kind, "method_declaration" | "constructor_declaration") {
@@ -1723,21 +1759,26 @@ impl ParserPool {
                     .map(|n| self.get_node_text(&n, source))
                     .unwrap_or_else(|| {
                         if kind == "constructor_declaration" {
-                            class_stack.last().cloned().unwrap_or_default()
+                            class_stack.last().map(|(c, _)| c.clone()).unwrap_or_default()
                         } else {
                             String::new()
                         }
                     });
 
                 if !name.is_empty() {
-                    let visibility = self.java_visibility(&node, source);
+                    let member_vis = self.java_visibility(&node, source);
+                    let visibility = match class_stack.last() {
+                        Some((_, class_vis)) if !class_vis.is_public() => *class_vis,
+                        _ => member_vis,
+                    };
+
                     let raw_signature = self.get_node_text(&node, source);
                     let signature = self.normalize_signature(&raw_signature);
                     let start_line = (node.start_position().row + 1) as u32;
                     let end_line = (node.end_position().row + 1) as u32;
 
                     let qualified_path = match class_stack.last() {
-                        Some(class_name) => format!("{}.{}", class_name, name),
+                        Some((class_name, _)) => format!("{}.{}", class_name, name),
                         None => name.clone(),
                     };
 
@@ -1766,12 +1807,9 @@ impl ParserPool {
             }
 
             if is_type_decl {
-                // Pop if we pushed a class name
-                // (We only push when we successfully extracted a name.)
-                // To keep this simple, if the top of the stack matches this node's name, pop it.
                 if let Some(name_node) = node.child_by_field_name("name") {
                     let name = self.get_node_text(&name_node, source);
-                    if class_stack.last().map(|s| s == &name).unwrap_or(false) {
+                    if class_stack.last().map(|(s, _)| s == &name).unwrap_or(false) {
                         class_stack.pop();
                     }
                 }
@@ -1784,10 +1822,20 @@ impl ParserPool {
     }
 
     fn java_visibility(&self, node: &tree_sitter::Node, source: &str) -> Visibility {
-        let mods_text = node
-            .child_by_field_name("modifiers")
-            .map(|m| self.get_node_text(&m, source))
-            .unwrap_or_default();
+        let mut cursor = node.walk();
+        let mut mods_text = String::new();
+        if cursor.goto_first_child() {
+            loop {
+                let child = cursor.node();
+                if child.kind() == "modifiers" {
+                    mods_text = self.get_node_text(&child, source);
+                    break;
+                }
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
 
         let mods_lower = mods_text.to_ascii_lowercase();
         if mods_lower.contains("public") {

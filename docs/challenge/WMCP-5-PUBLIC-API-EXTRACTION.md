@@ -1,12 +1,15 @@
-# WMCP-5 - Authoritative Public API Extraction & AST Semantic Boundary
+# WMCP-5-R1 - Authoritative Public API Extraction & AST Semantic Boundary
 
 ## 1. Purpose & Scope
 
-This document establishes the deterministic source-of-truth representation of package and module public APIs (**WMCP-5**):
+This document establishes the deterministic source-of-truth representation of package and module public APIs (**WMCP-5 / WMCP-5-R1**):
 - **Authoritative AST Extraction**: Reuses existing Tree-sitter multi-language parser infrastructure in `apps/analysis/src/ast_parser.rs`.
 - **AST Symbol vs. Public API Symbol**: Enforces strict language-aware public exposure rules to exclude private, local, and unexported declarations.
-- **Stable Identity Contract**: Explicitly separates semantic `identity_key` from signature facts and `signature_fingerprint` to enable deterministic diffing in future phases.
-- **Normalized Canonical Representation**: Provides structured, cross-platform deterministic, and JSON-serializable `PublicApiSurface`.
+- **Machine-Readable Completeness Authority**: Explicit `AnalysisStatus` (`Complete`, `Partial`, `Unsupported`) that participates in `surface_hash` to prevent malformed/partial extractions from masquerading as complete snapshots.
+- **Snapshot-Ready Hashing (SHA-256)**: Standard 64-character lowercase hexadecimal SHA-256 hashes for `signature_fingerprint` and `surface_hash`, replacing implementation-defined hashers.
+- **Overload Set Normalization**: Preserves complete sets of public declarations / overloads in `PublicApiSymbol.signatures` under a stable external `identity_key` without data loss or key collision overwrite.
+- **Python `__all__` Extraction**: Statically extracts literal `__all__` lists/tuples from Python AST; falls back with `AnalysisStatus::Partial` if dynamic.
+- **Java Visibility Correction**: Correctly traverses child nodes of kind `"modifiers"` in Tree-sitter Java grammar to extract `public` and `protected` declarations.
 
 ### Non-Goals
 - **No Snapshot Persistence**: Persistent filesystem/database snapshots belong to **WMCP-6**.
@@ -20,7 +23,7 @@ This document establishes the deterministic source-of-truth representation of pa
 
 - **Repository**: `zoxknez/Real-time-Dependency-Graph-Analysis-Platform`
 - **Branch**: `feature/webmcp-challenge-2026`
-- **Starting HEAD**: `2d208c94612ffe1c920d08a0a74c66653c8ee965`
+- **Starting HEAD**: `2ad5a3fe403cb9563cec9c344a1e96aa1a88704e`
 - **WMCP-4 Closure HEAD**: `2d208c94612ffe1c920d08a0a74c66653c8ee965`
 - **Pinned Upstream Reference**:
   - Repository: `webmachinelearning/webmcp`
@@ -35,83 +38,108 @@ This document establishes the deterministic source-of-truth representation of pa
 | **Tree-sitter Parser Pool** | `apps/analysis/src/ast_parser.rs` | Multi-language thread-local AST parser and symbol extractor | REAL | YES |
 | **Grammar Bindings** | `Cargo.toml` (`tree-sitter-*`) | Native Tree-sitter grammar bindings for Rust, JS, TS, Python, Go, Java | REAL | YES |
 | **Breaking Detector** | `apps/analysis/src/breaking_detector.rs` | Semantic breaking change detection between AST symbol snapshots | REAL | YES |
-| **Public API Extractor** | `apps/analysis/src/public_api.rs` | Canonical public API surface derivation, normalization, and stable identity management (WMCP-5) | REAL | YES |
+| **Public API Extractor** | `apps/analysis/src/public_api.rs` | Canonical public API surface derivation, normalization, and stable identity management (WMCP-5/R1) | REAL | YES |
 
 ---
 
 ## 4. Supported Language Capability Matrix
 
-| Language | Tree-sitter Grammar | Existing Symbol Extractor | Visibility & Export Semantics Authority | WMCP-5 Support Status |
+| Language | Tree-sitter Grammar | Existing Symbol Extractor | Visibility & Export Semantics Authority | WMCP-5-R1 Support Status |
 | :--- | :--- | :--- | :--- | :--- |
 | **JavaScript** | `tree-sitter-javascript` | `extract_js_symbols` | `export_statement`, `module.exports`, `is_exported` | **SUPPORTED** |
-| **TypeScript** | `tree-sitter-typescript` | `extract_js_symbols` | `export_statement`, `type`, `interface`, `visibility_modifier` | **SUPPORTED** |
-| **Python** | `tree-sitter-python` | `extract_python_symbols` | Non-underscored top-level definitions, dunders | **SUPPORTED** |
+| **TypeScript** | `tree-sitter-typescript` | `extract_js_symbols` | `export_statement`, `interface`, `type`, `function_signature` (overloads) | **SUPPORTED** |
+| **Python** | `tree-sitter-python` | `extract_python_symbols` | Literal `__all__` list/tuple AST extraction; underscore convention fallback | **SUPPORTED** |
 | **Rust** | `tree-sitter-rust` | `extract_rust_symbols` | `pub`, `pub(crate)`, `pub(super)`, `impl` items | **SUPPORTED** |
 | **Go** | `tree-sitter-go` | `extract_go_symbols` | Uppercase identifier capitalization | **SUPPORTED** |
-| **Java** | `tree-sitter-java` | `extract_java_symbols` | `public` / `protected` modifiers | **SUPPORTED** |
+| **Java** | `tree-sitter-java` | `extract_java_symbols` | Child node `"modifiers"` traversal (`public`, `protected`, `private`) | **SUPPORTED** |
 
 ---
 
-## 5. Public Exposure Rules by Language (INV-WMCP5-003)
+## 5. Machine-Readable Analysis Status Model (INV-WMCP5-004)
 
-- **JavaScript / TypeScript**:
-  Only symbols flagged with `is_exported: true` (or explicit `Visibility::Public`) are admitted. Local variables, non-exported helper functions, and internal class declarations are strictly excluded.
-- **Rust**:
-  Only items with `Visibility::Public` (`pub fn`, `pub struct`, `pub enum`, `pub trait`, `pub const`, `pub type`) are admitted. Items marked `pub(crate)`, `pub(super)`, or `fn` without `pub` are excluded.
-- **Python**:
-  Excludes module-internal symbols starting with a single underscore `_` (unless special dunder conventions apply). Local inner functions are excluded.
-- **Go**:
-  Only identifiers starting with an ASCII uppercase letter (`is_ascii_uppercase()`) are exposed as public API. Lowercase package-private identifiers are excluded.
-- **Java**:
-  Only members and types with `Visibility::Public` are admitted as public API.
+```rust
+pub enum AnalysisStatus {
+    Complete,
+    Partial,
+    Unsupported,
+}
+```
 
----
+### Transition Rules
+1. **`Complete`**: All files in scope were successfully parsed by supported Tree-sitter grammars with 0 syntax errors and complete export resolution.
+2. **`Partial`**: Useful API facts recovered, but completeness cannot be guaranteed (e.g. Tree-sitter parse tree has syntax errors, dynamic `__all__` in Python, or mixed package where one entry point had errors).
+3. **`Unsupported`**: Target language or file format is unsupported by the platform.
 
-## 6. Public API Data Model & Identity Contract (INV-WMCP5-005)
-
-### Stable Identity Key vs. Signature Fingerprint
-To support robust diffing across versions in future phases (WMCP-6/7), the symbol model separates **identity** from **signature**:
-1. `identity_key`:
-   - Canonical format: `{Language}::{ModulePath}::{SymbolKind}::{QualifiedName}`.
-   - Remains stable across line movements, formatting changes, comment edits, and signature type modifications.
-2. `signature_fingerprint`:
-   - Deterministic 16-character hex hash computed over the symbol kind, exported name, normalized signature, parameter types/defaults/optionality, return type, generics, and annotations.
-   - Modifying parameter types or adding/removing parameters changes `signature_fingerprint` without altering `identity_key`.
+### Surface Hash Participation
+`AnalysisStatus` is strictly included in the canonical `surface_hash` payload. A `Complete` surface and a `Partial` surface containing identical symbols produce distinct hashes.
 
 ---
 
-## 7. Determinism & Normalization Guarantees (INV-WMCP5-007, INV-WMCP5-009)
+## 6. Public API Data Model & Overload Normalization
 
-- **Cross-Platform Path Normalization**: All file paths are converted to use forward slashes (`/`).
-- **Canonical Ordering**: All extracted public symbols are indexed and sorted via `BTreeMap<String, PublicApiSymbol>` by `identity_key`.
-- **Input Order Independence**: Analyzing source files in arbitrary order yields identical `PublicApiSurface` and identical `surface_hash`.
-- **Pure Static Analysis**: 0 source code execution, 0 network calls, 0 dynamic evaluations.
+```rust
+pub struct PublicApiSymbol {
+    pub identity_key: String,
+    pub exported_name: String,
+    pub qualified_name: String,
+    pub kind: SymbolKind,
+    pub provenance: SourceProvenance,
+    pub signatures: Vec<PublicSymbolSignature>,
+    pub signature_fingerprint: String,
+}
+```
+
+### Overload Preservation
+- Multiple public declarations with the same `identity_key` (such as TypeScript function overloads or Java method overloads) are collected into `signatures: Vec<PublicSymbolSignature>`.
+- `signatures` is canonically sorted and deduplicated.
+- `signature_fingerprint` is a 64-character SHA-256 hash derived from the full set of normalized signatures.
+- Adding or removing an overload updates `signature_fingerprint` and `surface_hash` without altering the stable external `identity_key`.
+
+---
+
+## 7. Semantic Hash Payload Matrix
+
+| Field | In `signature_fingerprint`? | In `surface_hash`? |
+| :--- | :--- | :--- |
+| `identity_key` | **NO** | **YES** |
+| `exported_name` | **YES** | **YES** |
+| `normalized_signature` | **YES** | **NO** (via fingerprint) |
+| `signatures` (overload set) | **YES** | **NO** (via fingerprint) |
+| `AnalysisStatus` | **NO** | **YES** |
+| `PublicApiScope` | **NO** | **YES** |
+| `Language` | **NO** | **YES** |
+| `raw_signature` | **NO** | **NO** (Diagnostic only) |
+| `file_path` | **NO** | **NO** (Provenance only) |
+| `start_line` / `end_line` | **NO** | **NO** (Provenance only) |
+| `warnings` | **NO** | **NO** (Diagnostic only) |
 
 ---
 
 ## 8. Quality & Test Evidence
 
 - **Rust Analysis Test Suite**: **44 / 44 PASS** (0 failed)
-  - 5-T1 & 5-T2: Tree-sitter parser authority and language support verification (JS, TS, Rust, Python, Go, Java).
-  - 5-T4 & 5-T5: Public vs. private symbol separation in JS/TS and Rust.
-  - 5-T6: Nested local implementation symbols excluded.
-  - 5-T11 & 5-T12: Identity stability across line movement and comments.
-  - 5-T13: Private-only implementation changes leave public surface hash identical.
-  - 5-T14: Public signature changes alter signature fingerprint without changing identity.
-  - 5-T16: Public renames change public identity key.
-  - 5-T17: 10 repeated extractions produce byte-for-byte identical JSON and surface hash.
-  - 5-T18: Input file order independence.
-  - 5-T19: Cross-platform path normalization.
-  - 5-T22 & 5-T23: Clean JSON serializability without parser node handles.
-- **Workspace Cargo Suite**: `cargo test --workspace` $\to$ **PASS** (Exit 0).
-- **Frontend Regression Suite**: `playwright test` (9 specs, 275 tests) $\to$ **275 / 275 PASS** (Exit 0).
+  - `5R1-T1` & `5R1-T2`: Java public class and public method extracted (`AnalysisStatus::Complete`).
+  - `5R1-T3` & `5R1-T4`: Java package-private classes and their members strictly excluded from public surface.
+  - `5R1-T5` & `5R1-T21`: Java method overloads preserved in `signatures` without collision loss.
+  - `5R1-T6`: Malformed source recovery emits `AnalysisStatus::Partial`.
+  - `5R1-T8`: Clean source emits `AnalysisStatus::Complete`.
+  - `5R1-T9`: Mixed package with malformed entry point emits `AnalysisStatus::Partial`.
+  - `5R1-T11`: `Complete` and `Partial` surfaces with identical symbols produce distinct `surface_hash`.
+  - `5R1-T12`: Python `__all__` literal list/tuple filtering strictly excludes omitted symbols.
+  - `5R1-T15` & `5R1-T16`: SHA-256 64-character digests with formatting/comment immunity.
+  - `5R1-T20`: TypeScript function overload declarations preserved in `signatures`.
+  - `5R1-T23`: Removing an overload updates `signature_fingerprint` while leaving `identity_key` stable.
+  - `5R1-T26` & `5R1-T27`: 20-permutation determinism verified.
+- **Workspace Cargo Suite**: `cargo test --workspace` $\to$ **146 / 146 PASS** (Exit 0).
+- **Workspace Quality Check**: `cargo check --workspace --all-targets` $\to$ **0 errors** (Exit 0).
+- **Frontend Regression Suite**: `npm --prefix apps/frontend run build` $\to$ **PASS** (Exit 0).
 - **ASCII Scan**: 0 non-ASCII hyphens across all deliverable files.
 
 ---
 
 ## 9. Downstream Hand-Off Boundaries
 
-- **WMCP-6**: Will consume `PublicApiSurface` to implement snapshot persistence and version-history storage.
+- **WMCP-6**: Will consume `PublicApiSurface` and `AnalysisStatus` to persist version-history snapshots.
 - **WMCP-7**: Will consume version snapshots to detect breaking changes and power counterfactual scenarios.
 - **WMCP-8**: Will consume breaking change facts to evaluate SemVer / PEP 440 compatibility constraints.
 
@@ -119,4 +147,4 @@ To support robust diffing across versions in future phases (WMCP-6/7), the symbo
 
 ## 10. Status
 
-**WMCP-5 IMPLEMENTED - PENDING INDEPENDENT VERIFICATION**
+**WMCP-5-R1 IMPLEMENTED - PENDING INDEPENDENT RE-VERIFICATION**

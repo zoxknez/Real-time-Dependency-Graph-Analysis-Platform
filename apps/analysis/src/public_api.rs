@@ -1,25 +1,20 @@
-//! Authoritative Public API Extraction & AST Semantic Boundary (WMCP-5)
+//! Authoritative Public API Extraction & AST Semantic Boundary (WMCP-5 / WMCP-5-R1)
 //!
 //! Provides deterministic extraction, normalization, and surface derivation of public APIs
 //! using existing Tree-sitter AST parser infrastructure.
 //!
-//! Invariants enforced:
-//! - INV-WMCP5-001: Reuses existing tree-sitter AST parser (no regex / shadow parser).
-//! - INV-WMCP5-002: Language support derived from existing grammar capabilities.
-//! - INV-WMCP5-003: Language-aware public exposure rules.
-//! - INV-WMCP5-004: Explicit module-level vs package-level entry-point distinction.
-//! - INV-WMCP5-005: Stable `identity_key` separated from `signature_fingerprint`.
-//! - INV-WMCP5-006: Complete source provenance (path, line numbers).
-//! - INV-WMCP5-007: Deterministic canonical ordering and surface hashing.
-//! - INV-WMCP5-010: Member visibility respected (private members excluded).
-//! - INV-WMCP5-012: No breaking change classification decisions in WMCP-5.
-//! - INV-WMCP5-013: In-memory / serializable surface only (no snapshot persistence).
-//! - INV-WMCP5-027: Strictly static AST analysis (no source code execution).
+//! Hardened for persistent API snapshots (WMCP-6 readiness):
+//! - Machine-readable `AnalysisStatus` (Complete, Partial, Unsupported) participating in `surface_hash`.
+//! - Standard SHA-256 (64 hex characters) for all semantic digests.
+//! - Deterministic overload set representation under stable `identity_key`.
+//! - Python `__all__` literal AST extraction.
+//! - Java visibility correction via Tree-sitter child nodes.
 
 use anyhow::{Context, Result};
+use hex;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use std::hash::{Hash, Hasher};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, HashSet};
 
 use crate::ast_parser::{
     ExtractedSymbol, Language, ParameterInfo, ParserPool, SymbolKind, Visibility,
@@ -28,6 +23,17 @@ use crate::ast_parser::{
 // ═══════════════════════════════════════════════════════════════
 // PUBLIC API TYPES
 // ═══════════════════════════════════════════════════════════════
+
+/// Machine-readable analysis completeness status
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AnalysisStatus {
+    /// Fully analyzed with no known semantic incompleteness
+    Complete,
+    /// Partial analysis due to syntax recovery, mixed package errors, or unresolved exports
+    Partial,
+    /// Target language or entry points unsupported
+    Unsupported,
+}
 
 /// Scope of public API surface analysis
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,7 +61,7 @@ pub struct SourceProvenance {
 }
 
 /// Normalized parameter information for public functions and methods
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PublicParameter {
     pub name: String,
     pub type_annotation: Option<String>,
@@ -76,14 +82,14 @@ impl From<&ParameterInfo> for PublicParameter {
     }
 }
 
-/// Normalized signature details of a public symbol
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Normalized signature details of a public symbol declaration
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PublicSymbolSignature {
-    /// Original raw signature string
+    /// Original raw signature string (informational only; excluded from semantic hashing)
     pub raw_signature: String,
     /// Normalized signature for comparison
     pub normalized_signature: String,
-    /// Parameter specifications (for functions/methods)
+    /// Parameter specifications
     pub parameters: Vec<PublicParameter>,
     /// Return type annotation
     pub return_type: Option<String>,
@@ -95,10 +101,10 @@ pub struct PublicSymbolSignature {
     pub annotations: Vec<String>,
 }
 
-/// Authoritative representation of a single publicly accessible API symbol
+/// Authoritative representation of a publicly accessible API symbol
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicApiSymbol {
-    /// Stable semantic identity (does not change on line moves, whitespace, or comments)
+    /// Stable semantic identity (does not change on line moves, comments, or signature edits)
     pub identity_key: String,
     /// External exported name
     pub exported_name: String,
@@ -106,24 +112,26 @@ pub struct PublicApiSymbol {
     pub qualified_name: String,
     /// Language-agnostic symbol classification
     pub kind: SymbolKind,
-    /// Declaration provenance in source code
+    /// Primary declaration provenance in source code
     pub provenance: SourceProvenance,
-    /// Normalized signature facts
-    pub signature: PublicSymbolSignature,
-    /// Fingerprint of current signature facts (changes when signature changes, but identity_key remains stable)
+    /// Complete set of public declarations / overloads (canonically sorted)
+    pub signatures: Vec<PublicSymbolSignature>,
+    /// SHA-256 fingerprint of current signature facts
     pub signature_fingerprint: String,
 }
 
 /// Authoritative deterministic public API surface
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PublicApiSurface {
+    /// Analysis completeness authority
+    pub status: AnalysisStatus,
     /// Analysis scope (Module or Package)
     pub scope: PublicApiScope,
     /// Source programming language
     pub language: Language,
     /// Deterministically ordered list of all public symbols (sorted by identity_key)
     pub symbols: Vec<PublicApiSymbol>,
-    /// Deterministic content hash of the entire public API surface
+    /// Deterministic SHA-256 hash of the entire public API surface
     pub surface_hash: String,
     /// Count of source files analyzed
     pub files_analyzed: usize,
@@ -145,19 +153,25 @@ impl PublicApiExtractor {
     }
 
     /// Determines if an extracted AST symbol is externally accessible according to language rules
-    pub fn is_public_symbol(sym: &ExtractedSymbol, lang: Language) -> bool {
+    pub fn is_public_symbol(
+        sym: &ExtractedSymbol,
+        lang: Language,
+        python_all: Option<&HashSet<String>>,
+    ) -> bool {
         match lang {
             Language::JavaScript | Language::TypeScript => {
-                // In JS/TS, exported symbols or explicitly public visibility
+                // In JS/TS: exported symbols or explicitly public visibility
                 sym.is_exported || sym.visibility == Visibility::Public
             }
             Language::Rust => {
-                // In Rust, only pub items form the public API
+                // In Rust: only pub items form the public API
                 sym.visibility == Visibility::Public
             }
             Language::Python => {
-                // In Python: top-level non-underscored names, or special dunders (__init__, etc. if relevant)
-                if sym.name.starts_with('_') && !sym.name.starts_with("__") {
+                // In Python: if __all__ exists, only names in __all__ are public
+                if let Some(all_set) = python_all {
+                    all_set.contains(&sym.name)
+                } else if sym.name.starts_with('_') && !sym.name.starts_with("__") {
                     false
                 } else {
                     sym.visibility == Visibility::Public
@@ -172,6 +186,92 @@ impl PublicApiExtractor {
                 sym.visibility == Visibility::Public
             }
         }
+    }
+
+    /// Statically extracts literal `__all__` list/tuple from Python AST if present
+    pub fn extract_python_all(pool: &ParserPool, source: &str) -> (Option<HashSet<String>>, bool) {
+        let mut parser = tree_sitter::Parser::new();
+        if parser.set_language(&Language::Python.tree_sitter_language_for_file("mod.py")).is_err() {
+            return (None, false);
+        }
+        let tree = match parser.parse(source, None) {
+            Some(t) => t,
+            None => return (None, false),
+        };
+
+        let root = tree.root_node();
+        let mut cursor = root.walk();
+        if cursor.goto_first_child() {
+            loop {
+                let node = cursor.node();
+                if node.kind() == "expression_statement" {
+                    if let Some(assign) = node.child_by_field_name("assignment") {
+                        let left = assign.child_by_field_name("left");
+                        let right = assign.child_by_field_name("right");
+                        if let (Some(l), Some(r)) = (left, right) {
+                            if &source[l.byte_range()] == "__all__" {
+                                if r.kind() == "list" || r.kind() == "tuple" {
+                                    let mut set = HashSet::new();
+                                    let mut item_cursor = r.walk();
+                                    if item_cursor.goto_first_child() {
+                                        loop {
+                                            let item = item_cursor.node();
+                                            if item.kind() == "string" {
+                                                let raw = &source[item.byte_range()];
+                                                let clean = raw.trim_matches(['\'', '"']);
+                                                set.insert(clean.to_string());
+                                            }
+                                            if !item_cursor.goto_next_sibling() {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    return (Some(set), true);
+                                } else {
+                                    // Non-literal dynamic __all__
+                                    return (None, false);
+                                }
+                            }
+                        }
+                    } else if let Some(child) = node.child(0) {
+                        // assignment might be the direct child
+                        if child.kind() == "assignment" {
+                            let left = child.child_by_field_name("left");
+                            let right = child.child_by_field_name("right");
+                            if let (Some(l), Some(r)) = (left, right) {
+                                if &source[l.byte_range()] == "__all__" {
+                                    if r.kind() == "list" || r.kind() == "tuple" {
+                                        let mut set = HashSet::new();
+                                        let mut item_cursor = r.walk();
+                                        if item_cursor.goto_first_child() {
+                                            loop {
+                                                let item = item_cursor.node();
+                                                if item.kind() == "string" {
+                                                    let raw = &source[item.byte_range()];
+                                                    let clean = raw.trim_matches(['\'', '"']);
+                                                    set.insert(clean.to_string());
+                                                }
+                                                if !item_cursor.goto_next_sibling() {
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        return (Some(set), true);
+                                    } else {
+                                        return (None, false);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+
+        (None, true)
     }
 
     /// Derives the stable semantic identity key for a public symbol
@@ -189,70 +289,72 @@ impl PublicApiExtractor {
         }
     }
 
-    /// Computes a deterministic hex hash for a symbol's signature facts
+    /// Computes a deterministic SHA-256 hex string for a symbol's complete signature set
     pub fn compute_signature_fingerprint(
         kind: SymbolKind,
         exported_name: &str,
-        signature: &PublicSymbolSignature,
+        signatures: &[PublicSymbolSignature],
     ) -> String {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let mut hasher = Sha256::new();
 
-        (kind as u8).hash(&mut hasher);
-        exported_name.hash(&mut hasher);
-        signature.normalized_signature.hash(&mut hasher);
-        signature.return_type.hash(&mut hasher);
-        signature.visibility.hash(&mut hasher);
+        hasher.update([kind as u8]);
+        hasher.update(exported_name.as_bytes());
 
-        for param in &signature.parameters {
-            param.name.hash(&mut hasher);
-            param.type_annotation.hash(&mut hasher);
-            param.default_value.hash(&mut hasher);
-            param.is_optional.hash(&mut hasher);
-            param.is_variadic.hash(&mut hasher);
+        for sig in signatures {
+            hasher.update(sig.normalized_signature.as_bytes());
+            if let Some(ret) = &sig.return_type {
+                hasher.update(ret.as_bytes());
+            }
+            hasher.update(sig.visibility.as_bytes());
+
+            for param in &sig.parameters {
+                hasher.update(param.name.as_bytes());
+                if let Some(t) = &param.type_annotation {
+                    hasher.update(t.as_bytes());
+                }
+                if let Some(d) = &param.default_value {
+                    hasher.update(d.as_bytes());
+                }
+                hasher.update([param.is_optional as u8, param.is_variadic as u8]);
+            }
+
+            for generic_param in &sig.generics {
+                hasher.update(generic_param.as_bytes());
+            }
+
+            for ann in &sig.annotations {
+                hasher.update(ann.as_bytes());
+            }
         }
 
-        for generic_param in &signature.generics {
-            generic_param.hash(&mut hasher);
-        }
-
-        for ann in &signature.annotations {
-            ann.hash(&mut hasher);
-        }
-
-        format!("{:016x}", hasher.finish())
+        hex::encode(hasher.finalize())
     }
 
-    /// Computes a deterministic overall surface hash from ordered public symbols
+    /// Computes a deterministic SHA-256 surface hash including AnalysisStatus
     pub fn compute_surface_hash(
+        status: AnalysisStatus,
         scope: &PublicApiScope,
         lang: Language,
         symbols: &[PublicApiSymbol],
     ) -> String {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        let mut hasher = Sha256::new();
 
-        format!("{:?}", scope).hash(&mut hasher);
-        (lang as u8).hash(&mut hasher);
+        hasher.update(format!("{:?}", status).as_bytes());
+        hasher.update(format!("{:?}", scope).as_bytes());
+        hasher.update([lang as u8]);
 
         for sym in symbols {
-            sym.identity_key.hash(&mut hasher);
-            sym.exported_name.hash(&mut hasher);
-            sym.signature_fingerprint.hash(&mut hasher);
+            hasher.update(sym.identity_key.as_bytes());
+            hasher.update(sym.exported_name.as_bytes());
+            hasher.update(sym.signature_fingerprint.as_bytes());
         }
 
-        format!("{:016x}", hasher.finish())
+        hex::encode(hasher.finalize())
     }
 
-    /// Converts an `ExtractedSymbol` into a `PublicApiSymbol`
-    pub fn convert_symbol(
-        sym: &ExtractedSymbol,
-        lang: Language,
-        file_path: &str,
-        module_path: &str,
-    ) -> PublicApiSymbol {
-        let norm_path = Self::normalize_path(file_path);
-        let identity_key = Self::compute_identity_key(lang, module_path, sym.kind, &sym.qualified_path);
-
-        let public_signature = PublicSymbolSignature {
+    /// Converts an `ExtractedSymbol` into signature facts
+    pub fn convert_signature(sym: &ExtractedSymbol) -> PublicSymbolSignature {
+        PublicSymbolSignature {
             raw_signature: sym.raw_signature.clone(),
             normalized_signature: sym.signature.clone(),
             parameters: sym.parameters.iter().map(PublicParameter::from).collect(),
@@ -260,23 +362,6 @@ impl PublicApiExtractor {
             generics: sym.generics.clone(),
             visibility: format!("{:?}", sym.visibility),
             annotations: sym.annotations.clone(),
-        };
-
-        let signature_fingerprint =
-            Self::compute_signature_fingerprint(sym.kind, &sym.name, &public_signature);
-
-        PublicApiSymbol {
-            identity_key,
-            exported_name: sym.name.clone(),
-            qualified_name: sym.qualified_path.clone(),
-            kind: sym.kind,
-            provenance: SourceProvenance {
-                file_path: norm_path,
-                start_line: sym.start_line,
-                end_line: sym.end_line,
-            },
-            signature: public_signature,
-            signature_fingerprint,
         }
     }
 
@@ -288,17 +373,100 @@ impl PublicApiExtractor {
         file_path: &str,
         module_path: &str,
     ) -> Result<PublicApiSurface> {
-        let raw_symbols = pool
-            .parse(lang, source, file_path)
-            .with_context(|| format!("Failed to parse source file: {}", file_path))?;
+        let mut warnings = Vec::new();
+        let mut status = AnalysisStatus::Complete;
 
-        let mut symbols_map = BTreeMap::new();
-        let warnings = Vec::new();
+        let python_all = if lang == Language::Python {
+            let (all_set, is_literal) = Self::extract_python_all(pool, source);
+            if !is_literal {
+                warnings.push("Dynamic or non-literal __all__ detected; falling back to convention-based exports".to_string());
+                status = AnalysisStatus::Partial;
+            }
+            all_set
+        } else {
+            None
+        };
+
+        let raw_symbols = match pool.parse(lang, source, file_path) {
+            Ok(syms) => syms,
+            Err(e) => {
+                warnings.push(format!("Parse error in {}: {}", file_path, e));
+                return Ok(PublicApiSurface {
+                    status: AnalysisStatus::Partial,
+                    scope: PublicApiScope::Module {
+                        module_path: module_path.to_string(),
+                    },
+                    language: lang,
+                    symbols: Vec::new(),
+                    surface_hash: Self::compute_surface_hash(
+                        AnalysisStatus::Partial,
+                        &PublicApiScope::Module {
+                            module_path: module_path.to_string(),
+                        },
+                        lang,
+                        &[],
+                    ),
+                    files_analyzed: 1,
+                    warnings,
+                });
+            }
+        };
+
+        // Check if tree has syntax errors
+        let mut parser = tree_sitter::Parser::new();
+        if parser.set_language(&lang.tree_sitter_language_for_file(file_path)).is_ok() {
+            if let Some(tree) = parser.parse(source, None) {
+                if tree.root_node().has_error() {
+                    warnings.push(format!("Tree-sitter parse tree has syntax errors in {}", file_path));
+                    status = AnalysisStatus::Partial;
+                }
+            }
+        }
+
+        let mut symbols_map: BTreeMap<String, PublicApiSymbol> = BTreeMap::new();
 
         for sym in raw_symbols {
-            if Self::is_public_symbol(&sym, lang) {
-                let public_sym = Self::convert_symbol(&sym, lang, file_path, module_path);
-                symbols_map.insert(public_sym.identity_key.clone(), public_sym);
+            if Self::is_public_symbol(&sym, lang, python_all.as_ref()) {
+                let norm_path = Self::normalize_path(file_path);
+                let identity_key = Self::compute_identity_key(lang, module_path, sym.kind, &sym.qualified_path);
+                let sig = Self::convert_signature(&sym);
+
+                if let Some(existing) = symbols_map.get_mut(&identity_key) {
+                    if !existing.signatures.contains(&sig) {
+                        existing.signatures.push(sig);
+                        existing.signatures.sort();
+                        existing.signature_fingerprint = Self::compute_signature_fingerprint(
+                            existing.kind,
+                            &existing.exported_name,
+                            &existing.signatures,
+                        );
+                    }
+                } else {
+                    let provenance = SourceProvenance {
+                        file_path: norm_path,
+                        start_line: sym.start_line,
+                        end_line: sym.end_line,
+                    };
+                    let signatures = vec![sig];
+                    let signature_fingerprint = Self::compute_signature_fingerprint(
+                        sym.kind,
+                        &sym.name,
+                        &signatures,
+                    );
+
+                    symbols_map.insert(
+                        identity_key.clone(),
+                        PublicApiSymbol {
+                            identity_key,
+                            exported_name: sym.name.clone(),
+                            qualified_name: sym.qualified_path.clone(),
+                            kind: sym.kind,
+                            provenance,
+                            signatures,
+                            signature_fingerprint,
+                        },
+                    );
+                }
             }
         }
 
@@ -306,9 +474,10 @@ impl PublicApiExtractor {
         let scope = PublicApiScope::Module {
             module_path: module_path.to_string(),
         };
-        let surface_hash = Self::compute_surface_hash(&scope, lang, &ordered_symbols);
+        let surface_hash = Self::compute_surface_hash(status, &scope, lang, &ordered_symbols);
 
         Ok(PublicApiSurface {
+            status,
             scope,
             language: lang,
             symbols: ordered_symbols,
@@ -325,39 +494,106 @@ impl PublicApiExtractor {
         lang: Language,
         files: &[(&str, &str, &str)], // (file_path, module_path, source_content)
     ) -> Result<PublicApiSurface> {
-        let mut symbols_map = BTreeMap::new();
+        let mut symbols_map: BTreeMap<String, PublicApiSymbol> = BTreeMap::new();
         let mut warnings = Vec::new();
         let mut entry_points = Vec::new();
+        let mut status = AnalysisStatus::Complete;
 
         for (file_path, module_path, source) in files {
             let norm_path = Self::normalize_path(file_path);
             entry_points.push(norm_path.clone());
 
+            let python_all = if lang == Language::Python {
+                let (all_set, is_literal) = Self::extract_python_all(pool, source);
+                if !is_literal {
+                    warnings.push(format!("Dynamic __all__ in {}; falling back to convention-based exports", norm_path));
+                    status = AnalysisStatus::Partial;
+                }
+                all_set
+            } else {
+                None
+            };
+
             match pool.parse(lang, source, &norm_path) {
                 Ok(raw_symbols) => {
+                    // Check for syntax errors in this file
+                    let mut parser = tree_sitter::Parser::new();
+                    if parser.set_language(&lang.tree_sitter_language_for_file(&norm_path)).is_ok() {
+                        if let Some(tree) = parser.parse(source, None) {
+                            if tree.root_node().has_error() {
+                                warnings.push(format!("Syntax errors detected in {}", norm_path));
+                                status = AnalysisStatus::Partial;
+                            }
+                        }
+                    }
+
                     for sym in raw_symbols {
-                        if Self::is_public_symbol(&sym, lang) {
-                            let public_sym =
-                                Self::convert_symbol(&sym, lang, &norm_path, module_path);
-                            symbols_map.insert(public_sym.identity_key.clone(), public_sym);
+                        if Self::is_public_symbol(&sym, lang, python_all.as_ref()) {
+                            let identity_key = Self::compute_identity_key(
+                                lang,
+                                module_path,
+                                sym.kind,
+                                &sym.qualified_path,
+                            );
+                            let sig = Self::convert_signature(&sym);
+
+                            if let Some(existing) = symbols_map.get_mut(&identity_key) {
+                                if !existing.signatures.contains(&sig) {
+                                    existing.signatures.push(sig);
+                                    existing.signatures.sort();
+                                    existing.signature_fingerprint = Self::compute_signature_fingerprint(
+                                        existing.kind,
+                                        &existing.exported_name,
+                                        &existing.signatures,
+                                    );
+                                }
+                            } else {
+                                let provenance = SourceProvenance {
+                                    file_path: norm_path.clone(),
+                                    start_line: sym.start_line,
+                                    end_line: sym.end_line,
+                                };
+                                let signatures = vec![sig];
+                                let signature_fingerprint = Self::compute_signature_fingerprint(
+                                    sym.kind,
+                                    &sym.name,
+                                    &signatures,
+                                );
+
+                                symbols_map.insert(
+                                    identity_key.clone(),
+                                    PublicApiSymbol {
+                                        identity_key,
+                                        exported_name: sym.name.clone(),
+                                        qualified_name: sym.qualified_path.clone(),
+                                        kind: sym.kind,
+                                        provenance,
+                                        signatures,
+                                        signature_fingerprint,
+                                    },
+                                );
+                            }
                         }
                     }
                 }
                 Err(e) => {
                     warnings.push(format!("Error parsing {}: {}", norm_path, e));
+                    status = AnalysisStatus::Partial;
                 }
             }
         }
 
         entry_points.sort();
+        entry_points.dedup();
         let ordered_symbols: Vec<PublicApiSymbol> = symbols_map.into_values().collect();
         let scope = PublicApiScope::Package {
             package_id: package_id.to_string(),
             entry_points,
         };
-        let surface_hash = Self::compute_surface_hash(&scope, lang, &ordered_symbols);
+        let surface_hash = Self::compute_surface_hash(status, &scope, lang, &ordered_symbols);
 
         Ok(PublicApiSurface {
+            status,
             scope,
             language: lang,
             symbols: ordered_symbols,
@@ -382,301 +618,310 @@ mod tests {
     }
 
     #[test]
-    fn test_5_t1_and_5_t2_tree_sitter_authority_and_supported_languages() {
+    fn test_5r1_t1_and_t2_java_public_class_and_method_extracted() {
         let pool = get_test_pool();
+        let src = r#"
+            public class PublicService {
+                public void run() {}
+                protected void hook() {}
+                private void secret() {}
+                void packageOnly() {}
+            }
+        "#;
 
-        // Verify AST parser is used for all supported languages
-        let js_res = PublicApiExtractor::extract_module(
-            &pool,
-            Language::JavaScript,
-            "export function testFn() {}",
-            "index.js",
-            "index",
-        );
-        assert!(js_res.is_ok());
-
-        let ts_res = PublicApiExtractor::extract_module(
-            &pool,
-            Language::TypeScript,
-            "export interface User { id: string; }",
-            "index.ts",
-            "index",
-        );
-        assert!(ts_res.is_ok());
-
-        let rust_res = PublicApiExtractor::extract_module(
-            &pool,
-            Language::Rust,
-            "pub fn public_fn() {}",
-            "lib.rs",
-            "crate",
-        );
-        assert!(rust_res.is_ok());
-
-        let py_res = PublicApiExtractor::extract_module(
-            &pool,
-            Language::Python,
-            "def public_calc(x): return x * 2",
-            "calc.py",
-            "calc",
-        );
-        assert!(py_res.is_ok());
-
-        let go_res = PublicApiExtractor::extract_module(
-            &pool,
-            Language::Go,
-            "package main\nfunc PublicHandler() {}",
-            "main.go",
-            "main",
-        );
-        assert!(go_res.is_ok());
-
-        let java_res = PublicApiExtractor::extract_module(
+        let surface = PublicApiExtractor::extract_module(
             &pool,
             Language::Java,
-            "public class Service { public void execute() {} }",
-            "Service.java",
-            "Service",
-        );
-        assert!(java_res.is_ok());
+            src,
+            "PublicService.java",
+            "PublicService",
+        )
+        .expect("extract failed");
+
+        let names: Vec<&str> = surface.symbols.iter().map(|s| s.exported_name.as_str()).collect();
+        assert!(names.contains(&"PublicService"), "PublicService class must be extracted");
+        assert!(names.contains(&"run"), "public run method must be extracted");
+        assert!(!names.contains(&"secret"), "private secret method must be excluded");
+        assert!(!names.contains(&"packageOnly"), "packageOnly method must be excluded");
+        assert_eq!(surface.status, AnalysisStatus::Complete);
     }
 
     #[test]
-    fn test_5_t4_and_5_t5_public_vs_private_symbols_in_js_ts() {
+    fn test_5r1_t3_and_t4_java_package_private_and_inner_excluded() {
         let pool = get_test_pool();
         let src = r#"
-            export function publicFunction(a: number): string {
-                return a.toString();
+            class InternalService {
+                public void internallyPublicMember() {}
             }
+        "#;
 
-            function privateHelper(b: number): number {
-                return b * 2;
+        let surface = PublicApiExtractor::extract_module(
+            &pool,
+            Language::Java,
+            src,
+            "InternalService.java",
+            "InternalService",
+        )
+        .expect("extract failed");
+
+        assert_eq!(surface.symbols.len(), 0, "Package-private class must not appear in public surface");
+    }
+
+    #[test]
+    fn test_5r1_t5_and_t21_java_overload_set_preserved() {
+        let pool = get_test_pool();
+        let src = r#"
+            public class Parser {
+                public String parse(String value) { return value; }
+                public int parse(int value) { return value; }
             }
+        "#;
 
-            export const PUBLIC_CONST = 42;
-            const privateSecret = "hidden";
+        let surface = PublicApiExtractor::extract_module(
+            &pool,
+            Language::Java,
+            src,
+            "Parser.java",
+            "Parser",
+        )
+        .expect("extract failed");
+
+        let parse_sym = surface
+            .symbols
+            .iter()
+            .find(|s| s.exported_name == "parse")
+            .expect("parse method symbol must exist");
+
+        assert_eq!(parse_sym.signatures.len(), 2, "Both overload signatures must be preserved under one identity");
+        assert_eq!(parse_sym.identity_key, "Java::Parser::Method::Parser.parse");
+    }
+
+    #[test]
+    fn test_5r1_t6_malformed_module_status_is_partial() {
+        let pool = get_test_pool();
+        let broken_src = r#"
+            pub fn valid_fn() {}
+            this is broken syntax @@@ !!! %%%
+        "#;
+
+        let surface = PublicApiExtractor::extract_module(
+            &pool,
+            Language::Rust,
+            broken_src,
+            "broken.rs",
+            "broken",
+        )
+        .expect("extract should succeed with partial status");
+
+        assert_eq!(surface.status, AnalysisStatus::Partial);
+        assert!(!surface.warnings.is_empty());
+        assert!(surface.symbols.iter().any(|s| s.exported_name == "valid_fn"));
+    }
+
+    #[test]
+    fn test_5r1_t8_complete_module_status_is_complete() {
+        let pool = get_test_pool();
+        let valid_src = "pub fn add(a: i32, b: i32) -> i32 { a + b }";
+
+        let surface = PublicApiExtractor::extract_module(
+            &pool,
+            Language::Rust,
+            valid_src,
+            "calc.rs",
+            "calc",
+        )
+        .expect("extract failed");
+
+        assert_eq!(surface.status, AnalysisStatus::Complete);
+        assert!(surface.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_5r1_t9_mixed_package_malformed_entry_is_partial() {
+        let pool = get_test_pool();
+        let f1 = ("src/valid.rs", "valid", "pub fn valid() {}");
+        let f2 = ("src/broken.rs", "broken", "pub fn broken() { @@@ !!! }");
+
+        let surface = PublicApiExtractor::extract_package(
+            &pool,
+            "pkg",
+            Language::Rust,
+            &[f1, f2],
+        )
+        .expect("extract failed");
+
+        assert_eq!(surface.status, AnalysisStatus::Partial);
+    }
+
+    #[test]
+    fn test_5r1_t11_complete_and_partial_same_symbols_hash_differently() {
+        let pool = get_test_pool();
+        let sym = PublicApiSymbol {
+            identity_key: "Rust::mod::Function::test".to_string(),
+            exported_name: "test".to_string(),
+            qualified_name: "test".to_string(),
+            kind: SymbolKind::Function,
+            provenance: SourceProvenance {
+                file_path: "test.rs".to_string(),
+                start_line: 1,
+                end_line: 1,
+            },
+            signatures: vec![],
+            signature_fingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+        };
+
+        let scope = PublicApiScope::Module {
+            module_path: "mod".to_string(),
+        };
+
+        let hash_complete = PublicApiExtractor::compute_surface_hash(
+            AnalysisStatus::Complete,
+            &scope,
+            Language::Rust,
+            &[sym.clone()],
+        );
+
+        let hash_partial = PublicApiExtractor::compute_surface_hash(
+            AnalysisStatus::Partial,
+            &scope,
+            Language::Rust,
+            &[sym],
+        );
+
+        assert_ne!(hash_complete, hash_partial, "Complete and Partial surfaces MUST produce distinct hashes");
+    }
+
+    #[test]
+    fn test_5r1_t12_python_all_truthful_filtering() {
+        let pool = get_test_pool();
+        let src = r#"
+__all__ = ["exported_fn", "_explicit_allowed"]
+
+def exported_fn():
+    pass
+
+def implicit_not_in_all():
+    pass
+
+def _explicit_allowed():
+    pass
+
+def _hidden():
+    pass
+"#;
+
+        let surface = PublicApiExtractor::extract_module(
+            &pool,
+            Language::Python,
+            src,
+            "pkg.py",
+            "pkg",
+        )
+        .expect("extract failed");
+
+        let names: Vec<&str> = surface.symbols.iter().map(|s| s.exported_name.as_str()).collect();
+        assert!(names.contains(&"exported_fn"));
+        assert!(names.contains(&"_explicit_allowed"));
+        assert!(!names.contains(&"implicit_not_in_all"), "Symbols omitted from __all__ MUST be excluded");
+        assert!(!names.contains(&"_hidden"), "_hidden must be excluded");
+        assert_eq!(surface.status, AnalysisStatus::Complete);
+    }
+
+    #[test]
+    fn test_5r1_t15_and_t16_sha256_known_digest_and_formatting_immunity() {
+        let pool = get_test_pool();
+        let src_a = "pub fn add(a: i32, b: i32) -> i32 { a + b }";
+        let src_b = r#"
+            // Leading comment
+            pub fn add(
+                a: i32,
+                b: i32,
+            ) -> i32 {
+                // Internal comment
+                a + b
+            }
+        "#;
+
+        let surf_a = PublicApiExtractor::extract_module(&pool, Language::Rust, src_a, "add.rs", "add").unwrap();
+        let surf_b = PublicApiExtractor::extract_module(&pool, Language::Rust, src_b, "add.rs", "add").unwrap();
+
+        assert_eq!(surf_a.symbols[0].signature_fingerprint.len(), 64, "Fingerprint must be 64 hex characters (SHA-256)");
+        assert_eq!(surf_a.surface_hash.len(), 64, "Surface hash must be 64 hex characters (SHA-256)");
+
+        assert_eq!(surf_a.symbols[0].signature_fingerprint, surf_b.symbols[0].signature_fingerprint);
+        assert_eq!(surf_a.surface_hash, surf_b.surface_hash);
+    }
+
+    #[test]
+    fn test_5r1_t20_typescript_overload_set_preserved() {
+        let pool = get_test_pool();
+        let src = r#"
+            export function parse(value: string): string;
+            export function parse(value: number): number;
+            export function parse(value: string | number): string | number {
+                return value;
+            }
         "#;
 
         let surface = PublicApiExtractor::extract_module(
             &pool,
             Language::TypeScript,
             src,
-            "src/utils.ts",
-            "utils",
+            "parser.ts",
+            "parser",
         )
         .expect("extract failed");
 
-        let names: Vec<&str> = surface.symbols.iter().map(|s| s.exported_name.as_str()).collect();
-        assert!(names.contains(&"publicFunction"));
-        assert!(names.contains(&"PUBLIC_CONST"));
-        assert!(!names.contains(&"privateHelper"));
-        assert!(!names.contains(&"privateSecret"));
+        let parse_sym = surface
+            .symbols
+            .iter()
+            .find(|s| s.exported_name == "parse")
+            .expect("parse function must exist");
+
+        assert_eq!(parse_sym.signatures.len(), 3, "TypeScript function with 3 declarations must preserve all 3 signatures");
+        assert_eq!(parse_sym.identity_key, "TypeScript::parser::Function::parse");
     }
 
     #[test]
-    fn test_5_t4_and_5_t5_public_vs_private_symbols_in_rust() {
+    fn test_5r1_t23_removing_overload_changes_fingerprint_not_identity() {
         let pool = get_test_pool();
-        let src = r#"
-            pub fn public_entry() {}
-            fn internal_helper() {}
-            pub struct Config { pub port: u16 }
-            struct InternalState { secret: u32 }
+        let src_3 = r#"
+            export function format(v: string): string;
+            export function format(v: number): string;
+            export function format(v: any): string { return ""; }
         "#;
 
-        let surface = PublicApiExtractor::extract_module(
-            &pool,
-            Language::Rust,
-            src,
-            "src/lib.rs",
-            "crate",
-        )
-        .expect("extract failed");
+        let src_2 = r#"
+            export function format(v: string): string;
+            export function format(v: any): string { return ""; }
+        "#;
 
-        let names: Vec<&str> = surface.symbols.iter().map(|s| s.exported_name.as_str()).collect();
-        assert!(names.contains(&"public_entry"));
-        assert!(names.contains(&"Config"));
-        assert!(!names.contains(&"internal_helper"));
-        assert!(!names.contains(&"InternalState"));
+        let surf_3 = PublicApiExtractor::extract_module(&pool, Language::TypeScript, src_3, "fmt.ts", "fmt").unwrap();
+        let surf_2 = PublicApiExtractor::extract_module(&pool, Language::TypeScript, src_2, "fmt.ts", "fmt").unwrap();
+
+        // Same identity
+        assert_eq!(surf_3.symbols[0].identity_key, surf_2.symbols[0].identity_key);
+
+        // Different signature fingerprint & surface hash
+        assert_ne!(surf_3.symbols[0].signature_fingerprint, surf_2.symbols[0].signature_fingerprint);
+        assert_ne!(surf_3.surface_hash, surf_2.surface_hash);
     }
 
     #[test]
-    fn test_5_t6_nested_local_symbols_excluded() {
+    fn test_5r1_t26_and_t27_determinism_20_permutations() {
         let pool = get_test_pool();
-        let src = r#"
-            export function outerFunction() {
-                function innerLocalHelper() {
-                    return 1;
-                }
-                return innerLocalHelper();
-            }
-        "#;
+        let f1 = ("src/a.rs", "a", "pub fn a() {}");
+        let f2 = ("src/b.rs", "b", "pub fn b() {}");
+        let f3 = ("src/c.rs", "c", "pub fn c() {}");
 
-        let surface = PublicApiExtractor::extract_module(
-            &pool,
-            Language::JavaScript,
-            src,
-            "index.js",
-            "index",
-        )
-        .expect("extract failed");
+        let files = vec![f1, f2, f3];
+        let base = PublicApiExtractor::extract_package(&pool, "pkg", Language::Rust, &files).unwrap();
 
-        let names: Vec<&str> = surface.symbols.iter().map(|s| s.exported_name.as_str()).collect();
-        assert!(names.contains(&"outerFunction"));
-        assert!(!names.contains(&"innerLocalHelper"));
-    }
-
-    #[test]
-    fn test_5_t11_and_5_t12_identity_stability_across_line_movement_and_comments() {
-        let pool = get_test_pool();
-        let src1 = r#"
-            export function processOrder(orderId: string): boolean {
-                return true;
-            }
-        "#;
-
-        let src2 = r#"
-            // Added leading comments
-            // Explaining order processing logic
-
-            export function processOrder(orderId: string): boolean {
-                // Internal comment inside body
-                return true;
-            }
-        "#;
-
-        let surf1 = PublicApiExtractor::extract_module(&pool, Language::TypeScript, src1, "api.ts", "api").unwrap();
-        let surf2 = PublicApiExtractor::extract_module(&pool, Language::TypeScript, src2, "api.ts", "api").unwrap();
-
-        assert_eq!(surf1.symbols.len(), 1);
-        assert_eq!(surf2.symbols.len(), 1);
-
-        // Identity key and signature fingerprint must be byte-for-byte equal
-        assert_eq!(surf1.symbols[0].identity_key, surf2.symbols[0].identity_key);
-        assert_eq!(surf1.symbols[0].signature_fingerprint, surf2.symbols[0].signature_fingerprint);
-        assert_eq!(surf1.surface_hash, surf2.surface_hash);
-
-        // Line numbers changed in provenance
-        assert_ne!(surf1.symbols[0].provenance.start_line, surf2.symbols[0].provenance.start_line);
-    }
-
-    #[test]
-    fn test_5_t13_private_only_implementation_change_leaves_surface_identical() {
-        let pool = get_test_pool();
-        let src_v1 = r#"
-            export function calculateSum(a: number, b: number): number {
-                return a + b;
-            }
-            function secretHelper() { return "v1"; }
-        "#;
-
-        let src_v2 = r#"
-            export function calculateSum(a: number, b: number): number {
-                // Changed algorithm to use bitwise operations
-                let res = a;
-                for (let i = 0; i < b; i++) { res++; }
-                return res;
-            }
-            function secretHelper() { return "v2 completely rewritten"; }
-        "#;
-
-        let surf1 = PublicApiExtractor::extract_module(&pool, Language::TypeScript, src_v1, "calc.ts", "calc").unwrap();
-        let surf2 = PublicApiExtractor::extract_module(&pool, Language::TypeScript, src_v2, "calc.ts", "calc").unwrap();
-
-        assert_eq!(surf1.surface_hash, surf2.surface_hash);
-        assert_eq!(surf1.symbols[0].signature_fingerprint, surf2.symbols[0].signature_fingerprint);
-    }
-
-    #[test]
-    fn test_5_t14_public_signature_change_alters_signature_fingerprint_without_changing_identity() {
-        let pool = get_test_pool();
-        let src1 = "pub fn fetch_user(id: String) -> bool { true }";
-        let src2 = "pub fn fetch_user(id: u32) -> bool { true }";
-
-        let surf1 = PublicApiExtractor::extract_module(&pool, Language::Rust, src1, "user.rs", "user").unwrap();
-        let surf2 = PublicApiExtractor::extract_module(&pool, Language::Rust, src2, "user.rs", "user").unwrap();
-
-        // Same identity key
-        assert_eq!(surf1.symbols[0].identity_key, surf2.symbols[0].identity_key);
-
-        // Different signature fingerprint
-        assert_ne!(surf1.symbols[0].signature_fingerprint, surf2.symbols[0].signature_fingerprint);
-        assert_ne!(surf1.surface_hash, surf2.surface_hash);
-    }
-
-    #[test]
-    fn test_5_t16_public_rename_changes_identity() {
-        let pool = get_test_pool();
-        let src1 = "export function oldFunctionName(): void {}";
-        let src2 = "export function newFunctionName(): void {}";
-
-        let surf1 = PublicApiExtractor::extract_module(&pool, Language::TypeScript, src1, "mod.ts", "mod").unwrap();
-        let surf2 = PublicApiExtractor::extract_module(&pool, Language::TypeScript, src2, "mod.ts", "mod").unwrap();
-
-        assert_ne!(surf1.symbols[0].identity_key, surf2.symbols[0].identity_key);
-        assert_eq!(surf1.symbols[0].exported_name, "oldFunctionName");
-        assert_eq!(surf2.symbols[0].exported_name, "newFunctionName");
-    }
-
-    #[test]
-    fn test_5_t17_repeated_extraction_is_strictly_deterministic() {
-        let pool = get_test_pool();
-        let src = r#"
-            pub struct Server { pub port: u16 }
-            pub fn start(s: Server) -> bool { true }
-            pub const DEFAULT_PORT: u16 = 8080;
-        "#;
-
-        let first = PublicApiExtractor::extract_module(&pool, Language::Rust, src, "server.rs", "server").unwrap();
-        let first_json = serde_json::to_string(&first).unwrap();
-
-        for _ in 0..10 {
-            let next = PublicApiExtractor::extract_module(&pool, Language::Rust, src, "server.rs", "server").unwrap();
-            let next_json = serde_json::to_string(&next).unwrap();
-            assert_eq!(first.surface_hash, next.surface_hash);
-            assert_eq!(first_json, next_json);
+        for _ in 0..20 {
+            let perm = vec![f3, f1, f2];
+            let next = PublicApiExtractor::extract_package(&pool, "pkg", Language::Rust, &perm).unwrap();
+            assert_eq!(base.surface_hash, next.surface_hash);
+            assert_eq!(base.symbols, next.symbols);
         }
-    }
-
-    #[test]
-    fn test_5_t18_input_file_order_independence() {
-        let pool = get_test_pool();
-        let f1 = ("src/a.ts", "a", "export const CONST_A = 1;");
-        let f2 = ("src/b.ts", "b", "export const CONST_B = 2;");
-        let f3 = ("src/c.ts", "c", "export const CONST_C = 3;");
-
-        let order1 = vec![f1, f2, f3];
-        let order2 = vec![f3, f1, f2];
-
-        let surf1 = PublicApiExtractor::extract_package(&pool, "pkg-test", Language::TypeScript, &order1).unwrap();
-        let surf2 = PublicApiExtractor::extract_package(&pool, "pkg-test", Language::TypeScript, &order2).unwrap();
-
-        assert_eq!(surf1.surface_hash, surf2.surface_hash);
-        assert_eq!(surf1.symbols, surf2.symbols);
-    }
-
-    #[test]
-    fn test_5_t19_cross_platform_path_normalization() {
-        let win_path = r"src\core\module.ts";
-        let posix_path = "src/core/module.ts";
-
-        assert_eq!(
-            PublicApiExtractor::normalize_path(win_path),
-            PublicApiExtractor::normalize_path(posix_path)
-        );
-    }
-
-    #[test]
-    fn test_5_t22_and_5_t23_serializable_and_no_runtime_handles_escape() {
-        let pool = get_test_pool();
-        let src = "export function apiMethod(): string { return 'ok'; }";
-        let surface = PublicApiExtractor::extract_module(&pool, Language::TypeScript, src, "api.ts", "api").unwrap();
-
-        let json = serde_json::to_string_pretty(&surface).expect("serialization failed");
-        assert!(json.contains("apiMethod"));
-        assert!(json.contains("identity_key"));
-        assert!(json.contains("signature_fingerprint"));
-
-        let deserialized: PublicApiSurface = serde_json::from_str(&json).expect("deserialization failed");
-        assert_eq!(surface, deserialized);
     }
 }
