@@ -1,4 +1,4 @@
-//! Counterfactual API Scenario Engine Core (WMCP-7A)
+//! Counterfactual API Scenario Engine Core (WMCP-7A / WMCP-7A-R1)
 //!
 //! Provides deterministic, source-grounded evaluation of hypothetical API changes against
 //! committed baseline public API snapshots.
@@ -6,6 +6,8 @@
 //! Invariants:
 //! - Pure domain analysis: zero writes to authoritative snapshot repository.
 //! - Closed authority: consumes V1 `PublicApiSurface` and WMCP-5 canonical hashing.
+//! - Canonical identity: recomputes stable `identity_key` on rename using WMCP-5 authority.
+//! - Explicit input bounds: enforces finite length limits on all scenario identifiers and expressions.
 //! - Detector reuse: executes existing `BreakingDetector` via lossless `surface_to_snapshot` adapter.
 //! - Determinism: identical baseline + patch produces bit-for-bit identical candidate surface and ordered findings.
 
@@ -20,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 // ═══════════════════════════════════════════════════════════════
-// SCENARIO PATCH DOMAIN TYPES
+// SCENARIO PATCH DOMAIN TYPES & BOUNDS
 // ═══════════════════════════════════════════════════════════════
 
 /// Explicit, typed patch operations applicable to public API symbols
@@ -103,8 +105,20 @@ pub struct ScenarioPatch {
 impl ScenarioPatch {
     /// Maximum allowed operations in a single scenario patch
     pub const MAX_OPERATIONS: usize = 256;
+    /// Maximum allowed length for an operation identifier
+    pub const MAX_OPERATION_ID_LEN: usize = 128;
+    /// Maximum allowed length for a scenario identifier
+    pub const MAX_SCENARIO_ID_LEN: usize = 128;
+    /// Maximum allowed length for a symbol path or package identifier
+    pub const MAX_SYMBOL_PATH_LEN: usize = 512;
+    /// Maximum allowed length for a new symbol path during rename
+    pub const MAX_NEW_SYMBOL_PATH_LEN: usize = 512;
+    /// Maximum allowed length for a parameter name
+    pub const MAX_PARAMETER_NAME_LEN: usize = 128;
+    /// Maximum allowed length for a type expression
+    pub const MAX_TYPE_EXPRESSION_LEN: usize = 512;
 
-    /// Validates internal consistency of the scenario patch
+    /// Validates internal consistency and explicit input bounds of the scenario patch
     pub fn validate(&self) -> Result<(), ScenarioEngineError> {
         if self.operations.len() > Self::MAX_OPERATIONS {
             return Err(ScenarioEngineError::InvalidPatch(format!(
@@ -113,15 +127,89 @@ impl ScenarioPatch {
             )));
         }
 
+        validate_bounded_optional("scenario_id", &self.scenario_id, Self::MAX_SCENARIO_ID_LEN)?;
+        validate_bounded_optional(
+            "target_package_id",
+            &self.target_package_id,
+            Self::MAX_SYMBOL_PATH_LEN,
+        )?;
+
         // Check for conflicting duplicate operations targeting the same symbol
         let mut seen_symbols = HashSet::new();
         for op in &self.operations {
-            let target = op.target_symbol_path();
-            if target.trim().is_empty() {
-                return Err(ScenarioEngineError::InvalidPatch(
-                    "Operation target symbol cannot be empty".to_string(),
-                ));
+            validate_bounded_non_empty(
+                "operation_id",
+                op.operation_id(),
+                Self::MAX_OPERATION_ID_LEN,
+            )?;
+            validate_bounded_non_empty(
+                "symbol_path",
+                op.target_symbol_path(),
+                Self::MAX_SYMBOL_PATH_LEN,
+            )?;
+
+            match op {
+                ScenarioPatchOperation::RemoveSymbol { .. } => {}
+                ScenarioPatchOperation::RenameSymbol {
+                    new_symbol_path, ..
+                } => {
+                    validate_bounded_non_empty(
+                        "new_symbol_path",
+                        new_symbol_path,
+                        Self::MAX_NEW_SYMBOL_PATH_LEN,
+                    )?;
+                }
+                ScenarioPatchOperation::ChangeReturnType {
+                    new_return_type, ..
+                } => {
+                    validate_bounded_non_empty(
+                        "new_return_type",
+                        new_return_type,
+                        Self::MAX_TYPE_EXPRESSION_LEN,
+                    )?;
+                }
+                ScenarioPatchOperation::ChangeParameterType {
+                    parameter_name,
+                    new_type,
+                    ..
+                } => {
+                    validate_bounded_non_empty(
+                        "parameter_name",
+                        parameter_name,
+                        Self::MAX_PARAMETER_NAME_LEN,
+                    )?;
+                    validate_bounded_non_empty(
+                        "new_type",
+                        new_type,
+                        Self::MAX_TYPE_EXPRESSION_LEN,
+                    )?;
+                }
+                ScenarioPatchOperation::AddRequiredParameter {
+                    parameter_name,
+                    parameter_type,
+                    ..
+                } => {
+                    validate_bounded_non_empty(
+                        "parameter_name",
+                        parameter_name,
+                        Self::MAX_PARAMETER_NAME_LEN,
+                    )?;
+                    validate_bounded_non_empty(
+                        "parameter_type",
+                        parameter_type,
+                        Self::MAX_TYPE_EXPRESSION_LEN,
+                    )?;
+                }
+                ScenarioPatchOperation::ChangeVisibility { new_visibility, .. } => {
+                    validate_bounded_non_empty(
+                        "new_visibility",
+                        new_visibility,
+                        Self::MAX_PARAMETER_NAME_LEN,
+                    )?;
+                }
             }
+
+            let target = op.target_symbol_path();
             if !seen_symbols.insert(target) {
                 return Err(ScenarioEngineError::ConflictingOperations(format!(
                     "Multiple conflicting operations targeting symbol '{}'",
@@ -132,6 +220,54 @@ impl ScenarioPatch {
 
         Ok(())
     }
+}
+
+fn validate_bounded_non_empty(
+    field_name: &str,
+    value: &str,
+    max_len: usize,
+) -> Result<(), ScenarioEngineError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(ScenarioEngineError::InvalidPatch(format!(
+            "Field '{}' cannot be empty or whitespace-only",
+            field_name
+        )));
+    }
+    if value.len() > max_len {
+        return Err(ScenarioEngineError::InvalidPatch(format!(
+            "Field '{}' exceeds maximum allowed length of {} bytes (got {} bytes)",
+            field_name,
+            max_len,
+            value.len()
+        )));
+    }
+    Ok(())
+}
+
+fn validate_bounded_optional(
+    field_name: &str,
+    value: &Option<String>,
+    max_len: usize,
+) -> Result<(), ScenarioEngineError> {
+    if let Some(val) = value {
+        let trimmed = val.trim();
+        if trimmed.is_empty() {
+            return Err(ScenarioEngineError::InvalidPatch(format!(
+                "Field '{}' cannot be whitespace-only",
+                field_name
+            )));
+        }
+        if val.len() > max_len {
+            return Err(ScenarioEngineError::InvalidPatch(format!(
+                "Field '{}' exceeds maximum allowed length of {} bytes (got {} bytes)",
+                field_name,
+                max_len,
+                val.len()
+            )));
+        }
+    }
+    Ok(())
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -265,6 +401,15 @@ impl CounterfactualScenarioEngine {
                     } else {
                         sym.qualified_name = new_symbol_path.clone();
                     }
+
+                    // Recompute canonical identity_key using exact WMCP-5 authority
+                    sym.identity_key = PublicApiExtractor::compute_identity_key(
+                        baseline.language,
+                        &sym.provenance.file_path,
+                        sym.kind,
+                        &sym.qualified_name,
+                    );
+
                     // Update signature strings and fingerprints
                     for sig in &mut sym.signatures {
                         sig.normalized_signature = sig
@@ -293,6 +438,24 @@ impl CounterfactualScenarioEngine {
                         &sym.exported_name,
                         &sym.signatures,
                     );
+
+                    // Explicit domain validation: check that rename does not collide with existing symbol
+                    let renamed_identity = sym.identity_key.clone();
+                    let renamed_qualified = sym.qualified_name.clone();
+                    let renamed_exported = sym.exported_name.clone();
+
+                    for (i, other) in candidate_symbols.iter().enumerate() {
+                        if i != sym_idx
+                            && (other.identity_key == renamed_identity
+                                || other.qualified_name == renamed_qualified
+                                || other.exported_name == renamed_exported)
+                        {
+                            return Err(ScenarioEngineError::ConflictingOperations(format!(
+                                "Renaming symbol '{}' to '{}' creates a collision with existing symbol '{}'",
+                                old_name, new_symbol_path, other.exported_name
+                            )));
+                        }
+                    }
                 }
                 ScenarioPatchOperation::ChangeReturnType {
                     new_return_type, ..
@@ -466,9 +629,7 @@ fn update_signature_parameter_type(sig_str: &str, param_name: &str, new_type: &s
     let needle = format!("{}: ", param_name);
     if let Some(pos) = sig_str.find(&needle) {
         let after_needle = &sig_str[pos + needle.len()..];
-        let end_param = after_needle
-            .find([',', ')'])
-            .unwrap_or(after_needle.len());
+        let end_param = after_needle.find([',', ')']).unwrap_or(after_needle.len());
         let old_type_slice = &after_needle[..end_param];
         sig_str.replacen(
             &format!("{}{}", needle, old_type_slice),
@@ -557,10 +718,18 @@ mod tests {
             std::slice::from_ref(&sig),
         );
 
+        let qualified_name = format!("{}::{}", package_id, name);
+        let identity_key = PublicApiExtractor::compute_identity_key(
+            Language::Rust,
+            "src/lib.rs",
+            SymbolKind::Function,
+            &qualified_name,
+        );
+
         PublicApiSymbol {
-            identity_key: format!("Rust::{}::Function::{}", package_id, name),
+            identity_key,
             exported_name: name.to_string(),
-            qualified_name: format!("{}::{}", package_id, name),
+            qualified_name,
             kind: SymbolKind::Function,
             provenance: SourceProvenance {
                 file_path: "src/lib.rs".to_string(),
@@ -833,7 +1002,7 @@ mod tests {
             annotations: vec![],
         };
         let ts_sym = PublicApiSymbol {
-            identity_key: "TypeScript::ts_pkg::Function::parse".to_string(),
+            identity_key: "TypeScript::src/index.ts::Function::ts_pkg::parse".to_string(),
             exported_name: "parse".to_string(),
             qualified_name: "ts_pkg::parse".to_string(),
             kind: SymbolKind::Function,
@@ -884,5 +1053,282 @@ mod tests {
         assert_eq!(patch_sig, deserialized_patch);
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[tokio::test]
+    async fn test_7a_r1_t1_through_t16_rename_identity_and_explicit_bounds() {
+        let engine = CounterfactualScenarioEngine::new();
+        let sym_a = make_test_symbol("pkg_a", "foo", "i32", vec![]);
+        let sym_b = make_test_symbol("pkg_a", "bar", "String", vec![]);
+        let baseline = make_test_surface("pkg_a", vec![sym_a.clone(), sym_b.clone()]);
+
+        // 7A-R1-T1: Rename recomputes canonical identity_key using WMCP-5 authority
+        let patch_rename = ScenarioPatch {
+            scenario_id: Some("rename-scen".to_string()),
+            target_package_id: Some("pkg_a".to_string()),
+            operations: vec![ScenarioPatchOperation::RenameSymbol {
+                operation_id: "op-rename".to_string(),
+                symbol_path: sym_a.identity_key.clone(),
+                new_symbol_path: "baz".to_string(),
+            }],
+        };
+        let res_rename = engine.evaluate_surface(&baseline, &patch_rename).unwrap();
+        let renamed_sym = &res_rename.candidate_surface.symbols[0];
+
+        let expected_identity = PublicApiExtractor::compute_identity_key(
+            Language::Rust,
+            "src/lib.rs",
+            SymbolKind::Function,
+            "pkg_a::baz",
+        );
+        assert_eq!(
+            renamed_sym.identity_key, expected_identity,
+            "7A-R1-T1: identity_key must be recomputed canonically"
+        );
+        assert_eq!(renamed_sym.exported_name, "baz");
+        assert_eq!(renamed_sym.qualified_name, "pkg_a::baz");
+
+        // 7A-R1-T2: Old identity no longer targets candidate
+        let patch_target_old = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::ChangeReturnType {
+                operation_id: "op-old".to_string(),
+                symbol_path: sym_a.identity_key.clone(),
+                new_return_type: "u64".to_string(),
+            }],
+        };
+        let err_old = engine.evaluate_surface(&res_rename.candidate_surface, &patch_target_old);
+        assert!(
+            matches!(err_old.unwrap_err(), ScenarioEngineError::SymbolNotFound(_)),
+            "7A-R1-T2: Old identity must not resolve"
+        );
+
+        // 7A-R1-T3: New canonical identity targets candidate
+        let patch_target_new = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::ChangeReturnType {
+                operation_id: "op-new".to_string(),
+                symbol_path: expected_identity.clone(),
+                new_return_type: "u64".to_string(),
+            }],
+        };
+        let res_new = engine
+            .evaluate_surface(&res_rename.candidate_surface, &patch_target_new)
+            .unwrap();
+        assert_eq!(
+            res_new.candidate_surface.symbols[0].signatures[0]
+                .return_type
+                .as_deref(),
+            Some("u64")
+        );
+
+        // 7A-R1-T4: Rename collision returns typed failure
+        let patch_collide = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::RenameSymbol {
+                operation_id: "op-col".to_string(),
+                symbol_path: sym_a.identity_key.clone(),
+                new_symbol_path: "bar".to_string(),
+            }],
+        };
+        let err_collide = engine.evaluate_surface(&baseline, &patch_collide);
+        assert!(matches!(
+            err_collide.unwrap_err(),
+            ScenarioEngineError::ConflictingOperations(_)
+        ));
+
+        // 7A-R1-T6: MAX_OPERATIONS enforced
+        let mut ops_overflow = Vec::new();
+        for i in 0..257 {
+            ops_overflow.push(ScenarioPatchOperation::RemoveSymbol {
+                operation_id: format!("op-{}", i),
+                symbol_path: format!("sym-{}", i),
+            });
+        }
+        let patch_overflow = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: ops_overflow,
+        };
+        assert!(matches!(
+            patch_overflow.validate().unwrap_err(),
+            ScenarioEngineError::InvalidPatch(_)
+        ));
+
+        // 7A-R1-T7: operation_id max/max+1
+        let valid_op_id = "a".repeat(ScenarioPatch::MAX_OPERATION_ID_LEN);
+        let invalid_op_id = "a".repeat(ScenarioPatch::MAX_OPERATION_ID_LEN + 1);
+        let patch_op_valid = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::RemoveSymbol {
+                operation_id: valid_op_id,
+                symbol_path: "sym".to_string(),
+            }],
+        };
+        assert!(patch_op_valid.validate().is_ok());
+
+        let patch_op_invalid = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::RemoveSymbol {
+                operation_id: invalid_op_id,
+                symbol_path: "sym".to_string(),
+            }],
+        };
+        assert!(matches!(
+            patch_op_invalid.validate().unwrap_err(),
+            ScenarioEngineError::InvalidPatch(_)
+        ));
+
+        // 7A-R1-T8: scenario_id max/max+1
+        let valid_scen_id = "s".repeat(ScenarioPatch::MAX_SCENARIO_ID_LEN);
+        let invalid_scen_id = "s".repeat(ScenarioPatch::MAX_SCENARIO_ID_LEN + 1);
+        let patch_scen_valid = ScenarioPatch {
+            scenario_id: Some(valid_scen_id),
+            target_package_id: None,
+            operations: vec![],
+        };
+        assert!(patch_scen_valid.validate().is_ok());
+
+        let patch_scen_invalid = ScenarioPatch {
+            scenario_id: Some(invalid_scen_id),
+            target_package_id: None,
+            operations: vec![],
+        };
+        assert!(matches!(
+            patch_scen_invalid.validate().unwrap_err(),
+            ScenarioEngineError::InvalidPatch(_)
+        ));
+
+        // 7A-R1-T9: symbol_path max/max+1
+        let valid_sym_path = "p".repeat(ScenarioPatch::MAX_SYMBOL_PATH_LEN);
+        let invalid_sym_path = "p".repeat(ScenarioPatch::MAX_SYMBOL_PATH_LEN + 1);
+        let patch_sym_valid = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::RemoveSymbol {
+                operation_id: "op1".to_string(),
+                symbol_path: valid_sym_path,
+            }],
+        };
+        assert!(patch_sym_valid.validate().is_ok());
+
+        let patch_sym_invalid = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::RemoveSymbol {
+                operation_id: "op1".to_string(),
+                symbol_path: invalid_sym_path,
+            }],
+        };
+        assert!(matches!(
+            patch_sym_invalid.validate().unwrap_err(),
+            ScenarioEngineError::InvalidPatch(_)
+        ));
+
+        // 7A-R1-T10: new_symbol_path max/max+1
+        let valid_new_sym = "n".repeat(ScenarioPatch::MAX_NEW_SYMBOL_PATH_LEN);
+        let invalid_new_sym = "n".repeat(ScenarioPatch::MAX_NEW_SYMBOL_PATH_LEN + 1);
+        let patch_new_valid = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::RenameSymbol {
+                operation_id: "op1".to_string(),
+                symbol_path: "sym".to_string(),
+                new_symbol_path: valid_new_sym,
+            }],
+        };
+        assert!(patch_new_valid.validate().is_ok());
+
+        let patch_new_invalid = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::RenameSymbol {
+                operation_id: "op1".to_string(),
+                symbol_path: "sym".to_string(),
+                new_symbol_path: invalid_new_sym,
+            }],
+        };
+        assert!(matches!(
+            patch_new_invalid.validate().unwrap_err(),
+            ScenarioEngineError::InvalidPatch(_)
+        ));
+
+        // 7A-R1-T11: parameter_name max/max+1
+        let valid_param = "x".repeat(ScenarioPatch::MAX_PARAMETER_NAME_LEN);
+        let invalid_param = "x".repeat(ScenarioPatch::MAX_PARAMETER_NAME_LEN + 1);
+        let patch_param_valid = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::ChangeParameterType {
+                operation_id: "op1".to_string(),
+                symbol_path: "sym".to_string(),
+                parameter_name: valid_param,
+                new_type: "i32".to_string(),
+            }],
+        };
+        assert!(patch_param_valid.validate().is_ok());
+
+        let patch_param_invalid = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::ChangeParameterType {
+                operation_id: "op1".to_string(),
+                symbol_path: "sym".to_string(),
+                parameter_name: invalid_param,
+                new_type: "i32".to_string(),
+            }],
+        };
+        assert!(matches!(
+            patch_param_invalid.validate().unwrap_err(),
+            ScenarioEngineError::InvalidPatch(_)
+        ));
+
+        // 7A-R1-T12: type expression max/max+1
+        let valid_type = "T".repeat(ScenarioPatch::MAX_TYPE_EXPRESSION_LEN);
+        let invalid_type = "T".repeat(ScenarioPatch::MAX_TYPE_EXPRESSION_LEN + 1);
+        let patch_type_valid = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::ChangeReturnType {
+                operation_id: "op1".to_string(),
+                symbol_path: "sym".to_string(),
+                new_return_type: valid_type,
+            }],
+        };
+        assert!(patch_type_valid.validate().is_ok());
+
+        let patch_type_invalid = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::ChangeReturnType {
+                operation_id: "op1".to_string(),
+                symbol_path: "sym".to_string(),
+                new_return_type: invalid_type,
+            }],
+        };
+        assert!(matches!(
+            patch_type_invalid.validate().unwrap_err(),
+            ScenarioEngineError::InvalidPatch(_)
+        ));
+
+        // 7A-R1-T13: Required strings reject empty/whitespace-only input
+        let patch_empty_name = ScenarioPatch {
+            scenario_id: None,
+            target_package_id: None,
+            operations: vec![ScenarioPatchOperation::RenameSymbol {
+                operation_id: "op1".to_string(),
+                symbol_path: "sym".to_string(),
+                new_symbol_path: "   ".to_string(),
+            }],
+        };
+        assert!(matches!(
+            patch_empty_name.validate().unwrap_err(),
+            ScenarioEngineError::InvalidPatch(_)
+        ));
     }
 }
