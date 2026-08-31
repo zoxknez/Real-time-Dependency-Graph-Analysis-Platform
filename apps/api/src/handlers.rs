@@ -318,3 +318,201 @@ pub async fn security_agent_stream(
     Sse::new(ReceiverStream::new(rx))
         .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
 }
+
+// ═══════════════════════════════════════════════════════════════
+// COUNTERFACTUAL SCENARIO EVALUATION ENDPOINT (WMCP-7B)
+// ═══════════════════════════════════════════════════════════════
+
+use analysis::api_snapshot::SnapshotRepository;
+use analysis::counterfactual::{CounterfactualScenarioEngine, ScenarioEngineError, ScenarioPatch};
+use axum::http::StatusCode;
+
+#[derive(Debug, Deserialize)]
+pub struct EvaluateScenarioRequest {
+    pub target_package_id: String,
+    pub base_version: Option<String>,
+    pub snapshot_id: Option<String>,
+    pub patch: ScenarioPatch,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BreakingChangeDto {
+    pub change_type: String,
+    pub symbol_path: String,
+    pub description: String,
+    pub severity: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub old_signature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub new_signature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migration_hint: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct EvaluateScenarioResponse {
+    pub scenario_id: Option<String>,
+    pub baseline_surface_hash: String,
+    pub candidate_surface_hash: String,
+    pub changed: bool,
+    pub breaking_changes: Vec<BreakingChangeDto>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ErrorResponse {
+    pub code: String,
+    pub message: String,
+}
+
+pub async fn evaluate_scenario_handler(
+    Json(req): Json<EvaluateScenarioRequest>,
+) -> Result<Json<EvaluateScenarioResponse>, (StatusCode, Json<ErrorResponse>)> {
+    let repo = SnapshotRepository::open_from_env().map_err(|e| {
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ErrorResponse {
+                code: "UNAVAILABLE".to_string(),
+                message: format!("Snapshot repository unavailable: {}", e),
+            }),
+        )
+    })?;
+
+    // Determine target snapshot ID strictly without latest guessing
+    let resolved_snapshot_id = if let Some(ref snap_id) = req.snapshot_id {
+        if snap_id.trim().is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    code: "INVALID_INPUT".to_string(),
+                    message: "Explicit snapshot_id cannot be empty".to_string(),
+                }),
+            ));
+        }
+        snap_id.clone()
+    } else if let Some(ref base_ver) = req.base_version {
+        let trimmed_ver = base_ver.trim();
+        if trimmed_ver.is_empty() {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    code: "INVALID_INPUT".to_string(),
+                    message: "base_version cannot be empty".to_string(),
+                }),
+            ));
+        }
+        // Check if base_version directly is a snapshot id in repo
+        if repo.get_by_id(trimmed_ver).await.is_ok() {
+            trimmed_ver.to_string()
+        } else {
+            // Check history entries for target_package_id matching version
+            let history = repo.list_history(&req.target_package_id).await.map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(ErrorResponse {
+                        code: "INTERNAL_ERROR".to_string(),
+                        message: format!("Failed to list snapshot history: {}", e),
+                    }),
+                )
+            })?;
+
+            let matched_entry = history
+                .into_iter()
+                .find(|entry| entry.revision == trimmed_ver);
+
+            match matched_entry {
+                Some(entry) => entry.snapshot_id,
+                None => {
+                    return Err((
+                        StatusCode::NOT_FOUND,
+                        Json(ErrorResponse {
+                            code: "NOT_FOUND".to_string(),
+                            message: format!(
+                                "Committed snapshot not found for package '{}' version '{}'",
+                                req.target_package_id, trimmed_ver
+                            ),
+                        }),
+                    ));
+                }
+            }
+        }
+    } else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                code: "INVALID_INPUT".to_string(),
+                message: "Scenario must specify target_package_id and authoritative base_version or snapshot_id".to_string(),
+            }),
+        ));
+    };
+
+    let engine = CounterfactualScenarioEngine::new();
+    let result = engine
+        .evaluate_committed_snapshot(&repo, &resolved_snapshot_id, &req.patch)
+        .await
+        .map_err(|e| match e {
+            ScenarioEngineError::SnapshotNotCommitted(msg) => (
+                StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    code: "NOT_FOUND".to_string(),
+                    message: msg,
+                }),
+            ),
+            ScenarioEngineError::InvalidBaselineStatus(status) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(ErrorResponse {
+                    code: "INVALID_BASELINE".to_string(),
+                    message: format!("Baseline surface has non-complete status: {:?}", status),
+                }),
+            ),
+            ScenarioEngineError::SymbolNotFound(sym) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(ErrorResponse {
+                    code: "SYMBOL_NOT_FOUND".to_string(),
+                    message: format!("Symbol not found in baseline: {}", sym),
+                }),
+            ),
+            ScenarioEngineError::ConflictingOperations(msg) => (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(ErrorResponse {
+                    code: "CONFLICTING_OPERATIONS".to_string(),
+                    message: msg,
+                }),
+            ),
+            ScenarioEngineError::InvalidPatch(msg) => (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    code: "INVALID_PATCH".to_string(),
+                    message: msg,
+                }),
+            ),
+            ScenarioEngineError::RepositoryError(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    code: "REPOSITORY_ERROR".to_string(),
+                    message: msg,
+                }),
+            ),
+        })?;
+
+    let breaking_changes_dto = result
+        .breaking_changes
+        .into_iter()
+        .map(|bc| BreakingChangeDto {
+            change_type: format!("{:?}", bc.change_type),
+            symbol_path: bc.symbol_path,
+            description: bc.description,
+            severity: format!("{:?}", bc.severity),
+            old_signature: bc.old_signature,
+            new_signature: bc.new_signature,
+            migration_hint: bc.migration_hint,
+        })
+        .collect();
+
+    Ok(Json(EvaluateScenarioResponse {
+        scenario_id: result.scenario_id,
+        baseline_surface_hash: result.baseline_surface_hash,
+        candidate_surface_hash: result.candidate_surface_hash,
+        changed: result.changed,
+        breaking_changes: breaking_changes_dto,
+    }))
+}

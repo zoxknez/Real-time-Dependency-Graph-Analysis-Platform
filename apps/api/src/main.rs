@@ -43,7 +43,7 @@ use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitEx
 
 use crate::config::Config;
 use crate::handlers::{AppState, CombinedState};
-use crate::handlers::{live_token_handler, security_agent_stream};
+use crate::handlers::{evaluate_scenario_handler, live_token_handler, security_agent_stream};
 use crate::middleware::audit::init_audit_persistence;
 use crate::middleware::auth::{JwtConfig, optional_jwt_middleware};
 #[allow(unused_imports)]
@@ -210,6 +210,7 @@ async fn main() -> Result<()> {
         .route("/graphql/ws", get(graphql_ws_handler))
         .route("/agent/stream", axum::routing::post(security_agent_stream))
         .route("/live/token", get(live_token_handler))
+        .route("/analysis/scenarios/evaluate", axum::routing::post(evaluate_scenario_handler))
         .layer(axum::Extension(metrics_handle))
         .layer(axum::Extension(ws_schema))
         .layer(axum_middleware::from_fn_with_state(jwt_config, optional_jwt_middleware))

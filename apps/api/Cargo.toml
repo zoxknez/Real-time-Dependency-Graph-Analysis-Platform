@@ -55,6 +55,7 @@ base64.workspace = true
 
 models = { path = "../../packages/models" }
 storage = { path = "../../packages/storage" }
+analysis = { path = "../analysis", default-features = false }
 
 # JWT Auth
 jsonwebtoken = "9.2"
@@ -69,4 +70,3 @@ sqlx.workspace = true
 [build-dependencies]
 prost-build.workspace = true
 protoc-bin-vendored = "3.0"
-

@@ -105,11 +105,25 @@ export interface WarRoomScenario {
   readonly proposedVersion?: string;
 }
 
+export interface WarRoomBreakingChangeDto {
+  readonly changeType: string;
+  readonly symbolPath: string;
+  readonly description: string;
+  readonly severity?: string;
+  readonly oldSignature?: string;
+  readonly newSignature?: string;
+  readonly migrationHint?: string;
+}
+
 export interface WarRoomAnalysisRef {
   readonly id: string;
   readonly scenarioId: string;
   readonly sourceContextRevision: number;
   readonly affectedEntityIds: readonly string[];
+  readonly baselineSurfaceHash?: string;
+  readonly candidateSurfaceHash?: string;
+  readonly changed?: boolean;
+  readonly breakingChanges?: readonly WarRoomBreakingChangeDto[];
 }
 
 export interface HumanReviewBinding {
