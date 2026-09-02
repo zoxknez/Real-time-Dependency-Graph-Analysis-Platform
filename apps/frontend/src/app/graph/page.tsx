@@ -204,7 +204,9 @@ function GraphPageContent() {
       ecosystem: node.ecosystem,
       color: getEcosystemColor(node.ecosystem),
       depth: node.depth,
-      val: node.isRoot ? 30 : Math.max(10, 25 - node.depth * 5),
+      // Keep the root visually dominant without letting the 3D spheres
+      // overwhelm the viewport or collide with their labels.
+      val: node.isRoot ? 18 : Math.max(6, 14 - node.depth * 2),
     }));
 
     const links: GraphLink[] = graphProjection.links.map((link: WarRoomProjectionLink) => ({
@@ -527,7 +529,7 @@ function GraphPageContent() {
 
   return (
     <div
-      className="min-h-[calc(100vh-8rem)] flex flex-col gap-4 pb-4"
+      className="h-auto flex flex-col gap-4 pb-4"
       data-war-room-phase={canonicalPhase}
       data-war-room-revision={canonicalRevision}
       data-war-room-root-package={activePackageId || undefined}
@@ -581,7 +583,7 @@ function GraphPageContent() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
         onMouseMove={handleMouseMove}
-        className={`flex-1 min-h-[560px] lg:min-h-[600px] relative graph-container ${isFullscreen ? "theme-graph-bg" : ""}`}
+        className={`h-[clamp(420px,calc(100vh-28rem),680px)] flex-none relative graph-container ${isFullscreen ? "theme-graph-bg" : ""}`}
       >
         {/* 3D Graph Canvas */}
         {graphData.nodes.length > 0 ? (
