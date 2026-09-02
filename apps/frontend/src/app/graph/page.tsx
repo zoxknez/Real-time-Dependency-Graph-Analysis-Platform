@@ -603,7 +603,9 @@ function GraphPageContent() {
 
               const group = new THREE.Group();
 
-              const sphereSize = graphNode.val;
+              // Force magnitude and rendered radius are intentionally separate:
+              // the root can attract dependents without becoming a giant blob.
+              const sphereSize = Math.max(4, graphNode.val * 0.38);
               const sphereGeometry = new THREE.SphereGeometry(sphereSize, 32, 32);
               const sphereMaterial = new THREE.MeshPhongMaterial({
                 color: new THREE.Color(graphNode.color),
@@ -630,10 +632,10 @@ function GraphPageContent() {
 
               const sprite = new SpriteText(graphNode.name);
               sprite.color = isDark ? "#ffffff" : "#0f172a";
-              sprite.textHeight = Math.max(6, 12 - graphNode.depth * 2);
-              sprite.position.y = sphereSize + 8;
+              sprite.textHeight = Math.max(4, 8 - graphNode.depth * 1.25);
+              sprite.position.y = sphereSize + 5;
               sprite.backgroundColor = isDark ? "rgba(15, 23, 42, 0.75)" : "rgba(255, 255, 255, 0.85)";
-              sprite.padding = [3, 1.5];
+              sprite.padding = [2, 1];
               sprite.borderRadius = 3;
               group.add(sprite);
 
