@@ -230,6 +230,50 @@ export const RECALCULATE_SCENARIO_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+export const SET_SCENARIO_PRIORITY_SCHEMA = {
+  type: "object",
+  properties: {
+    entityId: {
+      type: "string",
+      description: "Entity ID or package ID in the active scenario to prioritize.",
+    },
+    priority: {
+      type: "string",
+      enum: ["P0", "P1", "P2", "P3"],
+      description: "Human review business priority tier (P0=Highest, P3=Lowest).",
+    },
+    note: {
+      type: "string",
+      maxLength: 240,
+      description: "Optional human business review justification note (max 240 characters).",
+    },
+  },
+  required: ["entityId", "priority"],
+  additionalProperties: false,
+} as const;
+
+export const SET_SCENARIO_EXCLUSION_SCHEMA = {
+  type: "object",
+  properties: {
+    entityId: {
+      type: "string",
+      description: "Entity ID or package ID in the active scenario to exclude or unexclude.",
+    },
+    excluded: {
+      type: "boolean",
+      description: "True to mark entity excluded from migration, false to include.",
+    },
+    reason: {
+      type: "string",
+      minLength: 1,
+      maxLength: 240,
+      description: "Mandatory justification note for exclusion (1-240 characters).",
+    },
+  },
+  required: ["entityId", "excluded", "reason"],
+  additionalProperties: false,
+} as const;
+
 export const GENERATE_MIGRATION_PLAN_SCHEMA = {
   type: "object",
   properties: {},
@@ -238,7 +282,14 @@ export const GENERATE_MIGRATION_PLAN_SCHEMA = {
 
 export const INSPECT_CRITICAL_PATHS_SCHEMA = {
   type: "object",
-  properties: {},
+  properties: {
+    maxPaths: {
+      type: "integer",
+      minimum: 1,
+      maximum: 10,
+      description: "Optional maximum number of critical migration paths to return (1-10). Defaults to 5.",
+    },
+  },
   additionalProperties: false,
 } as const;
 
@@ -411,29 +462,29 @@ export const WEB_MCP_TOOL_CATALOG: Record<WebMcpActionName, WebMcpToolCatalogEnt
     name: "set_scenario_priority",
     title: "Set Scenario Priority",
     description: "Applies business priority classification to the active simulation scenario.",
-    schemaStatus: "PENDING_DOMAIN_CONTRACT",
+    schemaStatus: "FROZEN",
+    inputSchema: SET_SCENARIO_PRIORITY_SCHEMA,
     annotations: {
       readOnlyHint: false,
       untrustedContentHint: true,
     },
-    authority: "Human Business Review & Collaboration Layer",
-    classification: "FUTURE_DETERMINISTIC_CAPABILITY",
-    bindingStatus: "DEFERRED",
-    futureDependency: "WMCP-10 (Human Business Review; exact priority domain contract intentionally deferred)",
+    authority: "WarRoomActions.setScenarioPriority",
+    classification: "EXISTING_ACTION",
+    bindingStatus: "EXECUTABLE",
   },
   set_scenario_exclusion: {
     name: "set_scenario_exclusion",
     title: "Set Scenario Exclusion",
     description: "Configures package exclusion rules for upgrade simulation scenarios.",
-    schemaStatus: "PENDING_DOMAIN_CONTRACT",
+    schemaStatus: "FROZEN",
+    inputSchema: SET_SCENARIO_EXCLUSION_SCHEMA,
     annotations: {
       readOnlyHint: false,
       untrustedContentHint: true,
     },
-    authority: "Scenario Exclusion Engine",
-    classification: "FUTURE_DETERMINISTIC_CAPABILITY",
-    bindingStatus: "DEFERRED",
-    futureDependency: "WMCP-7 / WMCP-10 (Scenario Engine; exact exclusion domain contract intentionally deferred)",
+    authority: "WarRoomActions.setScenarioExclusion",
+    classification: "EXISTING_ACTION",
+    bindingStatus: "EXECUTABLE",
   },
   recalculate_scenario: {
     name: "recalculate_scenario",
@@ -474,10 +525,9 @@ export const WEB_MCP_TOOL_CATALOG: Record<WebMcpActionName, WebMcpToolCatalogEnt
       readOnlyHint: true,
       untrustedContentHint: true,
     },
-    authority: "Critical Path Analysis Engine",
-    classification: "FUTURE_DETERMINISTIC_CAPABILITY",
-    bindingStatus: "DEFERRED",
-    futureDependency: "WMCP-10 (Human Business Review Expansion)",
+    authority: "WarRoomActions.inspectCriticalPaths",
+    classification: "EXISTING_ACTION",
+    bindingStatus: "EXECUTABLE",
   },
   inspect_migration_plan: {
     name: "inspect_migration_plan",

@@ -200,7 +200,7 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
     expect(catalogKeys.sort()).toEqual([...ALL_CANONICAL_ACTION_NAMES].sort());
   });
 
-  test("R2-T2 & R2-T3. Authority Matrix: Exactly 11 EXECUTABLE vs 5 DEFERRED tools", () => {
+  test("R2-T2 & R2-T3. Authority Matrix: Exactly 14 EXECUTABLE vs 2 DEFERRED tools", () => {
     const expectedExecutable: WebMcpActionName[] = [
       "search_packages",
       "open_package_graph",
@@ -213,13 +213,13 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
       "inspect_scenario",
       "recalculate_scenario",
       "inspect_migration_plan",
+      "set_scenario_priority",
+      "set_scenario_exclusion",
+      "inspect_critical_paths",
     ];
 
     const expectedDeferred: WebMcpActionName[] = [
-      "set_scenario_priority",
-      "set_scenario_exclusion",
       "generate_migration_plan",
-      "inspect_critical_paths",
       "focus_critical_path",
     ];
 
@@ -232,15 +232,12 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
 
     expect(actualExecutable.sort()).toEqual([...expectedExecutable].sort());
     expect(actualDeferred.sort()).toEqual([...expectedDeferred].sort());
-    expect(actualExecutable.length).toBe(11);
-    expect(actualDeferred.length).toBe(5);
+    expect(actualExecutable.length).toBe(14);
+    expect(actualDeferred.length).toBe(2);
   });
 
-  test("R2-T7, R2-T8, R2-T9. Schema Readiness: Exactly 14 FROZEN vs 2 PENDING_DOMAIN_CONTRACT", () => {
-    const expectedPending: WebMcpActionName[] = [
-      "set_scenario_priority",
-      "set_scenario_exclusion",
-    ];
+  test("R2-T7, R2-T8, R2-T9. Schema Readiness: Exactly 16 FROZEN vs 0 PENDING_DOMAIN_CONTRACT", () => {
+    const expectedPending: WebMcpActionName[] = [];
 
     const actualPending = ALL_CANONICAL_ACTION_NAMES.filter(
       (name) => WEB_MCP_TOOL_CATALOG[name].schemaStatus === "PENDING_DOMAIN_CONTRACT"
@@ -250,8 +247,8 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
     );
 
     expect(actualPending.sort()).toEqual([...expectedPending].sort());
-    expect(actualPending.length).toBe(2);
-    expect(actualFrozen.length).toBe(14);
+    expect(actualPending.length).toBe(0);
+    expect(actualFrozen.length).toBe(16);
 
     // Pending tools MUST NOT expose inputSchema
     for (const name of expectedPending) {
@@ -300,10 +297,7 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
     const harness = setupTestHarness();
 
     const deferredTools: WebMcpActionName[] = [
-      "set_scenario_priority",
-      "set_scenario_exclusion",
       "generate_migration_plan",
-      "inspect_critical_paths",
       "focus_critical_path",
     ];
 

@@ -241,3 +241,52 @@ export function validateFocusGraphNodesRequest(
   return null;
 }
 
+export function validateSetScenarioPriorityRequest(
+  request: import("./types").SetScenarioPriorityRequest
+): WarRoomDomainError | null {
+  if (!request || typeof request !== "object") {
+    return invalidInputError("Request must be an object");
+  }
+  if (typeof request.entityId !== "string" || request.entityId.trim() === "") {
+    return invalidInputError("entityId must be a non-empty string");
+  }
+  if (!["P0", "P1", "P2", "P3"].includes(request.priority)) {
+    return invalidInputError("priority must be one of 'P0', 'P1', 'P2', 'P3'");
+  }
+  if (request.note !== undefined) {
+    if (typeof request.note !== "string" || request.note.length > 240) {
+      return invalidInputError("note, if provided, must be a string of at most 240 characters");
+    }
+  }
+  return null;
+}
+
+export function validateSetScenarioExclusionRequest(
+  request: import("./types").SetScenarioExclusionRequest
+): WarRoomDomainError | null {
+  if (!request || typeof request !== "object") {
+    return invalidInputError("Request must be an object");
+  }
+  if (typeof request.entityId !== "string" || request.entityId.trim() === "") {
+    return invalidInputError("entityId must be a non-empty string");
+  }
+  if (typeof request.excluded !== "boolean") {
+    return invalidInputError("excluded must be a boolean");
+  }
+  if (typeof request.reason !== "string" || request.reason.trim().length === 0 || request.reason.length > 240) {
+    return invalidInputError("reason must be a non-empty string of at most 240 characters");
+  }
+  return null;
+}
+
+export function validateInspectCriticalPathsRequest(
+  request?: import("./types").InspectCriticalPathsRequest
+): WarRoomDomainError | null {
+  if (request && request.maxPaths !== undefined) {
+    if (typeof request.maxPaths !== "number" || !Number.isInteger(request.maxPaths) || request.maxPaths < 1 || request.maxPaths > 10) {
+      return invalidInputError("maxPaths must be an integer between 1 and 10");
+    }
+  }
+  return null;
+}
+

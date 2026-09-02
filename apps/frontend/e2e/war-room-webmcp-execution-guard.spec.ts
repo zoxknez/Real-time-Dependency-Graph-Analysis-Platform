@@ -267,8 +267,8 @@ test.describe("WebMCP Adaptive Execution Admission & Context Guards (WMCP-4C)", 
     const policyToolNames = Object.keys(EXECUTABLE_TOOL_POLICIES) as WebMcpActionName[];
 
     expect(policyToolNames.sort()).toEqual(executableCatalogNames.sort());
-    expect(policyToolNames.length).toBe(11);
-    expect(executableCatalogNames.length).toBe(11);
+    expect(policyToolNames.length).toBe(14);
+    expect(executableCatalogNames.length).toBe(14);
 
     // Specific policy verification
     expect(EXECUTABLE_TOOL_POLICIES.search_packages).toBe("REVISION_TOLERANT_READ");
@@ -278,10 +278,13 @@ test.describe("WebMCP Adaptive Execution Admission & Context Guards (WMCP-4C)", 
     expect(EXECUTABLE_TOOL_POLICIES.inspect_scenario).toBe("STRICT_CONTEXT_READ");
     expect(EXECUTABLE_TOOL_POLICIES.inspect_migration_plan).toBe("STRICT_CONTEXT_READ");
     expect(EXECUTABLE_TOOL_POLICIES.calculate_blast_radius).toBe("STRICT_CONTEXT_READ");
+    expect(EXECUTABLE_TOOL_POLICIES.inspect_critical_paths).toBe("STRICT_CONTEXT_READ");
     expect(EXECUTABLE_TOOL_POLICIES.focus_graph_nodes).toBe("ACTION_COMMIT_GUARDED_MUTATION");
     expect(EXECUTABLE_TOOL_POLICIES.open_package_graph).toBe("ACTION_COMMIT_GUARDED_MUTATION");
     expect(EXECUTABLE_TOOL_POLICIES.simulate_api_changes).toBe("ACTION_COMMIT_GUARDED_MUTATION");
     expect(EXECUTABLE_TOOL_POLICIES.recalculate_scenario).toBe("ACTION_COMMIT_GUARDED_MUTATION");
+    expect(EXECUTABLE_TOOL_POLICIES.set_scenario_priority).toBe("ACTION_COMMIT_GUARDED_MUTATION");
+    expect(EXECUTABLE_TOOL_POLICIES.set_scenario_exclusion).toBe("ACTION_COMMIT_GUARDED_MUTATION");
   });
 
   test("4C-T2. Every Deferred Tool Remains Factory-Fail-Closed", () => {
@@ -290,7 +293,7 @@ test.describe("WebMCP Adaptive Execution Admission & Context Guards (WMCP-4C)", 
       (name) => WEB_MCP_TOOL_CATALOG[name].bindingStatus === "DEFERRED"
     );
 
-    expect(deferredTools.length).toBe(5);
+    expect(deferredTools.length).toBe(2);
     for (const name of deferredTools) {
       expect(() => createAdaptiveToolDefinition(name, harness)).toThrowError(
         /is deferred.*cannot be instantiated as an executable definition/i

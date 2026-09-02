@@ -141,6 +141,25 @@ export interface HumanReviewItem {
   readonly priority?: HumanReviewPriority;
   readonly excluded?: boolean;
   readonly exclusionReason?: string;
+  readonly note?: string;
+  readonly updatedAt?: string;
+}
+
+export interface CriticalPathItem {
+  readonly pathIndex: number;
+  readonly sourceEntityId: string;
+  readonly targetEntityId: string;
+  readonly priority: HumanReviewPriority;
+  readonly hopCount: number;
+  readonly packageIds: readonly string[];
+  readonly isExcluded: boolean;
+}
+
+export interface CriticalPathsSummary {
+  readonly totalPaths: number;
+  readonly returnedPaths: number;
+  readonly truncated: boolean;
+  readonly paths: readonly CriticalPathItem[];
 }
 
 export interface WarRoomHumanReview {

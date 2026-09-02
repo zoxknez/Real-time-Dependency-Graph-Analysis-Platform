@@ -48,6 +48,9 @@ export type WarRoomActionName =
   | "RESET_MIGRATION_PLAN"
   | "CALCULATE_BLAST_RADIUS"
   | "FOCUS_GRAPH_NODES"
+  | "SET_SCENARIO_PRIORITY"
+  | "SET_SCENARIO_EXCLUSION"
+  | "INSPECT_CRITICAL_PATHS"
   | "APP_INITIALIZE";
 
 export type WarRoomServiceResult<T> =
@@ -146,5 +149,43 @@ export interface FocusGraphNodesRequest {
 export interface FocusGraphNodesResult {
   readonly focusedCount: number;
   readonly focusedNodeIds: readonly string[];
+}
+
+export interface SetScenarioPriorityRequest {
+  readonly entityId: string;
+  readonly priority: "P0" | "P1" | "P2" | "P3";
+  readonly note?: string;
+}
+
+export interface SetScenarioPriorityResult {
+  readonly entityId: string;
+  readonly priority: "P0" | "P1" | "P2" | "P3";
+  readonly note?: string;
+  readonly reviewId: string;
+}
+
+export interface SetScenarioExclusionRequest {
+  readonly entityId: string;
+  readonly excluded: boolean;
+  readonly reason: string;
+}
+
+export interface SetScenarioExclusionResult {
+  readonly entityId: string;
+  readonly excluded: boolean;
+  readonly reason: string;
+  readonly reviewId: string;
+}
+
+export interface InspectCriticalPathsRequest {
+  readonly maxPaths?: number;
+}
+
+export interface InspectCriticalPathsResult {
+  readonly targetEntityId: string;
+  readonly totalPaths: number;
+  readonly returnedPaths: number;
+  readonly truncated: boolean;
+  readonly paths: readonly import("../domain/types").CriticalPathItem[];
 }
 

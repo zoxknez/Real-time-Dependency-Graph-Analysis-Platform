@@ -34,6 +34,9 @@ import {
   validateSimulateApiChangesInput,
   validateCalculateBlastRadiusInput,
   validateFocusGraphNodesInput,
+  validateSetScenarioPriorityInput,
+  validateSetScenarioExclusionInput,
+  validateInspectCriticalPathsInput,
 } from "./adaptive-validation";
 import {
   validateSearchPackagesInput,
@@ -47,6 +50,9 @@ import {
   buildBudgetedScenarioOutput,
   buildBudgetedBlastRadiusOutput,
   buildBudgetedFocusOutput,
+  buildBudgetedPriorityOutput,
+  buildBudgetedExclusionOutput,
+  buildBudgetedCriticalPathsOutput,
 } from "./output";
 import {
   captureExecutionSnapshot,
@@ -874,6 +880,145 @@ export function createAdaptiveToolDefinition(
             sourceReviewId: plan.sourceReviewId,
             contextRevision: snapshot.contextRevision,
           });
+        },
+      };
+    }
+
+    case "set_scenario_priority": {
+      const entry = getToolCatalogEntry("set_scenario_priority");
+      if (entry.bindingStatus !== "EXECUTABLE") {
+        throw new Error(`Tool ${name} is deferred and cannot be instantiated as an executable definition.`);
+      }
+
+      return {
+        name: "set_scenario_priority",
+        description: entry.description,
+        inputSchema: entry.inputSchema,
+        annotations: entry.annotations,
+        execute: async (input: Record<string, unknown>, execContext?: WebMcpPlatformExecutionContext) => {
+          const snapshot = captureExecutionSnapshot(statePort);
+          const admission = checkExecutionAdmission("set_scenario_priority", snapshot, platformAdapter);
+          if (!admission.admitted) {
+            return admission.failureOutput;
+          }
+
+          if (execContext?.signal?.aborted) {
+            return formatToolFailure("set_scenario_priority", snapshot.contextRevision, "CANCELLED", "Operation was cancelled before execution");
+          }
+
+          const valRes = validateSetScenarioPriorityInput(input);
+          if (!valRes.ok) {
+            return formatToolFailure("set_scenario_priority", snapshot.contextRevision, "INVALID_INPUT", valRes.error);
+          }
+
+          const invocation: WarRoomInvocationContext = {
+            channel: "AGENT",
+            capturedContextRevision: snapshot.contextRevision,
+            signal: execContext?.signal,
+          };
+
+          const actionRes = await actions.setScenarioPriority(invocation, valRes.value);
+          if (!actionRes.ok) {
+            return formatToolFailure("set_scenario_priority", actionRes.contextRevision, actionRes.error.code, actionRes.error.message);
+          }
+
+          return buildBudgetedPriorityOutput("set_scenario_priority", actionRes.contextRevision, actionRes.data);
+        },
+      };
+    }
+
+    case "set_scenario_exclusion": {
+      const entry = getToolCatalogEntry("set_scenario_exclusion");
+      if (entry.bindingStatus !== "EXECUTABLE") {
+        throw new Error(`Tool ${name} is deferred and cannot be instantiated as an executable definition.`);
+      }
+
+      return {
+        name: "set_scenario_exclusion",
+        description: entry.description,
+        inputSchema: entry.inputSchema,
+        annotations: entry.annotations,
+        execute: async (input: Record<string, unknown>, execContext?: WebMcpPlatformExecutionContext) => {
+          const snapshot = captureExecutionSnapshot(statePort);
+          const admission = checkExecutionAdmission("set_scenario_exclusion", snapshot, platformAdapter);
+          if (!admission.admitted) {
+            return admission.failureOutput;
+          }
+
+          if (execContext?.signal?.aborted) {
+            return formatToolFailure("set_scenario_exclusion", snapshot.contextRevision, "CANCELLED", "Operation was cancelled before execution");
+          }
+
+          const valRes = validateSetScenarioExclusionInput(input);
+          if (!valRes.ok) {
+            return formatToolFailure("set_scenario_exclusion", snapshot.contextRevision, "INVALID_INPUT", valRes.error);
+          }
+
+          const invocation: WarRoomInvocationContext = {
+            channel: "AGENT",
+            capturedContextRevision: snapshot.contextRevision,
+            signal: execContext?.signal,
+          };
+
+          const actionRes = await actions.setScenarioExclusion(invocation, valRes.value);
+          if (!actionRes.ok) {
+            return formatToolFailure("set_scenario_exclusion", actionRes.contextRevision, actionRes.error.code, actionRes.error.message);
+          }
+
+          return buildBudgetedExclusionOutput("set_scenario_exclusion", actionRes.contextRevision, actionRes.data);
+        },
+      };
+    }
+
+    case "inspect_critical_paths": {
+      const entry = getToolCatalogEntry("inspect_critical_paths");
+      if (entry.bindingStatus !== "EXECUTABLE") {
+        throw new Error(`Tool ${name} is deferred and cannot be instantiated as an executable definition.`);
+      }
+
+      return {
+        name: "inspect_critical_paths",
+        description: entry.description,
+        inputSchema: entry.inputSchema,
+        annotations: entry.annotations,
+        execute: async (input: Record<string, unknown>, execContext?: WebMcpPlatformExecutionContext) => {
+          const snapshot = captureExecutionSnapshot(statePort);
+          const admission = checkExecutionAdmission("inspect_critical_paths", snapshot, platformAdapter);
+          if (!admission.admitted) {
+            return admission.failureOutput;
+          }
+
+          if (execContext?.signal?.aborted) {
+            return formatToolFailure("inspect_critical_paths", snapshot.contextRevision, "CANCELLED", "Operation was cancelled before execution");
+          }
+
+          const valRes = validateInspectCriticalPathsInput(input);
+          if (!valRes.ok) {
+            return formatToolFailure("inspect_critical_paths", snapshot.contextRevision, "INVALID_INPUT", valRes.error);
+          }
+
+          const invocation: WarRoomInvocationContext = {
+            channel: "AGENT",
+            capturedContextRevision: snapshot.contextRevision,
+            signal: execContext?.signal,
+          };
+
+          const actionRes = await actions.inspectCriticalPaths(invocation, valRes.value);
+          if (!actionRes.ok) {
+            return formatToolFailure("inspect_critical_paths", actionRes.contextRevision, actionRes.error.code, actionRes.error.message);
+          }
+
+          const currentRev = statePort.getState().contextRevision;
+          if (currentRev !== snapshot.contextRevision) {
+            return formatToolFailure(
+              "inspect_critical_paths",
+              currentRev,
+              "STALE_CONTEXT",
+              "Context revision changed during critical paths inspection; result is stale."
+            );
+          }
+
+          return buildBudgetedCriticalPathsOutput("inspect_critical_paths", actionRes.contextRevision, actionRes.data);
         },
       };
     }

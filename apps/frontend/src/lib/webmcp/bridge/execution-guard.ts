@@ -31,7 +31,10 @@ export const EXECUTABLE_TOOL_POLICIES: Record<
   | "recalculate_scenario"
   | "inspect_migration_plan"
   | "calculate_blast_radius"
-  | "focus_graph_nodes",
+  | "focus_graph_nodes"
+  | "set_scenario_priority"
+  | "set_scenario_exclusion"
+  | "inspect_critical_paths",
   WebMcpExecutionPolicy
 > = {
   search_packages: "REVISION_TOLERANT_READ",
@@ -41,10 +44,13 @@ export const EXECUTABLE_TOOL_POLICIES: Record<
   inspect_scenario: "STRICT_CONTEXT_READ",
   inspect_migration_plan: "STRICT_CONTEXT_READ",
   calculate_blast_radius: "STRICT_CONTEXT_READ",
+  inspect_critical_paths: "STRICT_CONTEXT_READ",
   focus_graph_nodes: "ACTION_COMMIT_GUARDED_MUTATION",
   open_package_graph: "ACTION_COMMIT_GUARDED_MUTATION",
   simulate_api_changes: "ACTION_COMMIT_GUARDED_MUTATION",
   recalculate_scenario: "ACTION_COMMIT_GUARDED_MUTATION",
+  set_scenario_priority: "ACTION_COMMIT_GUARDED_MUTATION",
+  set_scenario_exclusion: "ACTION_COMMIT_GUARDED_MUTATION",
 };
 
 export interface WebMcpExecutionSnapshot {

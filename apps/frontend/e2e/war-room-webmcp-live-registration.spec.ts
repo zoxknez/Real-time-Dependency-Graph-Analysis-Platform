@@ -380,13 +380,24 @@ test.describe("WebMCP Live Adaptive Registration Lifecycle (WMCP-4D)", () => {
   test("4D-T6. Exact SIMULATION_READY Registrable Surface", () => {
     const logical = deriveDesiredToolSurface({ phase: "SIMULATION_READY", contextRevision: 4, webMcpAvailability: "AVAILABLE" });
     const registrable = deriveRegistrableToolSurface(logical);
-    expect(Array.from(registrable.toolNames).sort()).toEqual(["calculate_blast_radius", "focus_graph_nodes", "inspect_scenario", "trace_dependency_path"]);
+    expect(Array.from(registrable.toolNames).sort()).toEqual([
+      "calculate_blast_radius",
+      "focus_graph_nodes",
+      "inspect_scenario",
+      "set_scenario_exclusion",
+      "set_scenario_priority",
+      "trace_dependency_path",
+    ]);
   });
 
-  test("4D-T7. Exact HUMAN_REVIEW Registrable Surface Contains recalculate_scenario", () => {
+  test("4D-T7. Exact HUMAN_REVIEW Registrable Surface", () => {
     const logical = deriveDesiredToolSurface({ phase: "HUMAN_REVIEW", contextRevision: 5, webMcpAvailability: "AVAILABLE" });
     const registrable = deriveRegistrableToolSurface(logical);
-    expect(Array.from(registrable.toolNames)).toEqual(["recalculate_scenario"]);
+    expect(Array.from(registrable.toolNames).sort()).toEqual([
+      "inspect_critical_paths",
+      "recalculate_scenario",
+      "set_scenario_priority",
+    ]);
   });
 
   test("4D-T8. Exact PLAN_READY Registrable Surface", () => {
@@ -672,8 +683,12 @@ test.describe("WebMCP Live Adaptive Registration Lifecycle (WMCP-4D)", () => {
 
     expect(harness.statePort.getState().phase).toBe("HUMAN_REVIEW");
 
-    // HUMAN_REVIEW retains recalculate_scenario as the only executable tool
-    expect(Array.from(harness.platformSpies.registeredTools.keys())).toEqual(["recalculate_scenario"]);
+    // HUMAN_REVIEW retains recalculate_scenario, set_scenario_priority, and inspect_critical_paths
+    expect(Array.from(harness.platformSpies.registeredTools.keys()).sort()).toEqual([
+      "inspect_critical_paths",
+      "recalculate_scenario",
+      "set_scenario_priority",
+    ]);
 
     session.dispose();
   });

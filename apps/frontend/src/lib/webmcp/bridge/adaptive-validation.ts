@@ -383,4 +383,130 @@ export function validateFocusGraphNodesInput(
   return { ok: true, value: { nodeIds } };
 }
 
+export interface ValidatedSetScenarioPriorityInput {
+  readonly entityId: string;
+  readonly priority: "P0" | "P1" | "P2" | "P3";
+  readonly note?: string;
+}
+
+export function validateSetScenarioPriorityInput(
+  input: unknown
+): AdaptiveValidationResult<ValidatedSetScenarioPriorityInput> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "set_scenario_priority input must be a JSON object" };
+  }
+  const obj = input as Record<string, unknown>;
+  const secError = rejectForbiddenKeys(obj);
+  if (secError) return { ok: false, error: secError };
+
+  const allowedKeys = new Set(["entityId", "priority", "note"]);
+  for (const key of Object.keys(obj)) {
+    if (!allowedKeys.has(key)) {
+      return { ok: false, error: `Unexpected property '${key}' in set_scenario_priority input` };
+    }
+  }
+
+  if (typeof obj.entityId !== "string" || obj.entityId.trim().length === 0 || obj.entityId.length > 256) {
+    return { ok: false, error: "set_scenario_priority requires a non-empty string 'entityId' <= 256 characters" };
+  }
+
+  if (typeof obj.priority !== "string" || !["P0", "P1", "P2", "P3"].includes(obj.priority)) {
+    return { ok: false, error: "set_scenario_priority requires 'priority' to be one of 'P0', 'P1', 'P2', 'P3'" };
+  }
+
+  let note: string | undefined;
+  if (obj.note !== undefined && obj.note !== null) {
+    if (typeof obj.note !== "string" || obj.note.length > 240) {
+      return { ok: false, error: "note, if provided, must be a string <= 240 characters" };
+    }
+    note = obj.note.trim();
+  }
+
+  return {
+    ok: true,
+    value: {
+      entityId: obj.entityId.trim(),
+      priority: obj.priority as "P0" | "P1" | "P2" | "P3",
+      note,
+    },
+  };
+}
+
+export interface ValidatedSetScenarioExclusionInput {
+  readonly entityId: string;
+  readonly excluded: boolean;
+  readonly reason: string;
+}
+
+export function validateSetScenarioExclusionInput(
+  input: unknown
+): AdaptiveValidationResult<ValidatedSetScenarioExclusionInput> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "set_scenario_exclusion input must be a JSON object" };
+  }
+  const obj = input as Record<string, unknown>;
+  const secError = rejectForbiddenKeys(obj);
+  if (secError) return { ok: false, error: secError };
+
+  const allowedKeys = new Set(["entityId", "excluded", "reason"]);
+  for (const key of Object.keys(obj)) {
+    if (!allowedKeys.has(key)) {
+      return { ok: false, error: `Unexpected property '${key}' in set_scenario_exclusion input` };
+    }
+  }
+
+  if (typeof obj.entityId !== "string" || obj.entityId.trim().length === 0 || obj.entityId.length > 256) {
+    return { ok: false, error: "set_scenario_exclusion requires a non-empty string 'entityId' <= 256 characters" };
+  }
+
+  if (typeof obj.excluded !== "boolean") {
+    return { ok: false, error: "set_scenario_exclusion requires a boolean 'excluded' property" };
+  }
+
+  if (typeof obj.reason !== "string" || obj.reason.trim().length === 0 || obj.reason.length > 240) {
+    return { ok: false, error: "set_scenario_exclusion requires a non-empty string 'reason' <= 240 characters" };
+  }
+
+  return {
+    ok: true,
+    value: {
+      entityId: obj.entityId.trim(),
+      excluded: obj.excluded,
+      reason: obj.reason.trim(),
+    },
+  };
+}
+
+export interface ValidatedInspectCriticalPathsInput {
+  readonly maxPaths?: number;
+}
+
+export function validateInspectCriticalPathsInput(
+  input: unknown
+): AdaptiveValidationResult<ValidatedInspectCriticalPathsInput> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "inspect_critical_paths input must be a JSON object" };
+  }
+  const obj = input as Record<string, unknown>;
+  const secError = rejectForbiddenKeys(obj);
+  if (secError) return { ok: false, error: secError };
+
+  const allowedKeys = new Set(["maxPaths"]);
+  for (const key of Object.keys(obj)) {
+    if (!allowedKeys.has(key)) {
+      return { ok: false, error: `Unexpected property '${key}' in inspect_critical_paths input` };
+    }
+  }
+
+  let maxPaths: number | undefined;
+  if (obj.maxPaths !== undefined && obj.maxPaths !== null) {
+    if (typeof obj.maxPaths !== "number" || !Number.isInteger(obj.maxPaths) || obj.maxPaths < 1 || obj.maxPaths > 10) {
+      return { ok: false, error: "maxPaths must be an integer between 1 and 10" };
+    }
+    maxPaths = obj.maxPaths;
+  }
+
+  return { ok: true, value: { maxPaths } };
+}
+
 

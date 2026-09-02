@@ -427,4 +427,134 @@ export function buildBudgetedFocusOutput(
   );
 }
 
+export interface WebMcpSetPriorityResultData {
+  readonly entityId: string;
+  readonly priority: "P0" | "P1" | "P2" | "P3";
+  readonly note?: string;
+  readonly reviewId: string;
+}
+
+export function buildBudgetedPriorityOutput(
+  tool: string,
+  contextRevision: number,
+  data: WebMcpSetPriorityResultData
+): WebMcpToolOutputEnvelope<WebMcpSetPriorityResultData> {
+  const envelope: WebMcpToolSuccessEnvelope<WebMcpSetPriorityResultData> = {
+    ok: true,
+    tool,
+    changed: true,
+    contextRevision,
+    data,
+  };
+
+  if (JSON.stringify(envelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+    return envelope;
+  }
+
+  const compactEnvelope: WebMcpToolSuccessEnvelope<WebMcpSetPriorityResultData> = {
+    ok: true,
+    tool,
+    changed: true,
+    contextRevision,
+    data: {
+      ...data,
+      note: data.note ? data.note.slice(0, 50) + "..." : undefined,
+    },
+  };
+
+  if (JSON.stringify(compactEnvelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+    return compactEnvelope;
+  }
+
+  return formatToolFailure(tool, contextRevision, "INTERNAL_ERROR", "Tool result exceeded safe output budget");
+}
+
+export interface WebMcpSetExclusionResultData {
+  readonly entityId: string;
+  readonly excluded: boolean;
+  readonly reason: string;
+  readonly reviewId: string;
+}
+
+export function buildBudgetedExclusionOutput(
+  tool: string,
+  contextRevision: number,
+  data: WebMcpSetExclusionResultData
+): WebMcpToolOutputEnvelope<WebMcpSetExclusionResultData> {
+  const envelope: WebMcpToolSuccessEnvelope<WebMcpSetExclusionResultData> = {
+    ok: true,
+    tool,
+    changed: true,
+    contextRevision,
+    data,
+  };
+
+  if (JSON.stringify(envelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+    return envelope;
+  }
+
+  const compactEnvelope: WebMcpToolSuccessEnvelope<WebMcpSetExclusionResultData> = {
+    ok: true,
+    tool,
+    changed: true,
+    contextRevision,
+    data: {
+      ...data,
+      reason: data.reason.slice(0, 50) + "...",
+    },
+  };
+
+  if (JSON.stringify(compactEnvelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+    return compactEnvelope;
+  }
+
+  return formatToolFailure(tool, contextRevision, "INTERNAL_ERROR", "Tool result exceeded safe output budget");
+}
+
+export interface WebMcpCriticalPathsResultData {
+  readonly targetEntityId: string;
+  readonly totalPaths: number;
+  readonly returnedPaths: number;
+  readonly truncated: boolean;
+  readonly paths: readonly import("../../war-room/domain/types").CriticalPathItem[];
+}
+
+export function buildBudgetedCriticalPathsOutput(
+  tool: string,
+  contextRevision: number,
+  data: WebMcpCriticalPathsResultData
+): WebMcpToolOutputEnvelope<WebMcpCriticalPathsResultData> {
+  const envelope: WebMcpToolSuccessEnvelope<WebMcpCriticalPathsResultData> = {
+    ok: true,
+    tool,
+    changed: false,
+    contextRevision,
+    data,
+  };
+
+  if (JSON.stringify(envelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+    return envelope;
+  }
+
+  for (let count = data.paths.length - 1; count >= 1; count--) {
+    const compact: WebMcpToolSuccessEnvelope<WebMcpCriticalPathsResultData> = {
+      ok: true,
+      tool,
+      changed: false,
+      contextRevision,
+      data: {
+        ...data,
+        returnedPaths: count,
+        truncated: true,
+        paths: data.paths.slice(0, count),
+      },
+    };
+    if (JSON.stringify(compact).length <= MAX_TOTAL_OUTPUT_CHARS) {
+      return compact;
+    }
+  }
+
+  return formatToolFailure(tool, contextRevision, "INTERNAL_ERROR", "Tool result exceeded safe output budget");
+}
+
 

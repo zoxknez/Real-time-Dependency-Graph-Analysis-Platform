@@ -67,7 +67,23 @@ import {
 import {
   FocusGraphNodesRequest,
   FocusGraphNodesResult,
+  SetScenarioPriorityRequest,
+  SetScenarioPriorityResult,
+  SetScenarioExclusionRequest,
+  SetScenarioExclusionResult,
+  InspectCriticalPathsRequest,
+  InspectCriticalPathsResult,
 } from "./types";
+import {
+  HumanReviewItem,
+  WarRoomHumanReview,
+  CriticalPathItem,
+} from "../domain/types";
+import {
+  validateSetScenarioPriorityRequest,
+  validateSetScenarioExclusionRequest,
+  validateInspectCriticalPathsRequest,
+} from "./validation";
 
 export interface WarRoomActionsDependencies {
   readonly statePort: WarRoomStatePort;
@@ -161,6 +177,21 @@ export interface WarRoomActions {
     invocation: WarRoomInvocationContext,
     request: FocusGraphNodesRequest
   ): Promise<WarRoomActionResult<FocusGraphNodesResult>>;
+
+  setScenarioPriority(
+    invocation: WarRoomInvocationContext,
+    request: SetScenarioPriorityRequest
+  ): Promise<WarRoomActionResult<SetScenarioPriorityResult>>;
+
+  setScenarioExclusion(
+    invocation: WarRoomInvocationContext,
+    request: SetScenarioExclusionRequest
+  ): Promise<WarRoomActionResult<SetScenarioExclusionResult>>;
+
+  inspectCriticalPaths(
+    invocation: WarRoomInvocationContext,
+    request?: InspectCriticalPathsRequest
+  ): Promise<WarRoomActionResult<InspectCriticalPathsResult>>;
 }
 
 function isAbortFailure(err: unknown, signal?: AbortSignal): boolean {
@@ -1129,6 +1160,304 @@ export function createWarRoomActions(
       return createActionSuccess(
         { focusedCount: request.nodeIds.length, focusedNodeIds: request.nodeIds },
         true,
+        currentRevision()
+      );
+    },
+
+    async setScenarioPriority(
+      invocation: WarRoomInvocationContext,
+      request: SetScenarioPriorityRequest
+    ): Promise<WarRoomActionResult<SetScenarioPriorityResult>> {
+      const invErr = validateInvocationContext(invocation);
+      if (invErr) return createActionFailure(invErr, currentRevision());
+
+      const reqErr = validateSetScenarioPriorityRequest(request);
+      if (reqErr) return createActionFailure(reqErr, currentRevision());
+
+      if (invocation.capturedContextRevision !== currentRevision()) {
+        return createActionFailure(
+          staleContextError(invocation.capturedContextRevision, currentRevision()),
+          currentRevision()
+        );
+      }
+
+      const state = statePort.getState();
+      if (state.phase !== "SIMULATION_READY" && state.phase !== "HUMAN_REVIEW") {
+        return createActionFailure(
+          invalidStateError(`setScenarioPriority requires an active scenario and analysis, current phase is ${state.phase}`),
+          currentRevision()
+        );
+      }
+
+      const secRes = await resolveSecurity(securityContextPort, invocation.signal);
+      if (!secRes.ok) return createActionFailure(secRes.error, currentRevision());
+
+      const authRes = await callPort(invocation.signal, () =>
+        authorizationPort.authorize(
+          { securityContext: secRes.data, action: "SET_SCENARIO_PRIORITY", resource: { entityId: request.entityId, priority: request.priority } },
+          invocation.signal
+        )
+      );
+      if (!authRes.ok) return createActionFailure(authRes.error, currentRevision());
+
+      if (invocation.signal?.aborted) {
+        return createActionFailure(createDomainError("CANCELLED", "Operation was cancelled"), currentRevision());
+      }
+
+      const existingReview = "review" in state ? (state.review as WarRoomHumanReview | undefined) : undefined;
+      const reviewId = existingReview?.id ?? `review-${state.scenario.id}`;
+      const currentItems: readonly HumanReviewItem[] = existingReview?.items ?? [];
+      const existingIdx = currentItems.findIndex((i: HumanReviewItem) => i.entityId === request.entityId);
+      const existingItem = existingIdx >= 0 ? currentItems[existingIdx] : undefined;
+      const updatedItem: HumanReviewItem = {
+        entityId: request.entityId,
+        priority: request.priority,
+        note: request.note,
+        excluded: existingItem?.excluded,
+        exclusionReason: existingItem?.exclusionReason,
+        updatedAt: new Date().toISOString(),
+      };
+      const nextItems = existingIdx >= 0
+        ? [...currentItems.slice(0, existingIdx), updatedItem, ...currentItems.slice(existingIdx + 1)]
+        : [...currentItems, updatedItem];
+
+      const review: WarRoomHumanReview = {
+        id: reviewId,
+        scenarioId: state.scenario.id,
+        bindings: existingReview?.bindings ?? [],
+        items: nextItems,
+      };
+
+      const eventType = state.phase === "SIMULATION_READY" ? "HUMAN_ANNOTATED" : "ANNOTATION_CHANGED";
+      const commitRes = statePort.commitContextBound(invocation.capturedContextRevision, {
+        type: eventType,
+        payload: { review },
+      });
+
+      if (!commitRes.ok) {
+        return createActionFailure(commitRes.error, currentRevision());
+      }
+
+      return createActionSuccess(
+        {
+          entityId: request.entityId,
+          priority: request.priority,
+          note: request.note,
+          reviewId,
+        },
+        commitRes.changed,
+        currentRevision()
+      );
+    },
+
+    async setScenarioExclusion(
+      invocation: WarRoomInvocationContext,
+      request: SetScenarioExclusionRequest
+    ): Promise<WarRoomActionResult<SetScenarioExclusionResult>> {
+      const invErr = validateInvocationContext(invocation);
+      if (invErr) return createActionFailure(invErr, currentRevision());
+
+      const reqErr = validateSetScenarioExclusionRequest(request);
+      if (reqErr) return createActionFailure(reqErr, currentRevision());
+
+      if (invocation.capturedContextRevision !== currentRevision()) {
+        return createActionFailure(
+          staleContextError(invocation.capturedContextRevision, currentRevision()),
+          currentRevision()
+        );
+      }
+
+      const state = statePort.getState();
+      if (state.phase !== "SIMULATION_READY" && state.phase !== "HUMAN_REVIEW") {
+        return createActionFailure(
+          invalidStateError(`setScenarioExclusion requires an active scenario and analysis, current phase is ${state.phase}`),
+          currentRevision()
+        );
+      }
+
+      const secRes = await resolveSecurity(securityContextPort, invocation.signal);
+      if (!secRes.ok) return createActionFailure(secRes.error, currentRevision());
+
+      const authRes = await callPort(invocation.signal, () =>
+        authorizationPort.authorize(
+          { securityContext: secRes.data, action: "SET_SCENARIO_EXCLUSION", resource: { entityId: request.entityId, excluded: request.excluded } },
+          invocation.signal
+        )
+      );
+      if (!authRes.ok) return createActionFailure(authRes.error, currentRevision());
+
+      if (invocation.signal?.aborted) {
+        return createActionFailure(createDomainError("CANCELLED", "Operation was cancelled"), currentRevision());
+      }
+
+      const existingReview = "review" in state ? (state.review as WarRoomHumanReview | undefined) : undefined;
+      const reviewId = existingReview?.id ?? `review-${state.scenario.id}`;
+      const currentItems: readonly HumanReviewItem[] = existingReview?.items ?? [];
+      const existingIdx = currentItems.findIndex((i: HumanReviewItem) => i.entityId === request.entityId);
+      const existingItem = existingIdx >= 0 ? currentItems[existingIdx] : undefined;
+      const updatedItem: HumanReviewItem = {
+        entityId: request.entityId,
+        priority: existingItem?.priority,
+        note: existingItem?.note,
+        excluded: request.excluded,
+        exclusionReason: request.reason,
+        updatedAt: new Date().toISOString(),
+      };
+      const nextItems = existingIdx >= 0
+        ? [...currentItems.slice(0, existingIdx), updatedItem, ...currentItems.slice(existingIdx + 1)]
+        : [...currentItems, updatedItem];
+
+      const review: WarRoomHumanReview = {
+        id: reviewId,
+        scenarioId: state.scenario.id,
+        bindings: existingReview?.bindings ?? [],
+        items: nextItems,
+      };
+
+      const eventType = state.phase === "SIMULATION_READY" ? "HUMAN_ANNOTATED" : "ANNOTATION_CHANGED";
+      const commitRes = statePort.commitContextBound(invocation.capturedContextRevision, {
+        type: eventType,
+        payload: { review },
+      });
+
+      if (!commitRes.ok) {
+        return createActionFailure(commitRes.error, currentRevision());
+      }
+
+      return createActionSuccess(
+        {
+          entityId: request.entityId,
+          excluded: request.excluded,
+          reason: request.reason,
+          reviewId,
+        },
+        commitRes.changed,
+        currentRevision()
+      );
+    },
+
+    async inspectCriticalPaths(
+      invocation: WarRoomInvocationContext,
+      request?: InspectCriticalPathsRequest
+    ): Promise<WarRoomActionResult<InspectCriticalPathsResult>> {
+      const invErr = validateInvocationContext(invocation);
+      if (invErr) return createActionFailure(invErr, currentRevision());
+
+      const reqErr = validateInspectCriticalPathsRequest(request);
+      if (reqErr) return createActionFailure(reqErr, currentRevision());
+
+      const state = statePort.getState();
+      if (
+        state.phase !== "SIMULATION_READY" &&
+        state.phase !== "HUMAN_REVIEW" &&
+        state.phase !== "PLAN_READY"
+      ) {
+        return createActionFailure(
+          invalidStateError(`inspectCriticalPaths requires an active scenario, current phase is ${state.phase}`),
+          currentRevision()
+        );
+      }
+
+      const secRes = await resolveSecurity(securityContextPort, invocation.signal);
+      if (!secRes.ok) return createActionFailure(secRes.error, currentRevision());
+
+      const authRes = await callPort(invocation.signal, () =>
+        authorizationPort.authorize(
+          { securityContext: secRes.data, action: "INSPECT_CRITICAL_PATHS", resource: { scenarioId: state.scenario.id } },
+          invocation.signal
+        )
+      );
+      if (!authRes.ok) return createActionFailure(authRes.error, currentRevision());
+
+      if (invocation.signal?.aborted) {
+        return createActionFailure(createDomainError("CANCELLED", "Operation was cancelled"), currentRevision());
+      }
+
+      const targetEntityId = state.scenario.targetPackageId;
+      const existingReview = "review" in state ? (state.review as WarRoomHumanReview | undefined) : undefined;
+      const reviewItems: readonly HumanReviewItem[] = existingReview?.items ?? [];
+      const prioritized = reviewItems.filter((i: HumanReviewItem) => i.priority !== undefined);
+
+      const priorityRanks: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
+
+      interface RawCriticalPath {
+        sourceEntityId: string;
+        targetEntityId: string;
+        priority: "P0" | "P1" | "P2" | "P3";
+        hopCount: number;
+        packageIds: readonly string[];
+        isExcluded: boolean;
+        rank: number;
+      }
+
+      const pathPromises: Promise<RawCriticalPath>[] = prioritized.map(async (item: HumanReviewItem) => {
+        let packageIds: readonly string[] = [item.entityId, targetEntityId];
+        let hopCount = 1;
+
+        if (item.entityId === targetEntityId) {
+          packageIds = [targetEntityId];
+          hopCount = 0;
+        } else {
+          try {
+            const traceRes = await deps.graphQueryPort.traceDependencyPath(
+              secRes.data,
+              { fromPackageId: item.entityId, toPackageId: targetEntityId },
+              invocation.signal
+            );
+            if (traceRes.ok && traceRes.data.packageIds.length > 0) {
+              packageIds = traceRes.data.packageIds;
+              hopCount = traceRes.data.hopCount;
+            }
+          } catch {
+            // Fallback to direct pair
+          }
+        }
+
+        const pri = item.priority as "P0" | "P1" | "P2" | "P3";
+        return {
+          sourceEntityId: item.entityId,
+          targetEntityId,
+          priority: pri,
+          hopCount,
+          packageIds,
+          isExcluded: Boolean(item.excluded),
+          rank: priorityRanks[pri] ?? 99,
+        };
+      });
+
+      const rawPaths = await Promise.all(pathPromises);
+
+      // Deterministic sort: priority rank ascending, hopCount ascending, sourceEntityId ascending
+      rawPaths.sort((a: RawCriticalPath, b: RawCriticalPath) => {
+        if (a.rank !== b.rank) return a.rank - b.rank;
+        if (a.hopCount !== b.hopCount) return a.hopCount - b.hopCount;
+        return a.sourceEntityId.localeCompare(b.sourceEntityId);
+      });
+
+      const maxPaths = request?.maxPaths ?? 5;
+      const totalPaths = rawPaths.length;
+      const bounded = rawPaths.slice(0, maxPaths);
+      const truncated = totalPaths > maxPaths;
+
+      const criticalPaths: CriticalPathItem[] = bounded.map((p: RawCriticalPath, idx: number) => ({
+        pathIndex: idx,
+        sourceEntityId: p.sourceEntityId,
+        targetEntityId: p.targetEntityId,
+        priority: p.priority,
+        hopCount: p.hopCount,
+        packageIds: p.packageIds,
+        isExcluded: p.isExcluded,
+      }));
+
+      return createActionSuccess(
+        {
+          targetEntityId,
+          totalPaths,
+          returnedPaths: criticalPaths.length,
+          truncated,
+          paths: criticalPaths,
+        },
+        false,
         currentRevision()
       );
     },

@@ -364,7 +364,7 @@ test.describe("WMCP-9: Live Package Evidence & Visual Graph Focus Matrix", () =>
   // 5. WEBMCP CATALOG INTEGRITY AFTER WMCP-9
   // ─────────────────────────────────────────────────────────────
 
-  test("9-T22 & 9-T23. Exactly 16 canonical tools: 11 EXECUTABLE, 5 DEFERRED", () => {
+  test("9-T22 & 9-T23. Exactly 16 canonical tools: 14 EXECUTABLE, 2 DEFERRED", () => {
     expect(ALL_CANONICAL_ACTION_NAMES).toHaveLength(16);
 
     const executableTools: string[] = [];
@@ -380,17 +380,14 @@ test.describe("WMCP-9: Live Package Evidence & Visual Graph Focus Matrix", () =>
       }
     }
 
-    expect(executableTools).toHaveLength(11);
-    expect(deferredTools).toHaveLength(5);
+    expect(executableTools).toHaveLength(14);
+    expect(deferredTools).toHaveLength(2);
 
     expect(executableTools).toContain("focus_graph_nodes");
     expect(deferredTools).not.toContain("focus_graph_nodes");
 
     expect(deferredTools).toEqual([
-      "set_scenario_priority",
-      "set_scenario_exclusion",
       "generate_migration_plan",
-      "inspect_critical_paths",
       "focus_critical_path",
     ]);
   });
