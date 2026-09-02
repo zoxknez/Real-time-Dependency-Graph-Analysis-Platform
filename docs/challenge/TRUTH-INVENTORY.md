@@ -2,6 +2,18 @@
 
 This document provides a forensic inventory of the platform codebase as of immutable baseline commit `864a3d6905826bd0fabab02cf02785ab0c702842`.
 
+## Final challenge-path status (2026-09-02)
+
+The final WebMCP War Room path is source-backed and deterministic through WMCP-12:
+
+- **WMCP-8 version-aware exposure:** REAL for direct dependency requirements; exposed, blocked, unknown, and topological reachability counts are reported separately.
+- **WMCP-9 package evidence:** REAL OSV-backed evidence with explicit unavailable/empty states and bounded advisory IDs.
+- **WMCP-10 human review:** REAL persisted review decisions with explicit priority and exclusion semantics.
+- **WMCP-11 migration planning:** REAL deterministic plan generation from review, WMCP-8 exposure, critical paths, breaking findings, and available evidence; unreviewed entities are omitted.
+- **WMCP-12 unified UX:** REAL status/read-model presentation and plan/path focus controls; it does not claim source incompatibility from topology or version-range exposure alone.
+
+The implementation remains honest about the repository-wide limitations listed below: several legacy product surfaces and CI gates are still partial, synthetic, or fail-open outside this challenge path.
+
 ---
 
 ## 1. Confirmed Real Implementations

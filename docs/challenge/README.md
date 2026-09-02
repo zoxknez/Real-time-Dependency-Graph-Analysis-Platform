@@ -2,6 +2,15 @@
 
 This directory contains the authoritative forensic record of the repository state prior to WebMCP Challenge development and the architectural contracts governing challenge implementation.
 
+## Final review package
+
+- [Submission](SUBMISSION.md)
+- [Demo script](DEMO-SCRIPT.md)
+- [Final claims](FINAL-CLAIMS.md)
+- [Final evidence matrix](FINAL-EVIDENCE-MATRIX.md)
+- [WMCP-11 migration planning](WMCP-11-MIGRATION-PLANNING.md)
+- [WMCP-12 unified UX](WMCP-12-UNIFIED-WAR-ROOM-UX.md)
+
 ## Project Metadata
 
 - **Repository:** `zoxknez/Real-time-Dependency-Graph-Analysis-Platform`

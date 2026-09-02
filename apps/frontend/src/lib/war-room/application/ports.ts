@@ -105,6 +105,9 @@ export interface GenerateMigrationPlanInput {
   readonly scenario: WarRoomScenario;
   readonly analysis?: WarRoomAnalysisRef;
   readonly review: WarRoomHumanReview;
+  readonly versionExposure?: import("../domain/version-exposure-engine").VersionAwareExposureResult;
+  readonly criticalPaths?: import("../application/types").InspectCriticalPathsResult;
+  readonly evidence?: import("../domain/evidence").PackageEvidence;
   readonly sourceContextRevision: number;
 }
 

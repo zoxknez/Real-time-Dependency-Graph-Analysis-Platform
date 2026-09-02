@@ -39,6 +39,7 @@ import {
   CalculateBlastRadiusRequest,
   FocusCriticalPathRequest,
   FocusCriticalPathResult,
+  LatestVersionExposure,
 } from "./types";
 import {
   evaluateVersionAwareExposure,
@@ -200,6 +201,8 @@ export interface WarRoomActions {
     invocation: WarRoomInvocationContext,
     request: FocusCriticalPathRequest
   ): Promise<WarRoomActionResult<FocusCriticalPathResult>>;
+
+  getLatestVersionExposure(): LatestVersionExposure | undefined;
 }
 
 function isAbortFailure(err: unknown, signal?: AbortSignal): boolean {
@@ -289,8 +292,15 @@ export function createWarRoomActions(
   } = deps;
 
   const currentRevision = () => statePort.getState().contextRevision;
+  let latestVersionExposure: LatestVersionExposure | undefined;
 
   return {
+    getLatestVersionExposure(): LatestVersionExposure | undefined {
+      const current = statePort.getState();
+      if (!latestVersionExposure || latestVersionExposure.contextRevision !== current.contextRevision) return undefined;
+      return latestVersionExposure;
+    },
+
     initialize(): WarRoomActionResult<void> {
       const result = statePort.transition({ type: "APP_INITIALIZED" });
       const rev = currentRevision();
@@ -902,12 +912,20 @@ export function createWarRoomActions(
       );
       if (!authRes.ok) return createActionFailure(authRes.error, currentRevision());
 
+      const pathsRes = await this.inspectCriticalPaths(invocation, { maxPaths: 10 });
       const snapshot = {
         graph: currentState.graph,
         selection: currentState.selection,
         scenario: currentState.scenario,
         analysis: currentState.analysis,
         review: currentState.review,
+        versionExposure:
+          latestVersionExposure &&
+          latestVersionExposure.contextRevision === invocation.capturedContextRevision &&
+          latestVersionExposure.scenarioId === currentState.scenario.id
+            ? latestVersionExposure.result
+            : undefined,
+        criticalPaths: pathsRes.ok ? pathsRes.data : undefined,
         sourceContextRevision: invocation.capturedContextRevision,
       };
 
@@ -1103,6 +1121,12 @@ export function createWarRoomActions(
         directDependents,
         topologicalReachabilityCount,
       });
+
+      latestVersionExposure = {
+        result: exposureResult,
+        scenarioId: "scenario" in state ? state.scenario.id : undefined,
+        contextRevision: currentRevision(),
+      };
 
       return createActionSuccess(exposureResult, false, currentRevision());
     },
@@ -1403,9 +1427,9 @@ export function createWarRoomActions(
         rank: number;
       }
 
-      const pathPromises: Promise<RawCriticalPath>[] = candidateItems.map(async (item: HumanReviewItem) => {
-        let packageIds: readonly string[] = [item.entityId, targetEntityId];
-        let hopCount = 1;
+      const pathPromises: Promise<RawCriticalPath | null>[] = candidateItems.map(async (item: HumanReviewItem) => {
+        let packageIds: readonly string[];
+        let hopCount: number;
 
         if (item.entityId === targetEntityId) {
           packageIds = [targetEntityId];
@@ -1420,9 +1444,11 @@ export function createWarRoomActions(
             if (traceRes.ok && traceRes.data.packageIds.length > 0) {
               packageIds = traceRes.data.packageIds;
               hopCount = traceRes.data.hopCount;
+            } else {
+              return null;
             }
           } catch {
-            // Fallback to direct pair
+            return null;
           }
         }
 
@@ -1438,7 +1464,7 @@ export function createWarRoomActions(
         };
       });
 
-      const rawPaths = await Promise.all(pathPromises);
+      const rawPaths = (await Promise.all(pathPromises)).filter((path): path is RawCriticalPath => path !== null);
 
       // Deterministic sort: priority rank ascending, hopCount ascending, sourceEntityId ascending
       rawPaths.sort((a: RawCriticalPath, b: RawCriticalPath) => {
@@ -1454,6 +1480,7 @@ export function createWarRoomActions(
 
       const criticalPaths: CriticalPathItem[] = bounded.map((p: RawCriticalPath, idx: number) => ({
         pathId: `${state.scenario.id}:${p.sourceEntityId}`,
+        status: "AVAILABLE",
         pathIndex: idx,
         sourceEntityId: p.sourceEntityId,
         targetEntityId: p.targetEntityId,

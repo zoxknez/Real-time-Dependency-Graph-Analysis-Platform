@@ -560,7 +560,7 @@ function GraphPageContent() {
         </form>
       </motion.div>
 
-      <WarRoomStatusPanel state={canonicalState} evidence={packageEvidence} />
+      <WarRoomStatusPanel state={canonicalState} evidence={packageEvidence} versionExposure={actions.getLatestVersionExposure()?.result} />
 
       {/* Main Graph Area */}
       <motion.div

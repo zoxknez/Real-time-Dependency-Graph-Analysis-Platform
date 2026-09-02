@@ -147,6 +147,7 @@ export interface HumanReviewItem {
 
 export interface CriticalPathItem {
   readonly pathId: string;
+  readonly status: "AVAILABLE";
   readonly pathIndex: number;
   readonly sourceEntityId: string;
   readonly targetEntityId: string;
@@ -184,6 +185,13 @@ export interface WarRoomPlanRef {
 }
 
 export type MigrationPlanStepKind =
+  | "UPGRADE_TARGET"
+  | "VALIDATE_RANGE_EXPOSED_DEPENDENT"
+  | "REVIEW_BLOCKED_DEPENDENCY_REQUIREMENT"
+  | "RESOLVE_UNKNOWN_DEPENDENCY_REQUIREMENT"
+  | "VALIDATE_CRITICAL_PATH"
+  | "REVIEW_SECURITY_EVIDENCE"
+  | "VERIFY_BREAKING_CHANGES"
   | "VALIDATE_BREAKING_CHANGE"
   | "REVIEW_REQUIREMENT"
   | "RESOLVE_REQUIREMENT_METADATA"

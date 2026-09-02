@@ -150,6 +150,20 @@ query ImpactAnalysis {
 
 ## Architecture
 
+### WebMCP War Room challenge workflow
+
+The canonical reviewer surface is `/graph`: open a graph, select a package, inspect evidence, simulate an API change, calculate direct version exposure, apply human review, inspect critical paths, generate a bounded migration plan, and focus a real path. API breakage, version exposure, topology, security evidence, and business priority remain separate facts.
+
+```text
+Human UI -----\\
+               -> WarRoomActions -> deterministic domain/services
+WebMCP Agent -/                         |-> analysis/API boundaries
+                                        |-> OSV evidence provider
+                                        |-> WMCP snapshot authority
+```
+
+The final package is documented in [`docs/challenge/SUBMISSION.md`](docs/challenge/SUBMISSION.md), [`docs/challenge/DEMO-SCRIPT.md`](docs/challenge/DEMO-SCRIPT.md), and [`docs/challenge/FINAL-CLAIMS.md`](docs/challenge/FINAL-CLAIMS.md). The adaptive surface contains 16 canonical tools, all executable globally, while physical registration remains phase-adaptive.
+
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │    Ingestion    │───▶│    Redpanda     │◀───│    Analysis     │

@@ -201,3 +201,9 @@ export interface FocusCriticalPathResult {
   readonly pathId: string;
   readonly focusedNodeIds: readonly string[];
 }
+
+export interface LatestVersionExposure {
+  readonly result: import("../domain/version-exposure-engine").VersionAwareExposureResult;
+  readonly scenarioId?: string;
+  readonly contextRevision: number;
+}

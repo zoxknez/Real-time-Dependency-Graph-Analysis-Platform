@@ -1,12 +1,12 @@
 "use client";
 
-import type { WarRoomState, PackageEvidence } from "@/lib/war-room";
+import type { WarRoomState, PackageEvidence, VersionAwareExposureResult } from "@/lib/war-room";
 
 function Metric({ label, value }: { label: string; value: string | number }) {
   return <div className="rounded-lg border theme-border bg-black/[0.03] dark:bg-white/[0.04] p-3"><span className="block text-[10px] uppercase tracking-wide theme-text-faint">{label}</span><span className="text-sm font-semibold theme-text-primary">{value}</span></div>;
 }
 
-export function WarRoomStatusPanel({ state, evidence }: { state: WarRoomState; evidence?: PackageEvidence }) {
+export function WarRoomStatusPanel({ state, evidence, versionExposure }: { state: WarRoomState; evidence?: PackageEvidence; versionExposure?: VersionAwareExposureResult }) {
   const graphState = state.phase !== "BOOTSTRAP" && state.phase !== "IDLE" ? state : null;
   const analysis = graphState && "analysis" in graphState ? graphState.analysis : undefined;
   const review = graphState && "review" in graphState ? graphState.review : undefined;
@@ -31,6 +31,12 @@ export function WarRoomStatusPanel({ state, evidence }: { state: WarRoomState; e
         <Metric label="Priority decisions" value={reviewed.filter((item) => item.priority).length} />
         <Metric label="Critical paths" value={review ? "Inspect available" : "Not calculated"} />
         <Metric label="Migration plan" value={plan ? `${plan.returnedSteps ?? 0} steps` : "No migration plan"} />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs" data-testid="war-room-exposure-metrics">
+        <Metric label="Exposed" value={versionExposure?.declaredRangeExposed ?? "Not calculated"} />
+        <Metric label="Blocked" value={versionExposure?.declaredRangeBlocked ?? "Not calculated"} />
+        <Metric label="Unknown" value={versionExposure?.unknownTotal ?? "Not calculated"} />
+        <Metric label="Topology reachability" value={versionExposure?.topologicalReachabilityCount ?? "Not calculated"} />
       </div>
       <p className="text-xs theme-text-muted border-t theme-border pt-3">Declared version exposure does not prove downstream source incompatibility. Topology, API findings, security evidence, and human priority remain separate decision axes.</p>
       {evidence && <p className="text-[11px] theme-text-faint">Source: {evidence.provider} · fetched {evidence.fetchedAt} · {evidence.advisoriesTotal} advisories found</p>}
