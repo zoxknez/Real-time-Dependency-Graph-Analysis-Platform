@@ -35,7 +35,6 @@ impl MemgraphClient {
             .build()?;
 
         let graph = Graph::connect(graph_config)
-            .await
             .with_context(|| format!("Failed to connect to Memgraph at {}", config.uri))?;
 
         info!("Connected to Memgraph successfully");

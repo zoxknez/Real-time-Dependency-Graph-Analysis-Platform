@@ -137,13 +137,8 @@ impl MemgraphClient {
             .fetch_size(500)
             .max_connections(config.max_connections);
 
-        let graph = tokio::time::timeout(
-            config.connect_timeout,
-            Graph::connect(graph_config.build()?),
-        )
-        .await
-        .context("Timed out connecting to Memgraph")?
-        .context("Failed to connect to Memgraph")?;
+        let graph =
+            Graph::connect(graph_config.build()?).context("Failed to connect to Memgraph")?;
 
         info!("Successfully connected to Memgraph");
 

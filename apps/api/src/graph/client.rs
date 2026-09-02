@@ -85,11 +85,6 @@ impl GraphClient {
         Ok(rows.into_iter().next())
     }
 
-    /// Health check
-    pub async fn health_check(&self) -> bool {
-        self.client.health_check().await
-    }
-
     /// Run the bounded, single-attempt readiness probe.
     pub async fn health_check_fast(&self) -> bool {
         self.client.health_check_fast().await

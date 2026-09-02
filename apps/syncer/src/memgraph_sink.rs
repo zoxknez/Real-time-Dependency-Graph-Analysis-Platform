@@ -28,7 +28,7 @@ impl MemgraphSink {
             .fetch_size(500)
             .build()?;
 
-        let graph = Graph::connect(config).await?;
+        let graph = Graph::connect(config)?;
 
         Ok(Self { graph })
     }

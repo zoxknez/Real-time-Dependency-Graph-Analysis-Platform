@@ -59,7 +59,7 @@ async-graphql-axum = "7.2"
 singleflight-async = "0.2"
 
 # Database Clients
-neo4rs = "0.8"            # Memgraph (Bolt protocol)
+neo4rs = "=0.9.0-rc.10"   # Memgraph (Bolt protocol)
 qdrant-client = "1.17"    # Qdrant Vector DB
 sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio", "postgres", "macros", "migrate", "chrono", "uuid", "json"] }
 
