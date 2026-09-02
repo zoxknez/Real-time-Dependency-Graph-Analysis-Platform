@@ -190,13 +190,56 @@ test.describe("WMCP-8: Version-Aware Dependency Exposure Matrix", () => {
   });
 
   test("8-T10. Prerelease behavior follows parser specification", () => {
-    const npmPre = VersionConstraintEngine.evaluate("NPM", "^1.2.0", "1.3.0-alpha.1");
-    // With includePrerelease, pre-releases within the range satisfy
-    expect(npmPre.status).toBe("SATISFIES");
+    // Under standard npm semantics, normal ranges DO NOT match prereleases
+    const npmPreDefault = VersionConstraintEngine.evaluate("NPM", "^1.2.3", "1.3.0-beta.1");
+    expect(npmPreDefault.status).toBe("DOES_NOT_SATISFY");
 
-    const pepPre = VersionConstraintEngine.evaluate("PY_PI", "<2.0", "2.0a1");
+    const npmPreRange = VersionConstraintEngine.evaluate("NPM", ">=1.2.3 <2.0.0", "1.5.0-beta.1");
+    expect(npmPreRange.status).toBe("DOES_NOT_SATISFY");
+
+    // Explicit prerelease in range matches that prerelease line
+    const npmPreExplicit = VersionConstraintEngine.evaluate("NPM", ">=1.2.3-alpha.1 <2.0.0", "1.2.3-alpha.2");
+    expect(npmPreExplicit.status).toBe("SATISFIES");
+
     // In PEP 440, 2.0a1 is prior to 2.0
+    const pepPre = VersionConstraintEngine.evaluate("PY_PI", "<2.0", "2.0a1");
     expect(pepPre.status).toBe("SATISFIES");
+
+    // Cargo prereleases follow the same exclusion unless requested
+    const cargoPre = VersionConstraintEngine.evaluate("CARGO", "^1.2.3", "1.3.0-alpha.1");
+    expect(cargoPre.status).toBe("DOES_NOT_SATISFY");
+  });
+
+  test("A10. Cargo 0.x and 0.0.x compatibility semantics", () => {
+    // 0.x.y: ^0.2.3 matches >=0.2.3 <0.3.0
+    expect(VersionConstraintEngine.evaluate("CARGO", "^0.2.3", "0.2.4").status).toBe("SATISFIES");
+    expect(VersionConstraintEngine.evaluate("CARGO", "^0.2.3", "0.3.0").status).toBe("DOES_NOT_SATISFY");
+    expect(VersionConstraintEngine.evaluate("CARGO", "0.2.3", "0.2.5").status).toBe("SATISFIES");
+    expect(VersionConstraintEngine.evaluate("CARGO", "0.2.3", "0.3.0").status).toBe("DOES_NOT_SATISFY");
+
+    // 0.0.x: 0.0.3 matches only >=0.0.3 <0.0.4
+    expect(VersionConstraintEngine.evaluate("CARGO", "0.0.3", "0.0.3").status).toBe("SATISFIES");
+    expect(VersionConstraintEngine.evaluate("CARGO", "0.0.3", "0.0.4").status).toBe("DOES_NOT_SATISFY");
+    expect(VersionConstraintEngine.evaluate("CARGO", "^0.0.3", "0.0.4").status).toBe("DOES_NOT_SATISFY");
+  });
+
+  test("A5. Query direction: getDirectDependents returns dependent -> target, never target dependencies", () => {
+    // Asymmetric graph: A depends on T, T depends on Z
+    const directDeps: DirectDependentRecord[] = [
+      { dependentPackageId: "pkg-A", name: "A", ecosystem: "NPM", rawRequirement: "^1.0.0", depth: 1 },
+    ];
+
+    const exposure = evaluateVersionAwareExposure({
+      targetPackageId: "pkg-T",
+      proposedVersion: "1.1.0",
+      breakingCandidate: false,
+      directDependents: directDeps,
+      topologicalReachabilityCount: 1,
+    });
+
+    expect(exposure.directDependentsTotal).toBe(1);
+    expect(exposure.dependents[0].dependentPackageId).toBe("pkg-A");
+    expect(exposure.dependents.map((d) => d.dependentPackageId)).not.toContain("pkg-Z");
   });
 
   test("8-T2 & 8-T11. Missing requirement stays UNKNOWN_MISSING_REQUIREMENT (never synthesized)", () => {

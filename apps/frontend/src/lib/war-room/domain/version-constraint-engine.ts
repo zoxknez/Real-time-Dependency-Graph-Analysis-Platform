@@ -94,9 +94,7 @@ export class VersionConstraintEngine {
     }
 
     try {
-      const satisfies = semver.satisfies(proposedVer, rawReq, {
-        includePrerelease: true,
-      });
+      const satisfies = semver.satisfies(proposedVer, rawReq);
 
       return {
         status: satisfies ? "SATISFIES" : "DOES_NOT_SATISFY",
@@ -168,9 +166,7 @@ export class VersionConstraintEngine {
     }
 
     try {
-      const satisfies = semver.satisfies(proposedVer, normalizedRange, {
-        includePrerelease: true,
-      });
+      const satisfies = semver.satisfies(proposedVer, normalizedRange);
 
       return {
         status: satisfies ? "SATISFIES" : "DOES_NOT_SATISFY",
