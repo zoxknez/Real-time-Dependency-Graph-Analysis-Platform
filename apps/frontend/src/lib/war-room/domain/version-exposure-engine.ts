@@ -53,7 +53,8 @@ export interface VersionAwareExposureResult {
   readonly exposedDependentIds: readonly string[];
   readonly blockedDependentIds: readonly string[];
   readonly unknownDependentIds: readonly string[];
-  readonly topologicalReachabilityCount: number;
+  /** Optional legacy field; omitted when no transitive authority is supplied. */
+  readonly topologicalReachabilityCount?: number;
   readonly dependents: readonly VersionAwareDependentDetail[];
   readonly returnedDependentsCount: number;
   readonly dependentsTruncated: boolean;
@@ -64,7 +65,7 @@ export interface EvaluateExposureInput {
   readonly proposedVersion: string;
   readonly breakingCandidate: boolean;
   readonly directDependents: readonly DirectDependentRecord[];
-  readonly topologicalReachabilityCount: number;
+  readonly topologicalReachabilityCount?: number;
   readonly maxReturnedDependents?: number;
 }
 

@@ -27,6 +27,7 @@ export interface PackageEdge {
   node: Package;
   cursor: string;
   depth?: number;
+  rawRequirement?: string;
 }
 
 export interface ScoredPackageEdge extends PackageEdge {

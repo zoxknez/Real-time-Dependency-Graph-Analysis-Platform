@@ -36,7 +36,7 @@ export function WarRoomStatusPanel({ state, evidence, versionExposure }: { state
         <Metric label="Exposed" value={versionExposure?.declaredRangeExposed ?? "Not calculated"} />
         <Metric label="Blocked" value={versionExposure?.declaredRangeBlocked ?? "Not calculated"} />
         <Metric label="Unknown" value={versionExposure?.unknownTotal ?? "Not calculated"} />
-        <Metric label="Topology reachability" value={versionExposure?.topologicalReachabilityCount ?? "Not calculated"} />
+        <Metric label="Direct dependents" value={versionExposure?.directDependentsTotal ?? "Not calculated"} />
       </div>
       <p className="text-xs theme-text-muted border-t theme-border pt-3">Declared version exposure does not prove downstream source incompatibility. Topology, API findings, security evidence, and human priority remain separate decision axes.</p>
       {evidence && <p className="text-[11px] theme-text-faint">Source: {evidence.provider} · fetched {evidence.fetchedAt} · {evidence.advisoriesTotal} advisories found</p>}

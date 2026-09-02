@@ -182,9 +182,11 @@ impl GraphQueries {
             MATCH path = (dep:Package {{tenant_id: $tenant_id}})-[:DEPENDS_ON_PKG*1..{}]->(target)
             WHERE dep.deleted_at IS NULL AND dep <> target
             WITH dep, min(length(path)) AS depth
+            OPTIONAL MATCH (dep)-[direct_rel:DEPENDS_ON_PKG]->(target)
             RETURN dep.id AS id,
                    dep.ecosystem AS ecosystem,
                    dep.name AS name,
+                   direct_rel.version_constraint AS raw_requirement,
                    depth
             ORDER BY depth, dep.name
             SKIP $offset

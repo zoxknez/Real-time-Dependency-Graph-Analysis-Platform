@@ -103,6 +103,8 @@ pub struct PackageEdge {
     pub node: Package,
     pub cursor: String,
     pub depth: Option<i32>,
+    /// Raw requirement copied from the package-level dependency projection.
+    pub raw_requirement: Option<String>,
 }
 
 #[derive(SimpleObject, Clone, Debug)]

@@ -190,7 +190,6 @@ export type MigrationPlanStepKind =
   | "REVIEW_BLOCKED_DEPENDENCY_REQUIREMENT"
   | "RESOLVE_UNKNOWN_DEPENDENCY_REQUIREMENT"
   | "VALIDATE_CRITICAL_PATH"
-  | "REVIEW_SECURITY_EVIDENCE"
   | "VERIFY_BREAKING_CHANGES"
   | "VALIDATE_BREAKING_CHANGE"
   | "REVIEW_REQUIREMENT"
@@ -199,6 +198,10 @@ export type MigrationPlanStepKind =
   | "CRITICAL_PATH_COORDINATION";
 
 export interface MigrationPlanSourceFacts {
+  readonly targetPackageId?: string;
+  readonly baselineSnapshotRevision?: string;
+  readonly proposedPackageVersion?: string;
+  readonly totalBreakingChanges?: number;
   readonly versionExposureStatus?: string;
   readonly rawRequirement?: string;
   readonly breakingChangeTypes?: readonly string[];
@@ -210,7 +213,7 @@ export interface MigrationPlanStep {
   readonly stepId: string;
   readonly kind: MigrationPlanStepKind;
   readonly entityId: string;
-  readonly priority: HumanReviewPriority;
+  readonly priority?: HumanReviewPriority;
   readonly rationale: string;
   readonly sourceFacts?: MigrationPlanSourceFacts;
   readonly criticalPathHopCount?: number;

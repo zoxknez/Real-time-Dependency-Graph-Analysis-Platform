@@ -2,7 +2,8 @@
 //!
 //! Tests the API service with real database backends
 
-use e2e_tests::helpers::init_test_tracing;
+use e2e_tests::helpers::{init_test_tracing, unique_test_id};
+use neo4rs::{ConfigBuilder, Graph, query};
 use reqwest::Client;
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -216,6 +217,7 @@ async fn test_graphql_reverse_dependents() {
                             ecosystem
                         }
                         depth
+                        rawRequirement
                     }
                     totalCount
                     pageInfo {
@@ -253,6 +255,97 @@ async fn test_graphql_reverse_dependents() {
             tracing::warn!("API not running, skipping test: {}", e);
         }
     }
+}
+
+/// Proves the stored manifest requirement crosses the real graph and GraphQL boundary.
+/// This intentionally selects rawRequirement: the test fails against an API/query that
+/// omits the field, even if a frontend type later pretends it exists.
+#[tokio::test]
+async fn test_graphql_reverse_dependents_preserves_real_requirements() {
+    init_test_tracing();
+    let client = Client::new();
+    let api_url =
+        std::env::var("TEST_API_URL").unwrap_or_else(|_| "http://localhost:8000".to_string());
+    let graph = match Graph::connect(
+        ConfigBuilder::default()
+            .uri("bolt://localhost:7687")
+            .user("memgraph")
+            .password("memgraph")
+            .db("memgraph")
+            .build()
+            .unwrap(),
+    )
+    .await
+    {
+        Ok(graph) => graph,
+        Err(error) => {
+            tracing::warn!(
+                ?error,
+                "Memgraph not running, skipping requirement boundary test"
+            );
+            return;
+        }
+    };
+    let suffix = unique_test_id();
+    let target = format!("npm:wmcp-target-{suffix}");
+    let a = format!("npm:wmcp-a-{suffix}");
+    let b = format!("npm:wmcp-b-{suffix}");
+    let c = format!("npm:wmcp-c-{suffix}");
+    graph.run(query("CREATE (target:Package {id: $target, tenant_id: 'public', ecosystem: 'npm', name: $target})
+        CREATE (a:Package {id: $a, tenant_id: 'public', ecosystem: 'npm', name: $a})
+        CREATE (b:Package {id: $b, tenant_id: 'public', ecosystem: 'npm', name: $b})
+        CREATE (c:Package {id: $c, tenant_id: 'public', ecosystem: 'npm', name: $c})
+        CREATE (a)-[:DEPENDS_ON_PKG {version_constraint: '^2.0.0'}]->(target)
+        CREATE (b)-[:DEPENDS_ON_PKG {version_constraint: '~1.9.0'}]->(target)
+        CREATE (c)-[:DEPENDS_ON_PKG]->(target)")
+        .param("target", target.clone()).param("a", a.clone()).param("b", b.clone()).param("c", c.clone())).await.unwrap();
+
+    let payload = json!({
+        "query": "query($id: ID!) { reverseDependents(packageId: $id, maxDepth: 1, first: 10) { edges { node { id } rawRequirement } } }",
+        "variables": { "id": target }
+    });
+    let response = match client
+        .post(format!("{api_url}/graphql"))
+        .json(&payload)
+        .send()
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            tracing::warn!(
+                ?error,
+                "API not running, skipping requirement boundary test"
+            );
+            return;
+        }
+    };
+    assert!(response.status().is_success());
+    let body: Value = response.json().await.unwrap();
+    let edges = body["data"]["reverseDependents"]["edges"]
+        .as_array()
+        .unwrap();
+    let requirements: std::collections::HashMap<String, Option<String>> = edges
+        .iter()
+        .filter_map(|edge| {
+            Some((
+                edge["node"]["id"].as_str()?.to_string(),
+                edge["rawRequirement"].as_str().map(str::to_string),
+            ))
+        })
+        .collect();
+    assert_eq!(requirements.get(&a), Some(&Some("^2.0.0".to_string())));
+    assert_eq!(requirements.get(&b), Some(&Some("~1.9.0".to_string())));
+    assert_eq!(requirements.get(&c), Some(&None));
+    graph
+        .run(
+            query("MATCH (n:Package) WHERE n.id IN [$target, $a, $b, $c] DETACH DELETE n")
+                .param("target", target)
+                .param("a", a)
+                .param("b", b)
+                .param("c", c),
+        )
+        .await
+        .unwrap();
 }
 
 /// Test impactRadius query

@@ -91,10 +91,9 @@ export interface WebMcpBlastRadiusResultData {
   readonly declaredRangeExposed: number;
   readonly declaredRangeBlocked: number;
   readonly unknownTotal: number;
-  readonly topologicalReachabilityCount: number;
+  readonly topologicalReachabilityCount?: number;
   readonly topExposedDependents: readonly WebMcpBlastRadiusExposedDependentSummary[];
   readonly exposedDependentsDisplayedCount: number;
   readonly outputTruncated: boolean;
 }
-
 

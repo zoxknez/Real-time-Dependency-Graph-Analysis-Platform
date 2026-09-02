@@ -297,7 +297,14 @@ export function createWarRoomActions(
   return {
     getLatestVersionExposure(): LatestVersionExposure | undefined {
       const current = statePort.getState();
-      if (!latestVersionExposure || latestVersionExposure.contextRevision !== current.contextRevision) return undefined;
+      if (!latestVersionExposure || !("graph" in current) || !current.graph) return undefined;
+      const scenario = "scenario" in current ? current.scenario : undefined;
+      if (
+        latestVersionExposure.graphId !== current.graph.id ||
+        latestVersionExposure.targetPackageId !== (scenario?.targetPackageId ?? "") ||
+        latestVersionExposure.proposedVersion !== (scenario?.proposedVersion ?? "") ||
+        latestVersionExposure.scenarioId !== (scenario?.id ?? undefined)
+      ) return undefined;
       return latestVersionExposure;
     },
 
@@ -921,7 +928,9 @@ export function createWarRoomActions(
         review: currentState.review,
         versionExposure:
           latestVersionExposure &&
-          latestVersionExposure.contextRevision === invocation.capturedContextRevision &&
+          latestVersionExposure.graphId === currentState.graph.id &&
+          latestVersionExposure.targetPackageId === currentState.scenario.targetPackageId &&
+          latestVersionExposure.proposedVersion === currentState.scenario.proposedVersion &&
           latestVersionExposure.scenarioId === currentState.scenario.id
             ? latestVersionExposure.result
             : undefined,
@@ -1084,8 +1093,6 @@ export function createWarRoomActions(
 
       // Query direct dependents
       let directDependents: readonly DirectDependentRecord[] = [];
-      let topologicalReachabilityCount = 0;
-
       if (typeof graphQueryPort.getDirectDependents === "function") {
         const directRes = await callPort(invocation.signal, () =>
           graphQueryPort.getDirectDependents!(
@@ -1096,11 +1103,9 @@ export function createWarRoomActions(
         );
         if (!directRes.ok) return createActionFailure(directRes.error, currentRevision());
         directDependents = directRes.data;
-        topologicalReachabilityCount = directDependents.length;
       } else if ("graph" in state && state.graph) {
         // Fallback: extract from graph context if getDirectDependents is not implemented
         const pids = state.graph.packageIds.filter((id: string) => id !== targetPackageId);
-        topologicalReachabilityCount = pids.length;
         directDependents = pids.map((id: string) => ({
           dependentPackageId: id,
           name: id,
@@ -1119,13 +1124,14 @@ export function createWarRoomActions(
         proposedVersion,
         breakingCandidate,
         directDependents,
-        topologicalReachabilityCount,
       });
 
       latestVersionExposure = {
         result: exposureResult,
+        targetPackageId,
+        proposedVersion,
+        graphId: "graph" in state ? state.graph.id : "",
         scenarioId: "scenario" in state ? state.scenario.id : undefined,
-        contextRevision: currentRevision(),
       };
 
       return createActionSuccess(exposureResult, false, currentRevision());

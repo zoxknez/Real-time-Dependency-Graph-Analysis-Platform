@@ -531,7 +531,7 @@ export function createApolloGraphQueryPort(
             dependentPackageId: node.id,
             name: node.name ?? node.id,
             ecosystem,
-            rawRequirement: (edge as unknown as { rawRequirement?: string })?.rawRequirement,
+            rawRequirement: edge.rawRequirement,
             depth: edge.depth ?? 1,
           });
         }

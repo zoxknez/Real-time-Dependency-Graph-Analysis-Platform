@@ -30,9 +30,17 @@ export function createDeterministicMigrationPlanningPort(): WarRoomMigrationPlan
           stepId: `target:${input.scenario.targetPackageId}`,
           kind: "UPGRADE_TARGET",
           entityId: input.scenario.targetPackageId,
-          priority: "P0",
-          rationale: `Apply the declared scenario target change ${input.scenario.baseVersion} -> ${input.scenario.proposedVersion}.`,
-          sourceFacts: { breakingChangeTypes: breakingTypes },
+          rationale: `Validate adoption of proposed package version ${input.scenario.proposedVersion} against the API candidate derived from snapshot revision ${input.scenario.baseVersion}.`,
+          sourceFacts: { targetPackageId: input.scenario.targetPackageId, baselineSnapshotRevision: input.scenario.baseVersion, proposedPackageVersion: input.scenario.proposedVersion, breakingChangeTypes: breakingTypes, totalBreakingChanges: input.analysis?.totalBreakingChanges },
+        });
+      }
+      if (breakingTypes.length > 0) {
+        steps.push({
+          stepId: `breaking:${input.scenario.targetPackageId}`,
+          kind: "VERIFY_BREAKING_CHANGES",
+          entityId: input.scenario.targetPackageId,
+          rationale: "Verify the deterministic breaking-change candidate for the target package before approving dependent migrations.",
+          sourceFacts: { targetPackageId: input.scenario.targetPackageId, breakingChangeTypes: breakingTypes, totalBreakingChanges: input.analysis?.totalBreakingChanges },
         });
       }
 
@@ -78,30 +86,20 @@ export function createDeterministicMigrationPlanningPort(): WarRoomMigrationPlan
           });
         } else {
           steps.push({
-            stepId: `verify:${item.entityId}`,
-            kind: "VERIFY_BREAKING_CHANGES",
+            stepId: `unknown:${item.entityId}`,
+            kind: "RESOLVE_UNKNOWN_DEPENDENCY_REQUIREMENT",
             entityId: item.entityId,
             priority: item.priority!,
-            rationale: "Verify the deterministic API findings for this reviewed entity.",
-            sourceFacts: { breakingChangeTypes: breakingTypes },
+            rationale: "Resolve missing dependency exposure metadata before making a compatibility decision.",
           });
         }
 
-        if (input.evidence?.status === "AVAILABLE" && input.evidence.advisoriesReturned > 0) {
-          steps.push({
-            stepId: `security-evidence:${item.entityId}`,
-            kind: "REVIEW_SECURITY_EVIDENCE",
-            entityId: item.entityId,
-            priority: item.priority!,
-            rationale: "Review the available OSV advisories before approving the migration decision.",
-            sourceFacts: { advisoryIds: input.evidence.advisories.map((advisory) => advisory.id) },
-          });
-        }
       }
 
       steps.sort((a, b) => {
         const targetFirst = a.entityId === input.scenario.targetPackageId ? -1 : b.entityId === input.scenario.targetPackageId ? 1 : 0;
-        const p = a.priority.localeCompare(b.priority);
+        const priorityRank = (priority?: string) => priority ? ["P0", "P1", "P2", "P3"].indexOf(priority) : -1;
+        const p = priorityRank(a.priority) - priorityRank(b.priority);
         return targetFirst || p || (a.criticalPathHopCount ?? Number.MAX_SAFE_INTEGER) - (b.criticalPathHopCount ?? Number.MAX_SAFE_INTEGER) || a.entityId.localeCompare(b.entityId) || a.kind.localeCompare(b.kind);
       });
       const bounded = steps.slice(0, MAX_MIGRATION_STEPS);

@@ -159,12 +159,14 @@ impl GraphQueries {
                       AND (depPkg.tenant_id = $tenant_id OR depPkg.tenant_id IS NULL)
                     SET srcPkg.tenant_id = coalesce(srcPkg.tenant_id, $tenant_id),
                         depPkg.tenant_id = coalesce(depPkg.tenant_id, $tenant_id)
-                    MERGE (srcPkg)-[:DEPENDS_ON_PKG]->(depPkg)
+                    MERGE (srcPkg)-[pkgRel:DEPENDS_ON_PKG]->(depPkg)
+                    SET pkgRel.version_constraint = $version_req
                     "#,
                 )
                 .param("tenant_id", tenant_id.to_string())
                 .param("package_id", package_id.clone())
-                .param("dep_package_id", dep_package_id),
+                .param("dep_package_id", dep_package_id)
+                .param("version_req", ver_req.clone()),
             );
         }
 

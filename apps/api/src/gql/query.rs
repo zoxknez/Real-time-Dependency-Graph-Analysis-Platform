@@ -174,6 +174,7 @@ impl QueryRoot {
                 node: pkg,
                 cursor: base64_encode_cursor(offset + idx as i32),
                 depth: Some(depth as i32),
+                raw_requirement: row.get("raw_requirement").ok(),
             });
         }
 

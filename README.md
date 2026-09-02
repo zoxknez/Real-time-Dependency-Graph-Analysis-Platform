@@ -152,7 +152,7 @@ query ImpactAnalysis {
 
 ### WebMCP War Room challenge workflow
 
-The canonical reviewer surface is `/graph`: open a graph, select a package, inspect evidence, simulate an API change, calculate direct version exposure, apply human review, inspect critical paths, generate a bounded migration plan, and focus a real path. API breakage, version exposure, topology, security evidence, and business priority remain separate facts.
+The canonical reviewer surface is `/graph`: open a graph, select a package, inspect evidence, simulate an API change, calculate direct version exposure, apply human review, inspect critical paths, generate a bounded migration plan, and focus a real path. API breakage, version exposure, direct dependents, security evidence, and business priority remain separate facts.
 
 ```text
 Human UI -----\\

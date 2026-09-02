@@ -32,6 +32,7 @@ export const PACKAGE_EDGE_FRAGMENT = gql`
     }
     cursor
     depth
+    rawRequirement
   }
   ${PACKAGE_FRAGMENT}
 `;
