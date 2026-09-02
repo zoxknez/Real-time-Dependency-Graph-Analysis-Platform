@@ -439,9 +439,9 @@ impl Config {
             gemini: GeminiConfig {
                 api_key: env::var("GEMINI_API_KEY").unwrap_or_default(),
                 flash_model: env::var("GEMINI_FLASH_MODEL")
-                    .unwrap_or_else(|_| "gemini-3-flash-preview".to_string()),
+                    .unwrap_or_else(|_| "gemini-3.8-flash".to_string()),
                 thinking_model: env::var("GEMINI_THINKING_MODEL")
-                    .unwrap_or_else(|_| "gemini-3-pro-preview".to_string()),
+                    .unwrap_or_else(|_| "gemini-3.8-flash".to_string()),
             },
             guardrails: GuardrailsConfig {
                 max_traversal_depth: env::var("MAX_TRAVERSAL_DEPTH")

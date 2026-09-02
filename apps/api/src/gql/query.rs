@@ -2972,6 +2972,7 @@ impl QueryRoot {
 
         // Create the security agent
         let agent = crate::services::GeminiSecurityAgent::new(gemini.api_key().to_string())
+            .with_model(gemini.thinking_model())
             .with_max_steps(input.max_steps.unwrap_or(10) as usize);
 
         let tenant_ctx = ctx.data::<Option<TenantContext>>()?.clone();

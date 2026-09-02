@@ -8,8 +8,8 @@ pub struct GeminiService {
     client: Client,
     api_key: String,
     #[allow(dead_code)]
-    flash_model: String, // e.g. "gemini-3-flash-preview"
-    thinking_model: String, // e.g. "gemini-3-pro-preview"
+    flash_model: String, // e.g. "gemini-3.8-flash"
+    thinking_model: String, // e.g. "gemini-3.8-flash"
 }
 
 #[derive(Serialize)]
@@ -40,8 +40,6 @@ struct Part {
 struct GenerationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     thinking_config: Option<ThinkingConfig>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_output_tokens: Option<i32>,
 }
@@ -109,6 +107,11 @@ impl GeminiService {
         &self.api_key
     }
 
+    /// Model selected for complex reasoning and agent execution.
+    pub fn thinking_model(&self) -> &str {
+        &self.thinking_model
+    }
+
     /// Fast generation using the Flash model (Low thinking level)
     #[allow(dead_code)]
     #[instrument(skip(self, prompt), fields(model = %self.flash_model))]
@@ -141,9 +144,7 @@ impl GeminiService {
             model
         );
 
-        // Gemini 3.0 Thinking Levels:
-        // Pro: "high" (default), "low"
-        // Flash: "minimal", "low", "medium", "high"
+        // Gemini 3.8 Flash supports low, medium, and high thinking levels.
         // We stick to "high" for thinking_model and "low" for flash_model (as optimization)
         let thinking_level = if high_thinking { "high" } else { "low" };
 
@@ -162,9 +163,6 @@ impl GeminiService {
             }],
             generation_config: Some(GenerationConfig {
                 thinking_config,
-                // Gemini 3 Pro guide usage suggests default 1.0 temp is fine,
-                // but we can be explicit.
-                temperature: Some(if high_thinking { 1.0 } else { 0.7 }),
                 max_output_tokens: Some(if high_thinking { 4096 } else { 2048 }),
             }),
         };

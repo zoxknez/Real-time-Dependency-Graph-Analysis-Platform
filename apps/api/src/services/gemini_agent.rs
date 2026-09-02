@@ -319,8 +319,6 @@ struct AgentGenerationConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     thinking_config: Option<AgentThinkingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    temperature: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     max_output_tokens: Option<i32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     response_mime_type: Option<String>,
@@ -432,7 +430,7 @@ impl GeminiSecurityAgent {
         Self {
             client: Client::new(),
             api_key,
-            model: "gemini-3-pro-preview".to_string(),
+            model: "gemini-3.8-flash".to_string(),
             max_steps: 10, // Prevent infinite loops
         }
     }
@@ -772,7 +770,6 @@ impl GeminiSecurityAgent {
                     thinking_level: "high".to_string(),
                     include_thoughts: true,
                 }),
-                temperature: Some(1.0), // Recommended for Gemini 3
                 max_output_tokens: Some(8192),
                 response_mime_type: None,
                 response_json_schema: None,
@@ -887,7 +884,6 @@ impl GeminiSecurityAgent {
             tool_config: None,
             generation_config: Some(AgentGenerationConfig {
                 thinking_config: None,
-                temperature: Some(1.0),
                 max_output_tokens: Some(1024),
                 response_mime_type: Some("application/json".to_string()),
                 response_json_schema: Some(schema),

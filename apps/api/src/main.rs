@@ -196,6 +196,7 @@ async fn main() -> Result<()> {
         jwt_state: jwt_config.clone(),
         query_timeout: config.query_timeout(),
         gemini_api_key: config.gemini.api_key.clone(),
+        gemini_model: config.gemini.thinking_model.clone(),
         max_results: config.guardrails.max_results,
     };
 

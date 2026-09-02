@@ -28,6 +28,7 @@ pub struct CombinedState {
     pub jwt_state: JwtState,
     pub query_timeout: Duration,
     pub gemini_api_key: String,
+    pub gemini_model: String,
     pub max_results: i32,
 }
 
@@ -254,6 +255,7 @@ pub async fn security_agent_stream(
         }
 
         let agent = GeminiSecurityAgent::new(api_key)
+            .with_model(&state.gemini_model)
             .with_max_steps(payload.max_steps.unwrap_or(10) as usize);
 
         let tool_executor = move |name: String, args: serde_json::Value| {
