@@ -347,7 +347,10 @@ function createApolloClient() {
   const httpLink = new HttpLink({
     uri: GRAPHQL_ENDPOINT,
     fetchOptions: { cache: "no-store" },
-    credentials: "include",
+    // The GraphQL API is cross-origin and does not use cookie authentication.
+    // Sending credentials would make browsers reject the response when the API
+    // intentionally omits Access-Control-Allow-Credentials.
+    credentials: "same-origin",
   });
 
   // Create WebSocket link for subscriptions (client-side only)
