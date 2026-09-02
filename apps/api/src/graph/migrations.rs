@@ -20,7 +20,12 @@ pub async fn run_migrations(client: &GraphClient) {
     // The backfill scans the complete graph and can monopolize a small remote
     // Memgraph pool during startup. Run it only when explicitly requested.
     let backfill_enabled = std::env::var("RUN_GRAPH_BACKFILL")
-        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        })
         .unwrap_or(false);
 
     if backfill_enabled {
@@ -38,7 +43,11 @@ pub async fn run_migrations(client: &GraphClient) {
 async fn ensure_indexes(client: &GraphClient) -> Result<()> {
     info!("Ensuring indexes...");
 
-    for (label, property) in [("Package", "id"), ("Package", "tenant_id"), ("Package", "name_lc")] {
+    for (label, property) in [
+        ("Package", "id"),
+        ("Package", "tenant_id"),
+        ("Package", "name_lc"),
+    ] {
         let statement = format!("CREATE INDEX ON :{}({})", label, property);
         match client.query(neo4rs::query(&statement), None).await {
             Ok(_) => info!(label, property, "Index created/verified"),
