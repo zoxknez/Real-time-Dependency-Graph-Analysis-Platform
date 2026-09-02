@@ -26,12 +26,31 @@ export const MAX_TOTAL_OUTPUT_CHARS = 1500;
 export const TARGET_INTERNAL_BUDGET_CHARS = 1400;
 export const MAX_ERROR_MESSAGE_CHARS = 240;
 
+export function sliceUtf16Safe(value: string, maxCodeUnits: number): string {
+  if (value.length <= maxCodeUnits) return value;
+
+  let end = maxCodeUnits;
+
+  const previous = value.charCodeAt(end - 1);
+  const next = value.charCodeAt(end);
+
+  const previousIsHighSurrogate = previous >= 0xd800 && previous <= 0xdbff;
+  const nextIsLowSurrogate = next >= 0xdc00 && next <= 0xdfff;
+
+  if (previousIsHighSurrogate && nextIsLowSurrogate) {
+    end -= 1;
+  }
+
+  return value.slice(0, end);
+}
+
 export function sanitizeErrorMessage(message: string): string {
   const trimmed = message.trim();
   if (trimmed.length <= MAX_ERROR_MESSAGE_CHARS) {
     return trimmed;
   }
-  return trimmed.slice(0, MAX_ERROR_MESSAGE_CHARS - 3) + "...";
+  const maxPrefix = MAX_ERROR_MESSAGE_CHARS - 3;
+  return sliceUtf16Safe(trimmed, maxPrefix) + "...";
 }
 
 export function formatToolFailure(

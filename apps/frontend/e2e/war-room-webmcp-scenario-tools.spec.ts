@@ -28,6 +28,7 @@ import {
   validateEmptyObjectInput,
   createWebMcpRegistrationOwner,
 } from "../src/lib/webmcp";
+import { sliceUtf16Safe, sanitizeErrorMessage } from "../src/lib/webmcp/bridge/output";
 import { createWarRoomStore, createWarRoomStatePort } from "../src/lib/war-room/state/store";
 import { createWarRoomActions } from "../src/lib/war-room/application/actions";
 import {
@@ -340,6 +341,7 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
 
   test("7C-T7: simulate_api_changes schema rejects additional properties", () => {
     const res = validateSimulateApiChangesInput({
+      baseVersion: "1.0.0",
       operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "foo" }],
       snapshotId: "snapshot-123",
     });
@@ -349,6 +351,7 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
 
   test("7C-T8: simulate_api_changes schema rejects empty operations", () => {
     const res = validateSimulateApiChangesInput({
+      baseVersion: "1.0.0",
       operations: [],
     });
     expect(res.ok).toBe(false);
@@ -376,6 +379,7 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
 
     // Invalid visibility rejected
     const invalidVis = validateSimulateApiChangesInput({
+      baseVersion: "1.0.0",
       operations: [{ kind: "CHANGE_VISIBILITY", symbolPath: "pkg.vis", newVisibility: "super_secret" }],
     });
     expect(invalidVis.ok).toBe(false);
@@ -384,6 +388,7 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
 
   test("7C-T11 & 7C-T12: Target package and snapshot ID cannot be injected in simulate_api_changes", () => {
     const withTargetPkg = validateSimulateApiChangesInput({
+      baseVersion: "1.0.0",
       targetPackageId: "npm:evil",
       operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "foo" }],
     });
@@ -402,6 +407,69 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
     }
   });
 
+  test("7C-R1-T1: Missing baseVersion is rejected before createScenario", async () => {
+    // 1. Schema validation level
+    const valRes = validateSimulateApiChangesInput({
+      operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "foo" }],
+    });
+    expect(valRes.ok).toBe(false);
+    expect((valRes as any).error).toContain("Missing required property 'baseVersion'");
+
+    // 2. Tool handler level: fails closed with INVALID_INPUT before createScenario
+    const harness = createMockHarness();
+    await harness.actions.openPackageGraph(
+      { channel: "AGENT", capturedContextRevision: harness.statePort.getState().contextRevision },
+      { rootPackageId: "npm:sample-lib" }
+    );
+    await harness.actions.selectPackage(
+      { channel: "AGENT", capturedContextRevision: harness.statePort.getState().contextRevision },
+      { selection: { package: { id: "npm:sample-lib", name: "sample-lib", ecosystem: "NPM", version: "1.2.0" } } }
+    );
+
+    const tool = createAdaptiveToolDefinition("simulate_api_changes", harness);
+    const res = await tool.execute({
+      operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "sample-lib.calculateTotal" }],
+    });
+
+    expect(res.ok).toBe(false);
+    expect((res as any).error.code).toBe("INVALID_INPUT");
+    expect(harness.spies.createScenarioCalls).toBe(0);
+  });
+
+  test("7C-R1-T2, 7C-R1-T3 & 7C-R1-T4: selectedPackage.version is never used as baseline revision fallback", async () => {
+    const harness = createMockHarness();
+    await harness.actions.openPackageGraph(
+      { channel: "AGENT", capturedContextRevision: harness.statePort.getState().contextRevision },
+      { rootPackageId: "npm:sample-lib" }
+    );
+    // Package in catalog/graph has ecosystem version 1.2.3, but snapshot revision is rev-abc123
+    await harness.actions.selectPackage(
+      { channel: "AGENT", capturedContextRevision: harness.statePort.getState().contextRevision },
+      { selection: { package: { id: "npm:sample-lib", name: "sample-lib", ecosystem: "NPM", version: "1.2.3" } } }
+    );
+
+    const tool = createAdaptiveToolDefinition("simulate_api_changes", harness);
+
+    // Omitting baseVersion MUST NOT fall back to 1.2.3
+    const resNoBase = await tool.execute({
+      operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "sample-lib.calculateTotal" }],
+    });
+    expect(resNoBase.ok).toBe(false);
+    expect((resNoBase as any).error.code).toBe("INVALID_INPUT");
+    expect(harness.spies.createScenarioCalls).toBe(0);
+
+    // Supplying explicit baseVersion passes "rev-abc123" unchanged
+    const resExplicit = await tool.execute({
+      baseVersion: "rev-abc123",
+      operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "sample-lib.calculateTotal" }],
+    });
+    expect(resExplicit.ok).toBe(true);
+    expect(harness.spies.createScenarioCalls).toBe(1);
+    const activeScenario = harness.statePort.getState().scenario;
+    expect(activeScenario?.baseVersion).toBe("rev-abc123");
+    expect(activeScenario?.baseVersion).not.toBe("1.2.3");
+  });
+
   // ─────────────────────────────────────────────────────────────
   // 7C-T14..7C-T20: ORCHESTRATION, REVISION HANDOFF, AGENT CHANNEL
   // ─────────────────────────────────────────────────────────────
@@ -412,6 +480,7 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
 
     // Initial state: no graph, no selection
     const res = await tool.execute({
+      baseVersion: "1.2.0",
       operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "foo" }],
     });
 
@@ -445,6 +514,7 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
 
     const tool = createAdaptiveToolDefinition("simulate_api_changes", harness);
     const res = await tool.execute({
+      baseVersion: "1.2.0",
       operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "sample-lib.calculateTotal" }],
     });
     expect(res.ok).toBe(true);
@@ -485,6 +555,7 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
 
     const tool = createAdaptiveToolDefinition("simulate_api_changes", harness);
     const res = await tool.execute({
+      baseVersion: "1.2.0",
       operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "sample-lib.calculateTotal" }],
     });
 
@@ -537,8 +608,40 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
   // 7C-T24 & 7C-T25: SIGNAL ISOLATION & PHASE TRANSITION UNREGISTER RACE
   // ─────────────────────────────────────────────────────────────
 
-  test("7C-T25: Phase transition unregister does not cancel running simulate_api_changes execution", async () => {
-    const harness = createMockHarness();
+  test("7C-T25: Phase transition unregister does not cancel running simulate_api_changes execution (with direct signal assertions)", async () => {
+    let releaseRecalculation: () => void;
+    const recalculationGate = new Promise<void>((resolve) => {
+      releaseRecalculation = resolve;
+    });
+
+    const harness = createMockHarness({
+      recalculateScenario: async (_sec, input) => {
+        await recalculationGate;
+        return {
+          ok: true,
+          data: {
+            id: `analysis-${input.scenario.id}`,
+            scenarioId: input.scenario.id,
+            sourceContextRevision: input.sourceContextRevision,
+            affectedEntityIds: [input.scenario.targetPackageId],
+            baselineSurfaceHash: "ae819b558e5c91441c0901d7e988f071b0f5aed88de816a3184ef833001ed86c",
+            candidateSurfaceHash: "c17db843e71e321fd9cb73bae56fe7e73fce8c968a73c3a6bda74168cf36a5aa",
+            changed: true,
+            totalBreakingChanges: 1,
+            returnedBreakingChanges: 1,
+            breakingChangesTruncated: false,
+            breakingChanges: [
+              {
+                changeType: "FunctionRemoved",
+                symbolPath: "sample-lib.calculateTotal",
+                description: "Function calculateTotal was removed",
+                severity: "breaking",
+              },
+            ],
+          },
+        };
+      },
+    });
 
     // 1. Setup in NODE_SELECTED
     await harness.actions.openPackageGraph(
@@ -552,12 +655,16 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
       }
     );
 
-    // Mock platform adapter to track registered tools
+    // Mock platform adapter to track registered tools and capture actual registration signal
+    let capturedRegistrationSignal: AbortSignal | undefined;
     const registeredTools = new Set<string>();
     const platformAdapter: WebMcpPlatformAdapter = {
       isAvailable: () => true,
       getSnapshot: () => ({ availability: "AVAILABLE" }),
       registerTool: async (def, options) => {
+        if (def.name === "simulate_api_changes") {
+          capturedRegistrationSignal = options?.signal;
+        }
         registeredTools.add(def.name);
         options?.signal?.addEventListener("abort", () => {
           registeredTools.delete(def.name);
@@ -581,19 +688,26 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
     );
     expect(registeredTools.has("simulate_api_changes")).toBe(true);
 
-    // Now start executing simulate_api_changes with a dedicated execution signal
+    // Distinct execution controller
     const executionAbortController = new AbortController();
     const tool = createAdaptiveToolDefinition("simulate_api_changes", harness);
 
-    // Mid-execution: phase changes to SIMULATION_READY, which removes simulate_api_changes from desired surface
+    // 7C-R1-T5 & 7C-R1-T6: Signals are distinct objects
+    expect(capturedRegistrationSignal).toBeDefined();
+    expect(capturedRegistrationSignal !== executionAbortController.signal).toBe(true);
+    expect(capturedRegistrationSignal!.aborted).toBe(false);
+    expect(executionAbortController.signal.aborted).toBe(false);
+
+    // Start execution with explicit baseVersion (paused in recalculation)
     const executionPromise = tool.execute(
       {
+        baseVersion: "1.2.0",
         operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "sample-lib.calculateTotal" }],
       },
       { signal: executionAbortController.signal }
     );
 
-    // Trigger reconciliation for SIMULATION_READY (unregisters simulate_api_changes)
+    // Mid-execution: phase changes to SIMULATION_READY, which removes simulate_api_changes from desired surface
     const simulationReadySurface = deriveDesiredToolSurface({
       phase: "SIMULATION_READY",
       contextRevision: harness.statePort.getState().contextRevision + 1,
@@ -607,13 +721,18 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
     // simulate_api_changes was unregistered from platform:
     expect(registeredTools.has("simulate_api_changes")).toBe(false);
 
-    // BUT the active execution finishes successfully because executionSignal was NOT aborted!
+    // 7C-R1-T7 & 7C-R1-T8: Direct signal state assertions
+    expect(capturedRegistrationSignal!.aborted).toBe(true);
+    expect(executionAbortController.signal.aborted).toBe(false);
+
+    // 7C-R1-T9: Release recalculation and verify active execution finishes successfully
+    releaseRecalculation!();
     const res = await executionPromise;
     expect(res.ok).toBe(true);
     expect((res as any).tool).toBe("simulate_api_changes");
   });
 
-  test("7C-T26: Explicit execution abort returns CANCELLED", async () => {
+  test("7C-T26 & 7C-R1-T10: Explicit execution abort returns CANCELLED", async () => {
     const harness = createMockHarness();
 
     await harness.actions.openPackageGraph(
@@ -632,7 +751,10 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
 
     const tool = createAdaptiveToolDefinition("simulate_api_changes", harness);
     const res = await tool.execute(
-      { operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "sample-lib.calculateTotal" }] },
+      {
+        baseVersion: "1.2.0",
+        operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "sample-lib.calculateTotal" }],
+      },
       { signal: abortController.signal }
     );
 
@@ -780,6 +902,7 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
 
     const tool = createAdaptiveToolDefinition("simulate_api_changes", harness);
     const res = await tool.execute({
+      baseVersion: "1.2.0",
       operations: [{ kind: "REMOVE_SYMBOL", symbolPath: "foo" }],
     });
 
@@ -854,5 +977,42 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
 
     expect([...reg1.toolNames].sort()).toEqual([...reg2.toolNames].sort());
     expect(reg1.toolNames.has("simulate_api_changes")).toBe(true);
+  });
+
+  // ─────────────────────────────────────────────────────────────
+  // 7C-R1-T11..7C-R1-T13: SURROGATE-SAFE UTF-16 ERROR TRUNCATION
+  // ─────────────────────────────────────────────────────────────
+
+  test("7C-R1-T11: ASCII error truncation preserves exact length and ellipsis", () => {
+    const longAscii = "A".repeat(300);
+    const sanitized = sanitizeErrorMessage(longAscii);
+    expect(sanitized.length).toBe(240);
+    expect(sanitized.endsWith("...")).toBe(true);
+    expect(sanitized).toBe("A".repeat(237) + "...");
+  });
+
+  test("7C-R1-T12: Emoji crossing UTF-16 boundary is not split into lone surrogate", () => {
+    // 236 'A's + emoji '👋' (\uD83D\uDC4B, 2 UTF-16 code units) + 'BBBB'
+    // Index 237 lands directly between \uD83D (index 236) and \uDC4B (index 237)
+    const crossingStr = "A".repeat(236) + "👋BBBB";
+    const sanitized = sanitizeErrorMessage(crossingStr);
+
+    // The high surrogate must not be retained as a lone surrogate
+    expect(sanitized.endsWith("...")).toBe(true);
+    const prefix = sanitized.slice(0, -3);
+    expect(prefix.charCodeAt(prefix.length - 1)).not.toBe(0xd83d); // No high surrogate
+    expect(prefix).toBe("A".repeat(236));
+    expect(sanitized.length).toBe(239); // 236 + 3 = 239 <= 240
+
+    // Verify well-formedness: lone surrogates fail encodeURIComponent
+    expect(() => encodeURIComponent(sanitized)).not.toThrow();
+  });
+
+  test("7C-R1-T13: Multiple non-BMP characters remain well-formed under truncation", () => {
+    const nonBmpStr = "😀🚀🧪".repeat(50); // Each emoji is 2 code units = 6 code units per repeat * 50 = 300
+    const sanitized = sanitizeErrorMessage(nonBmpStr);
+    expect(sanitized.length).toBeLessThanOrEqual(240);
+    expect(sanitized.endsWith("...")).toBe(true);
+    expect(() => encodeURIComponent(sanitized)).not.toThrow();
   });
 });

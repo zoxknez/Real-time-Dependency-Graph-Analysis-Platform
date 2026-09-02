@@ -447,16 +447,7 @@ export function createAdaptiveToolDefinition(
 
           const targetPackage = snapshot.state.selection.package;
           const targetPackageId = targetPackage.id;
-
-          const baseVersion = valRes.value.baseVersion ?? targetPackage.version;
-          if (!baseVersion || baseVersion.trim().length === 0) {
-            return formatToolFailure(
-              "simulate_api_changes",
-              snapshot.contextRevision,
-              "INVALID_STATE",
-              "No exact baseline version available for selected package. Specify baseVersion or select a versioned package."
-            );
-          }
+          const baseVersion = valRes.value.baseVersion;
 
           const patchOperations: ScenarioPatchOperation[] = valRes.value.operations.map((op, idx) => {
             const operationId = `wmcp-agent-op-${snapshot.contextRevision}-${idx}`;

@@ -122,7 +122,7 @@ export interface RawSimulateOperation {
 }
 
 export interface ValidatedSimulateApiChangesInput {
-  readonly baseVersion?: string;
+  readonly baseVersion: string;
   readonly operations: readonly RawSimulateOperation[];
 }
 
@@ -143,13 +143,13 @@ export function validateSimulateApiChangesInput(
     }
   }
 
-  let baseVersion: string | undefined = undefined;
-  if (obj.baseVersion !== undefined) {
-    if (typeof obj.baseVersion !== "string" || obj.baseVersion.trim().length === 0 || obj.baseVersion.length > 128) {
-      return { ok: false, error: "baseVersion must be a non-empty string <= 128 characters" };
-    }
-    baseVersion = obj.baseVersion.trim();
+  if (obj.baseVersion === undefined || obj.baseVersion === null) {
+    return { ok: false, error: "Missing required property 'baseVersion' - an explicit baseVersion matching a committed snapshot revision is required" };
   }
+  if (typeof obj.baseVersion !== "string" || obj.baseVersion.trim().length === 0 || obj.baseVersion.length > 128) {
+    return { ok: false, error: "baseVersion must be a non-empty string <= 128 characters" };
+  }
+  const baseVersion = obj.baseVersion.trim();
 
   if (!Array.isArray(obj.operations)) {
     return { ok: false, error: "operations must be an array of patch operations" };

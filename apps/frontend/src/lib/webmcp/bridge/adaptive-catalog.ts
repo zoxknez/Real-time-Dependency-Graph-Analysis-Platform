@@ -122,7 +122,7 @@ export const SIMULATE_API_CHANGES_SCHEMA = {
       type: "string",
       minLength: 1,
       maxLength: 128,
-      description: "Optional exact base version revision to evaluate changes against. Defaults to the selected package version.",
+      description: "Exact authoritative base version revision matching a committed Package-scope snapshot.",
     },
     operations: {
       type: "array",
@@ -199,7 +199,7 @@ export const SIMULATE_API_CHANGES_SCHEMA = {
       },
     },
   },
-  required: ["operations"],
+  required: ["baseVersion", "operations"],
   additionalProperties: false,
 } as const;
 
