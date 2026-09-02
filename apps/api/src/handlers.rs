@@ -43,6 +43,8 @@ pub struct AppState {
 pub struct HealthResponse {
     pub status: &'static str,
     pub version: &'static str,
+    #[serde(rename = "buildCommit")]
+    pub build_commit: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -50,38 +52,6 @@ pub struct ReadinessResponse {
     pub status: &'static str,
     pub memgraph: bool,
     pub redis: bool,
-}
-
-/// Health check endpoint (liveness probe)
-#[allow(dead_code)]
-pub async fn health_check() -> Json<HealthResponse> {
-    Json(HealthResponse {
-        status: "healthy",
-        version: env!("CARGO_PKG_VERSION"),
-    })
-}
-
-/// Readiness check endpoint (dependency checks)
-#[allow(dead_code)]
-pub async fn readiness_check(State(state): State<AppState>) -> Json<ReadinessResponse> {
-    let memgraph_ok = state.graph.health_check().await;
-
-    let redis_ok = match &state.cache {
-        Some(cache) => cache.health_check().await,
-        None => true, // Redis disabled, consider ready
-    };
-
-    let status = if memgraph_ok && redis_ok {
-        "ready"
-    } else {
-        "degraded"
-    };
-
-    Json(ReadinessResponse {
-        status,
-        memgraph: memgraph_ok,
-        redis: redis_ok,
-    })
 }
 
 /// Memgraph memory statistics response
@@ -643,6 +613,19 @@ mod tests {
         AnalysisStatus, PublicApiExtractor, PublicApiScope, PublicApiSurface, PublicApiSymbol,
         PublicSymbolSignature, SourceProvenance,
     };
+
+    #[test]
+    fn health_response_serializes_optional_build_commit_safely() {
+        let value = serde_json::to_value(HealthResponse {
+            status: "healthy",
+            version: "0.1.0",
+            build_commit: Some("abc123".to_string()),
+        })
+        .expect("health response should serialize");
+
+        assert_eq!(value["buildCommit"], "abc123");
+        assert!(value.get("MEMGRAPH_URI").is_none());
+    }
 
     struct TestTempDir {
         path: std::path::PathBuf,

@@ -129,6 +129,7 @@ pub struct MemgraphConfig {
     pub connect_timeout_secs: u64,
     pub query_timeout_secs: u64,
     pub max_retries: u32,
+    pub circuit_failure_threshold: u32,
     pub health_timeout_secs: u64,
 }
 
@@ -386,6 +387,11 @@ impl Config {
                     .and_then(|s| s.parse().ok())
                     .map(|v: u32| v.min(3))
                     .unwrap_or(0),
+                circuit_failure_threshold: env::var("MEMGRAPH_CIRCUIT_FAILURE_THRESHOLD")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .map(|v: u32| v.clamp(1, 20))
+                    .unwrap_or(3),
                 health_timeout_secs: env::var("MEMGRAPH_HEALTH_TIMEOUT_SECS")
                     .ok()
                     .and_then(|s| s.parse().ok())

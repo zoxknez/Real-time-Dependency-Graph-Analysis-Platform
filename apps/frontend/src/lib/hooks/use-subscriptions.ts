@@ -276,7 +276,7 @@ export function useDependencyImpact(options: UseDependencyImpactOptions = {}) {
     { dependencyImpact: DependencyImpactEvent }
   >(DEPENDENCY_IMPACT, {
     variables: { ecosystem, minImpactScore },
-    skip: paused,
+    skip: paused || !LIVE_INGESTION_ENABLED,
     shouldResubscribe: true,
     onData: ({ data }) => {
       const event = data.data?.dependencyImpact;
@@ -322,7 +322,7 @@ export function useWatchPackages(options: UseWatchPackagesOptions) {
     WatchPackagesVariables
   >(WATCH_PACKAGES, {
     variables: { packageId: activePackageId },
-    skip: paused || !activePackageId,
+    skip: paused || !activePackageId || !LIVE_INGESTION_ENABLED,
     shouldResubscribe: true,
     onData: ({ data }) => {
       const versionEvent = data.data?.watchPackages;
@@ -369,7 +369,7 @@ export function useDependencyGraphUpdates(options: UseDependencyGraphUpdatesOpti
     { minImpactScore?: number }
   >(DEPENDENCY_GRAPH_UPDATES, {
     variables: { minImpactScore: 0 },
-    skip: paused || !rootPackageId,
+    skip: paused || !rootPackageId || !LIVE_INGESTION_ENABLED,
     shouldResubscribe: true,
     onData: ({ data }) => {
       const impactEvent = data.data?.dependencyGraphUpdate;

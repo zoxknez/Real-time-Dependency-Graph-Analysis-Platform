@@ -36,6 +36,8 @@ pub struct MemgraphConfig {
     pub query_timeout: Duration,
     /// Number of retries for failed queries
     pub max_retries: u32,
+    /// Number of failures before opening the application circuit
+    pub circuit_failure_threshold: u32,
     /// Maximum duration for the single-attempt readiness probe
     pub health_timeout: Duration,
 }
@@ -50,6 +52,7 @@ impl Default for MemgraphConfig {
             connect_timeout: Duration::from_secs(30),
             query_timeout: Duration::from_secs(60),
             max_retries: 3,
+            circuit_failure_threshold: 5,
             health_timeout: Duration::from_secs(2),
         }
     }
@@ -82,6 +85,11 @@ impl MemgraphConfig {
             max_retries: std::env::var("MEMGRAPH_MAX_RETRIES")
                 .ok()
                 .and_then(|v| v.parse().ok())
+                .unwrap_or(3),
+            circuit_failure_threshold: std::env::var("MEMGRAPH_CIRCUIT_FAILURE_THRESHOLD")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .map(|v: u32| v.clamp(1, 20))
                 .unwrap_or(3),
             health_timeout: Duration::from_secs(
                 std::env::var("MEMGRAPH_HEALTH_TIMEOUT_SECS")
@@ -143,7 +151,7 @@ impl MemgraphClient {
             "memgraph",
             "query",
             crate::circuit_breaker::CircuitBreakerConfig {
-                failure_threshold: config.max_retries, // align with config
+                failure_threshold: config.circuit_failure_threshold,
                 success_threshold: 2,
                 timeout_ms: 30_000,
                 half_open_requests: 5,
@@ -570,6 +578,8 @@ mod tests {
         assert_eq!(config.uri, "bolt://localhost:7687");
         assert_eq!(config.max_connections, 10);
         assert_eq!(config.max_retries, 3);
+        assert_eq!(config.circuit_failure_threshold, 5);
+        assert_eq!(config.health_timeout, Duration::from_secs(2));
     }
 
     #[test]

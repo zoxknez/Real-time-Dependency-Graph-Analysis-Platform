@@ -11,12 +11,13 @@ interface LiveStatsCardProps {
 }
 
 export function LiveStatsCard({ className }: LiveStatsCardProps) {
+  const liveIngestionEnabled = process.env.NEXT_PUBLIC_LIVE_INGESTION_ENABLED === "true";
   const connectionStatus = useConnectionStatus();
   const { stats, history, loading: _loading } = useLiveStats({
-    paused: process.env.NEXT_PUBLIC_LIVE_INGESTION_ENABLED !== "true",
+    paused: !liveIngestionEnabled,
   });
 
-  const isConnected = connectionStatus === "connected";
+  const isConnected = liveIngestionEnabled && connectionStatus === "connected";
 
   return (
     <motion.div
@@ -38,12 +39,10 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
         <ConnectionDot connected={isConnected} />
       </div>
 
-      {/* Main Stats fallback if not connected */}
-      {!isConnected && (
-        <div className="absolute inset-x-0 bottom-0 top-16 bg-surface-900/40 backdrop-blur-[2px] z-20 flex flex-col items-center justify-center p-6 text-center">
-          <Activity className="w-8 h-8 text-accent-500/50 mb-2 animate-pulse" />
-          <p className="text-sm font-semibold theme-text-primary">Simulated Feed</p>
-          <p className="text-xs theme-text-muted max-w-[200px]">Live connection pending. Displaying simulated activity for preview.</p>
+      {!liveIngestionEnabled && (
+        <div className="mb-4 rounded-lg border border-white/10 bg-white/5 p-3 text-center">
+          <p className="text-sm font-semibold theme-text-primary">Live ingestion disabled</p>
+          <p className="text-xs theme-text-muted">Seeded demo environment</p>
         </div>
       )}
 
@@ -102,12 +101,7 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
             </div>
             <div className="space-y-2 max-h-[140px] overflow-hidden relative">
               <AnimatePresence mode="popLayout">
-                {(stats?.ecosystemActivity || [
-                  { ecosystem: "CARGO", packagesAdded: 12, versionsAdded: 12, changeRatePercent: 0 },
-                  { ecosystem: "PY_PI", packagesAdded: 8, versionsAdded: 8, changeRatePercent: 0 },
-                  { ecosystem: "NPM", packagesAdded: 15, versionsAdded: 15, changeRatePercent: 0 },
-                  { ecosystem: "MAVEN", packagesAdded: 5, versionsAdded: 5, changeRatePercent: 0 }
-                ]).slice(0, 4).map((eco, i) => (
+                {(liveIngestionEnabled ? (stats?.ecosystemActivity || []) : []).slice(0, 4).map((eco, i) => (
                   <motion.div
                     key={eco.ecosystem + i}
                     initial={{ opacity: 0, x: -10 }}
@@ -122,10 +116,10 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
                         style={{ backgroundColor: eco.ecosystem === "NPM" ? "#cb3837" : (eco.ecosystem === "CARGO" ? "#f7a41d" : "#3776ab") }}
                       />
                       <span className="theme-text-secondary group-hover:theme-text-primary">
-                        {eco.ecosystem} indexing update
+                        {eco.ecosystem} activity
                       </span>
                     </div>
-                    <span className="theme-text-faint text-[10px]">just now</span>
+                    <span className="theme-text-faint text-[10px]">live</span>
                   </motion.div>
                 ))}
               </AnimatePresence>

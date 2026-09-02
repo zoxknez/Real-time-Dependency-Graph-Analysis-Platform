@@ -438,6 +438,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_one_failure_does_not_open_threshold_three_circuit() {
+        let breaker = CircuitBreaker::new(
+            "test_independent_threshold",
+            "operation",
+            CircuitBreakerConfig {
+                failure_threshold: 3,
+                success_threshold: 1,
+                timeout_ms: 1000,
+                half_open_requests: 1,
+            },
+        );
+
+        let result = breaker.call(async { Err::<(), _>("transient") }).await;
+        assert!(result.is_err());
+        assert_eq!(breaker.state(), CircuitState::Closed);
+    }
+
+    #[tokio::test]
     async fn test_circuit_breaker_half_open_after_timeout() {
         let breaker = CircuitBreaker::new(
             "test",

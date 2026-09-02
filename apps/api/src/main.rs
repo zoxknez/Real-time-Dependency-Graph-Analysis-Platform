@@ -291,6 +291,10 @@ async fn health_handler() -> Json<handlers::HealthResponse> {
     Json(handlers::HealthResponse {
         status: "healthy",
         version: env!("CARGO_PKG_VERSION"),
+        build_commit: std::env::var("RENDER_GIT_COMMIT")
+            .or_else(|_| std::env::var("GIT_COMMIT_SHA"))
+            .ok()
+            .filter(|value| !value.trim().is_empty()),
     })
 }
 

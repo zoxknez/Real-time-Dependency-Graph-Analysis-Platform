@@ -43,6 +43,7 @@ impl GraphClient {
             connect_timeout: std::time::Duration::from_secs(config.memgraph.connect_timeout_secs),
             query_timeout: std::time::Duration::from_secs(config.memgraph.query_timeout_secs),
             max_retries: config.memgraph.max_retries,
+            circuit_failure_threshold: config.memgraph.circuit_failure_threshold,
             health_timeout: std::time::Duration::from_secs(config.memgraph.health_timeout_secs),
         };
 
