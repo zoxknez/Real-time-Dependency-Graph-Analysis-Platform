@@ -17,8 +17,18 @@ pub async fn run_migrations(client: &GraphClient) {
         error!("Failed to create indexes: {}", e);
     }
 
-    if let Err(e) = backfill_name_lc(client).await {
-        error!("Failed to backfill name_lc: {}", e);
+    // The backfill scans the complete graph and can monopolize a small remote
+    // Memgraph pool during startup. Run it only when explicitly requested.
+    let backfill_enabled = std::env::var("RUN_GRAPH_BACKFILL")
+        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false);
+
+    if backfill_enabled {
+        if let Err(e) = backfill_name_lc(client).await {
+            error!("Failed to backfill name_lc: {}", e);
+        }
+    } else {
+        info!("Skipping name_lc backfill; set RUN_GRAPH_BACKFILL=true to run it explicitly");
     }
 
     info!("✅ Graph migrations completed");
@@ -28,14 +38,13 @@ pub async fn run_migrations(client: &GraphClient) {
 async fn ensure_indexes(client: &GraphClient) -> Result<()> {
     info!("Ensuring indexes...");
 
-    // Create index on Package(name_lc) for fast case-insensitive search
-    match client
-        .query(neo4rs::query("CREATE INDEX ON :Package(name_lc)"), None)
-        .await
-    {
-        Ok(_) => info!("Index on :Package(name_lc) created/verified"),
-        Err(e) => warn!("Index creation note (may already exist): {}", e),
-    };
+    for (label, property) in [("Package", "id"), ("Package", "tenant_id"), ("Package", "name_lc")] {
+        let statement = format!("CREATE INDEX ON :{}({})", label, property);
+        match client.query(neo4rs::query(&statement), None).await {
+            Ok(_) => info!(label, property, "Index created/verified"),
+            Err(e) => warn!(label, property, error = %e, "Index creation note (may already exist)"),
+        }
+    }
 
     Ok(())
 }
