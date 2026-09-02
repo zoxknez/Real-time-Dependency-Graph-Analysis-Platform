@@ -155,6 +155,7 @@ pub struct PostgresConfig {
 pub struct QdrantConfig {
     pub enabled: bool,
     pub url: String,
+    pub api_key: Option<String>,
     pub collection: String,
     pub dimension: usize,
 }
@@ -395,6 +396,7 @@ impl Config {
                     .map(|s| matches!(s.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
                     .unwrap_or(true),
                 url: env::var("QDRANT_URL").unwrap_or_else(|_| "http://127.0.0.1:6334".to_string()),
+                api_key: env::var("QDRANT_API_KEY").ok().filter(|key| !key.is_empty()),
                 collection: env::var("QDRANT_COLLECTION")
                     .unwrap_or_else(|_| "package_embeddings".to_string()),
                 dimension: env::var("QDRANT_DIMENSION")

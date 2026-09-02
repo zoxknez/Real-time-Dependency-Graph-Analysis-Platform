@@ -86,7 +86,7 @@ pub async fn build_schema(
         if let Some(embedder) = embedder {
             let qdrant_config = QdrantConfig {
                 url: config.qdrant.url.clone(),
-                api_key: None,
+                api_key: config.qdrant.api_key.clone(),
                 collection: config.qdrant.collection.clone(),
                 dimension: config.qdrant.dimension as u64,
                 timeout: std::time::Duration::from_secs(30),
