@@ -454,6 +454,12 @@ function GraphPageContent() {
     }
   }, [graphData.nodes.length]);
 
+  const handleGraphEngineStop = useCallback(() => {
+    // Fit after the force simulation has positioned the nodes. The data-length
+    // effect can run before the dynamically loaded 3D ref exists.
+    graphRef.current?.zoomToFit(800, 120);
+  }, []);
+
   // Export functions
   const exportAsJSON = useCallback(() => {
     const data = {
@@ -644,6 +650,7 @@ function GraphPageContent() {
             enableNavigationControls={true}
             warmupTicks={100}
             cooldownTicks={100}
+            onEngineStop={handleGraphEngineStop}
           />
         ) : !isLoading && !uiError ? (
           <div className="w-full h-full flex items-center justify-center">
