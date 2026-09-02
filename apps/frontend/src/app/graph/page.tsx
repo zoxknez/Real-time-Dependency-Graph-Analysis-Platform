@@ -206,7 +206,7 @@ function GraphPageContent() {
       depth: node.depth,
       // Keep the root visually dominant without letting the 3D spheres
       // overwhelm the viewport or collide with their labels.
-      val: node.isRoot ? 18 : Math.max(6, 14 - node.depth * 2),
+      val: node.isRoot ? 12 : Math.max(5, 9 - node.depth),
     }));
 
     const links: GraphLink[] = graphProjection.links.map((link: WarRoomProjectionLink) => ({

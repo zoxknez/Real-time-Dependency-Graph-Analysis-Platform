@@ -35,7 +35,7 @@ export function GraphControls({
     <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="absolute top-4 left-4 flex flex-col gap-3 z-40"
+      className="absolute top-4 left-4 flex flex-row items-start gap-3 z-40"
     >
       {/* Zoom Controls */}
       <div className="glass-card p-1.5 flex flex-col gap-1.5 shadow-2xl border-white/10 backdrop-blur-xl">
@@ -109,18 +109,18 @@ export function GraphControls({
       </div>
 
       {/* Depth Control */}
-      <div className="glass-card p-4 shadow-2xl border-white/10 backdrop-blur-xl">
-        <div className="flex items-center gap-2 mb-3">
+      <div className="glass-card p-3 shadow-2xl border-white/10 backdrop-blur-xl">
+        <div className="flex items-center gap-2 mb-2">
           <Settings2 className="w-4 h-4 text-primary-400" />
           <span className="text-[10px] theme-text-faint uppercase font-bold tracking-wider">Depth</span>
         </div>
-        <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-1.5">
           {[1, 2, 3, 4].map((depth) => (
             <button
               key={depth}
               onClick={() => onMaxDepthChange(depth)}
               className={cn(
-                "w-9 h-9 rounded-xl text-sm font-bold transition-all flex items-center justify-center border",
+                "w-8 h-8 rounded-lg text-sm font-bold transition-all flex items-center justify-center border",
                 maxDepth === depth
                   ? "bg-primary-500 border-primary-400 text-white shadow-[0_0_15px_rgba(99,102,241,0.4)]"
                   : "theme-inner-card border-white/5 theme-text-muted hover:theme-text-primary hover:border-primary-500/30 hover:shadow-[0_0_10px_rgba(99,102,241,0.1)]"
