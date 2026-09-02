@@ -272,10 +272,10 @@ impl Config {
 
         // CORS_ORIGINS must be set and not contain wildcard with credentials
         if let Ok(origins) = env::var("CORS_ORIGINS") {
-            if origins == "*" {
-                let allow_creds = env::var("CORS_ALLOW_CREDENTIALS")
-                    .map(|v| v == "true" || v == "1")
-                    .unwrap_or(true);
+                if origins == "*" {
+                    let allow_creds = env::var("CORS_ALLOW_CREDENTIALS")
+                        .map(|v| v == "true" || v == "1")
+                        .unwrap_or(false);
 
                 if allow_creds {
                     panic!(
@@ -346,7 +346,8 @@ impl Config {
                     .unwrap_or_else(|_| vec!["http://localhost:3000".to_string()]),
                 allow_credentials: env::var("CORS_ALLOW_CREDENTIALS")
                     .map(|v| v == "true" || v == "1")
-                    .unwrap_or(true),
+                    .unwrap_or(false)
+                    && env::var("CORS_ORIGINS").map(|v| v != "*").unwrap_or(true),
                 max_age_secs: env::var("CORS_MAX_AGE")
                     .ok()
                     .and_then(|s| s.parse().ok())
