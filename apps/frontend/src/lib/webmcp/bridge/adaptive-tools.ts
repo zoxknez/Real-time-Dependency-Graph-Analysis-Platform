@@ -37,6 +37,7 @@ import {
   validateSetScenarioPriorityInput,
   validateSetScenarioExclusionInput,
   validateInspectCriticalPathsInput,
+  validateFocusCriticalPathInput,
 } from "./adaptive-validation";
 import {
   validateSearchPackagesInput,
@@ -53,6 +54,8 @@ import {
   buildBudgetedPriorityOutput,
   buildBudgetedExclusionOutput,
   buildBudgetedCriticalPathsOutput,
+  buildBudgetedMigrationPlanOutput,
+  buildBudgetedCriticalPathFocusOutput,
 } from "./output";
 import {
   captureExecutionSnapshot,
@@ -879,7 +882,51 @@ export function createAdaptiveToolDefinition(
             scenarioId: plan.scenarioId,
             sourceReviewId: plan.sourceReviewId,
             contextRevision: snapshot.contextRevision,
+            stepsTotal: plan.stepsTotal ?? 0,
+            returnedSteps: plan.returnedSteps ?? 0,
+            stepsTruncated: plan.stepsTruncated ?? false,
+            steps: plan.steps ?? [],
           });
+        },
+      };
+    }
+
+    case "generate_migration_plan": {
+      const entry = getToolCatalogEntry("generate_migration_plan");
+      return {
+        name: "generate_migration_plan",
+        description: entry.description,
+        inputSchema: entry.inputSchema,
+        annotations: entry.annotations,
+        execute: async (input: Record<string, unknown>, execContext?: WebMcpPlatformExecutionContext) => {
+          const snapshot = captureExecutionSnapshot(statePort);
+          const admission = checkExecutionAdmission("generate_migration_plan", snapshot, platformAdapter);
+          if (!admission.admitted) return admission.failureOutput;
+          const valRes = validateEmptyObjectInput(input, "generate_migration_plan");
+          if (!valRes.ok) return formatToolFailure("generate_migration_plan", snapshot.contextRevision, "INVALID_INPUT", valRes.error);
+          const result = await actions.generateMigrationPlan({ channel: "AGENT", capturedContextRevision: snapshot.contextRevision, signal: execContext?.signal });
+          if (!result.ok) return formatToolFailure("generate_migration_plan", result.contextRevision, result.error.code, result.error.message);
+          return buildBudgetedMigrationPlanOutput("generate_migration_plan", result.contextRevision, result.data);
+        },
+      };
+    }
+
+    case "focus_critical_path": {
+      const entry = getToolCatalogEntry("focus_critical_path");
+      return {
+        name: "focus_critical_path",
+        description: entry.description,
+        inputSchema: entry.inputSchema,
+        annotations: entry.annotations,
+        execute: async (input: Record<string, unknown>, execContext?: WebMcpPlatformExecutionContext) => {
+          const snapshot = captureExecutionSnapshot(statePort);
+          const admission = checkExecutionAdmission("focus_critical_path", snapshot, platformAdapter);
+          if (!admission.admitted) return admission.failureOutput;
+          const valRes = validateFocusCriticalPathInput(input);
+          if (!valRes.ok) return formatToolFailure("focus_critical_path", snapshot.contextRevision, "INVALID_INPUT", valRes.error);
+          const result = await actions.focusCriticalPath({ channel: "AGENT", capturedContextRevision: snapshot.contextRevision, signal: execContext?.signal }, valRes.value);
+          if (!result.ok) return formatToolFailure("focus_critical_path", result.contextRevision, result.error.code, result.error.message);
+          return buildBudgetedCriticalPathFocusOutput("focus_critical_path", result.contextRevision, result.data);
         },
       };
     }

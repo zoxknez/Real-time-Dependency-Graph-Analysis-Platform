@@ -200,7 +200,7 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
     expect(catalogKeys.sort()).toEqual([...ALL_CANONICAL_ACTION_NAMES].sort());
   });
 
-  test("R2-T2 & R2-T3. Authority Matrix: Exactly 14 EXECUTABLE vs 2 DEFERRED tools", () => {
+  test("R2-T2 & R2-T3. Authority Matrix: Exactly 16 EXECUTABLE vs 0 DEFERRED tools", () => {
     const expectedExecutable: WebMcpActionName[] = [
       "search_packages",
       "open_package_graph",
@@ -216,12 +216,11 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
       "set_scenario_priority",
       "set_scenario_exclusion",
       "inspect_critical_paths",
-    ];
-
-    const expectedDeferred: WebMcpActionName[] = [
       "generate_migration_plan",
       "focus_critical_path",
     ];
+
+    const expectedDeferred: WebMcpActionName[] = [];
 
     const actualExecutable = ALL_CANONICAL_ACTION_NAMES.filter(
       (name) => WEB_MCP_TOOL_CATALOG[name].bindingStatus === "EXECUTABLE"
@@ -232,8 +231,8 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
 
     expect(actualExecutable.sort()).toEqual([...expectedExecutable].sort());
     expect(actualDeferred.sort()).toEqual([...expectedDeferred].sort());
-    expect(actualExecutable.length).toBe(14);
-    expect(actualDeferred.length).toBe(2);
+    expect(actualExecutable.length).toBe(16);
+    expect(actualDeferred.length).toBe(0);
   });
 
   test("R2-T7, R2-T8, R2-T9. Schema Readiness: Exactly 16 FROZEN vs 0 PENDING_DOMAIN_CONTRACT", () => {
@@ -293,13 +292,10 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
     expect(simEntry.authority).toBe("WarRoomActions.createScenario -> WarRoomActions.recalculateScenario");
   });
 
-  test("R2-T4, R2-T5, R2-T6, R2-T10. Deferred & Pending Tool Factory: Fails closed on instantiation", () => {
+  test("R2-T4, R2-T5, R2-T6, R2-T10. No deferred tools remain after WMCP-12", () => {
     const harness = setupTestHarness();
 
-    const deferredTools: WebMcpActionName[] = [
-      "generate_migration_plan",
-      "focus_critical_path",
-    ];
+    const deferredTools: WebMcpActionName[] = [];
 
     for (const name of deferredTools) {
       expect(() => createAdaptiveToolDefinition(name, harness)).toThrowError(

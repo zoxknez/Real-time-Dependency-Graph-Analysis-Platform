@@ -37,6 +37,8 @@ import {
   AttachHumanReviewRequest,
   ChangeHumanReviewRequest,
   CalculateBlastRadiusRequest,
+  FocusCriticalPathRequest,
+  FocusCriticalPathResult,
 } from "./types";
 import {
   evaluateVersionAwareExposure,
@@ -63,6 +65,7 @@ import {
   validateCalculateBlastRadiusRequest,
   validateFocusGraphNodesRequest,
   validateGraphServiceOutput,
+  validateFocusCriticalPathRequest,
 } from "./validation";
 import {
   FocusGraphNodesRequest,
@@ -192,6 +195,11 @@ export interface WarRoomActions {
     invocation: WarRoomInvocationContext,
     request?: InspectCriticalPathsRequest
   ): Promise<WarRoomActionResult<InspectCriticalPathsResult>>;
+
+  focusCriticalPath(
+    invocation: WarRoomInvocationContext,
+    request: FocusCriticalPathRequest
+  ): Promise<WarRoomActionResult<FocusCriticalPathResult>>;
 }
 
 function isAbortFailure(err: unknown, signal?: AbortSignal): boolean {
@@ -1445,6 +1453,7 @@ export function createWarRoomActions(
       const truncated = totalPaths > maxPaths;
 
       const criticalPaths: CriticalPathItem[] = bounded.map((p: RawCriticalPath, idx: number) => ({
+        pathId: `${state.scenario.id}:${p.sourceEntityId}`,
         pathIndex: idx,
         sourceEntityId: p.sourceEntityId,
         targetEntityId: p.targetEntityId,
@@ -1466,6 +1475,27 @@ export function createWarRoomActions(
         false,
         currentRevision()
       );
+    },
+
+    async focusCriticalPath(
+      invocation: WarRoomInvocationContext,
+      request: FocusCriticalPathRequest
+    ): Promise<WarRoomActionResult<FocusCriticalPathResult>> {
+      const invErr = validateInvocationContext(invocation);
+      if (invErr) return createActionFailure(invErr, currentRevision());
+      const reqErr = validateFocusCriticalPathRequest(request);
+      if (reqErr) return createActionFailure(reqErr, currentRevision());
+      const state = statePort.getState();
+      if (state.phase !== "PLAN_READY") {
+        return createActionFailure(invalidStateError(`focusCriticalPath is only valid in PLAN_READY, current phase is ${state.phase}`), currentRevision());
+      }
+      const paths = await this.inspectCriticalPaths(invocation, { maxPaths: 10 });
+      if (!paths.ok) return createActionFailure(paths.error, paths.contextRevision);
+      const path = paths.data.paths.find((item) => item.pathId === request.pathId);
+      if (!path) return createActionFailure(createDomainError("INVALID_INPUT", "Unknown critical path"), currentRevision());
+      const focused = await this.focusGraphNodes(invocation, { nodeIds: path.packageIds });
+      if (!focused.ok) return createActionFailure(focused.error, focused.contextRevision);
+      return createActionSuccess({ pathId: path.pathId, focusedNodeIds: focused.data.focusedNodeIds }, true, focused.contextRevision);
     },
   };
 }

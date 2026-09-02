@@ -290,3 +290,11 @@ export function validateInspectCriticalPathsRequest(
   return null;
 }
 
+export function validateFocusCriticalPathRequest(
+  request: import("./types").FocusCriticalPathRequest
+): WarRoomDomainError | null {
+  if (!request || typeof request.pathId !== "string" || request.pathId.trim() === "") {
+    return invalidInputError("pathId must be a non-empty string");
+  }
+  return null;
+}

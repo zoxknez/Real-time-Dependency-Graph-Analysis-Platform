@@ -509,4 +509,14 @@ export function validateInspectCriticalPathsInput(
   return { ok: true, value: { maxPaths } };
 }
 
+export interface ValidatedFocusCriticalPathInput { readonly pathId: string; }
+export function validateFocusCriticalPathInput(input: unknown): AdaptiveValidationResult<ValidatedFocusCriticalPathInput> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return { ok: false, error: "focus_critical_path input must be a JSON object" };
+  const obj = input as Record<string, unknown>;
+  const secError = rejectForbiddenKeys(obj);
+  if (secError) return { ok: false, error: secError };
+  if (Object.keys(obj).some((key) => key !== "pathId")) return { ok: false, error: "focus_critical_path accepts only pathId" };
+  if (typeof obj.pathId !== "string" || obj.pathId.trim().length === 0 || obj.pathId.length > 256) return { ok: false, error: "pathId must be a non-empty string <= 256 characters" };
+  return { ok: true, value: { pathId: obj.pathId.trim() } };
+}
 

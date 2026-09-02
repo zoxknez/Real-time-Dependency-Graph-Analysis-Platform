@@ -34,7 +34,9 @@ export const EXECUTABLE_TOOL_POLICIES: Record<
   | "focus_graph_nodes"
   | "set_scenario_priority"
   | "set_scenario_exclusion"
-  | "inspect_critical_paths",
+  | "inspect_critical_paths"
+  | "generate_migration_plan"
+  | "focus_critical_path",
   WebMcpExecutionPolicy
 > = {
   search_packages: "REVISION_TOLERANT_READ",
@@ -45,6 +47,8 @@ export const EXECUTABLE_TOOL_POLICIES: Record<
   inspect_migration_plan: "STRICT_CONTEXT_READ",
   calculate_blast_radius: "STRICT_CONTEXT_READ",
   inspect_critical_paths: "STRICT_CONTEXT_READ",
+  generate_migration_plan: "ACTION_COMMIT_GUARDED_MUTATION",
+  focus_critical_path: "ACTION_COMMIT_GUARDED_MUTATION",
   focus_graph_nodes: "ACTION_COMMIT_GUARDED_MUTATION",
   open_package_graph: "ACTION_COMMIT_GUARDED_MUTATION",
   simulate_api_changes: "ACTION_COMMIT_GUARDED_MUTATION",

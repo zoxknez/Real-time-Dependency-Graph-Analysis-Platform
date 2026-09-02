@@ -151,6 +151,9 @@ export interface FocusGraphNodesResult {
   readonly focusedNodeIds: readonly string[];
 }
 
+export interface FocusCriticalPathRequest { readonly pathId: string; }
+export interface FocusCriticalPathResult { readonly pathId: string; readonly focusedNodeIds: readonly string[]; }
+
 export interface SetScenarioPriorityRequest {
   readonly entityId: string;
   readonly priority: "P0" | "P1" | "P2" | "P3";
@@ -190,3 +193,11 @@ export interface InspectCriticalPathsResult {
   readonly paths: readonly import("../domain/types").CriticalPathItem[];
 }
 
+export interface FocusCriticalPathRequest {
+  readonly pathId: string;
+}
+
+export interface FocusCriticalPathResult {
+  readonly pathId: string;
+  readonly focusedNodeIds: readonly string[];
+}

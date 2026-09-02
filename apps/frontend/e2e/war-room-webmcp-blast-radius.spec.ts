@@ -542,12 +542,14 @@ test.describe("WMCP-8: Version-Aware Dependency Exposure Matrix", () => {
       (name) => WEB_MCP_TOOL_CATALOG[name].bindingStatus === "DEFERRED"
     );
 
-    expect(executable.length).toBe(14);
-    expect(deferred.length).toBe(2);
+    expect(executable.length).toBe(16);
+    expect(deferred.length).toBe(0);
 
     expect(executable.sort()).toEqual([
       "calculate_blast_radius",
+      "focus_critical_path",
       "focus_graph_nodes",
+      "generate_migration_plan",
       "inspect_critical_paths",
       "inspect_migration_plan",
       "inspect_scenario",
@@ -562,10 +564,7 @@ test.describe("WMCP-8: Version-Aware Dependency Exposure Matrix", () => {
       "trace_dependency_path",
     ]);
 
-    expect(deferred.sort()).toEqual([
-      "focus_critical_path",
-      "generate_migration_plan",
-    ]);
+    expect(deferred.sort()).toEqual([]);
   });
 
   test("8-T32. Execution abort returns CANCELLED without state mutation", async () => {

@@ -302,11 +302,11 @@ export const INSPECT_MIGRATION_PLAN_SCHEMA = {
 export const FOCUS_CRITICAL_PATH_SCHEMA = {
   type: "object",
   properties: {
-    pathIndex: {
-      type: "integer",
-      minimum: 0,
-      maximum: 10,
-      description: "Optional 0-based index of critical migration path to visually highlight.",
+    pathId: {
+      type: "string",
+      minLength: 1,
+      maxLength: 256,
+      description: "Authoritative critical path identifier returned by inspect_critical_paths.",
     },
   },
   additionalProperties: false,
@@ -510,10 +510,9 @@ export const WEB_MCP_TOOL_CATALOG: Record<WebMcpActionName, WebMcpToolCatalogEnt
       readOnlyHint: false,
       untrustedContentHint: true,
     },
-    authority: "Migration Planning Engine",
-    classification: "FUTURE_DETERMINISTIC_CAPABILITY",
-    bindingStatus: "DEFERRED",
-    futureDependency: "WMCP-11 (Migration Planning & Remediation Synthesis)",
+    authority: "WarRoomActions.generateMigrationPlan",
+    classification: "EXISTING_ACTION",
+    bindingStatus: "EXECUTABLE",
   },
   inspect_critical_paths: {
     name: "inspect_critical_paths",
@@ -550,13 +549,12 @@ export const WEB_MCP_TOOL_CATALOG: Record<WebMcpActionName, WebMcpToolCatalogEnt
     schemaStatus: "FROZEN",
     inputSchema: FOCUS_CRITICAL_PATH_SCHEMA,
     annotations: {
-      readOnlyHint: true,
+      readOnlyHint: false,
       untrustedContentHint: true,
     },
-    authority: "Critical Path Visual Focus Engine",
-    classification: "FUTURE_DETERMINISTIC_CAPABILITY",
-    bindingStatus: "DEFERRED",
-    futureDependency: "WMCP-12 (Unified Critical Path Visual Focus)",
+    authority: "WarRoomActions.focusCriticalPath",
+    classification: "EXISTING_ACTION",
+    bindingStatus: "EXECUTABLE",
   },
 };
 

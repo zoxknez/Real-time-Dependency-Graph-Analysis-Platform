@@ -386,6 +386,18 @@ export interface WebMcpFocusResultData {
   readonly focusedNodeIds: readonly string[];
 }
 
+export function buildBudgetedMigrationPlanOutput(tool: string, contextRevision: number, plan: import("../../war-room").WarRoomPlanRef): WebMcpToolOutputEnvelope<import("../../war-room").WarRoomPlanRef> {
+  const envelope = { ok: true as const, tool, changed: true, contextRevision, data: plan };
+  return JSON.stringify(envelope).length <= MAX_TOTAL_OUTPUT_CHARS
+    ? envelope
+    : formatToolFailure(tool, contextRevision, "INTERNAL_ERROR", "Tool result exceeded the safe output budget");
+}
+
+export function buildBudgetedCriticalPathFocusOutput(tool: string, contextRevision: number, data: { pathId: string; focusedNodeIds: readonly string[] }): WebMcpToolOutputEnvelope<typeof data> {
+  const bounded = { ...data, focusedNodeIds: data.focusedNodeIds.slice(0, 20) };
+  return formatToolSuccess(tool, true, contextRevision, bounded);
+}
+
 export function buildBudgetedFocusOutput(
   tool: string,
   contextRevision: number,
@@ -557,5 +569,4 @@ export function buildBudgetedCriticalPathsOutput(
 
   return formatToolFailure(tool, contextRevision, "INTERNAL_ERROR", "Tool result exceeded safe output budget");
 }
-
 

@@ -47,7 +47,9 @@ import {
   WarRoomProjectionNode,
   WarRoomProjectionLink,
 } from "@/lib/war-room";
+import type { PackageEvidence } from "@/lib/war-room";
 import type { DependencyGraphUpdate } from "@/lib/graphql/types";
+import { WarRoomStatusPanel } from "@/components/war-room/war-room-status-panel";
 import SpriteText from "three-spritetext";
 import type { NodeObject, LinkObject } from "react-force-graph-3d";
 
@@ -112,6 +114,20 @@ function GraphPageContent() {
   // Active root package derived from canonical state
   const activePackageId = canonicalGraph?.rootPackage.id || "";
   const selectedPackageId = canonicalSelection?.package.id || null;
+  const canonicalState = useWarRoomSelector((s: WarRoomState) => s);
+  const [packageEvidence, setPackageEvidence] = useState<PackageEvidence | undefined>();
+
+  useEffect(() => {
+    if (!canonicalSelection) {
+      setPackageEvidence(undefined);
+      return;
+    }
+    let active = true;
+    actions.inspectPackage(createHumanInvocation(), { packageId: canonicalSelection.package.id }).then((result) => {
+      if (active && result.ok) setPackageEvidence(result.data.evidence);
+    });
+    return () => { active = false; };
+  }, [actions, canonicalSelection, createHumanInvocation]);
 
   // UI-Local state
   const [inputValue, setInputValue] = useState(initialPkg);
@@ -543,6 +559,8 @@ function GraphPageContent() {
           </button>
         </form>
       </motion.div>
+
+      <WarRoomStatusPanel state={canonicalState} evidence={packageEvidence} />
 
       {/* Main Graph Area */}
       <motion.div

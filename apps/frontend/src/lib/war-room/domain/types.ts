@@ -146,6 +146,7 @@ export interface HumanReviewItem {
 }
 
 export interface CriticalPathItem {
+  readonly pathId: string;
   readonly pathIndex: number;
   readonly sourceEntityId: string;
   readonly targetEntityId: string;
@@ -176,6 +177,35 @@ export interface WarRoomPlanRef {
   readonly scenarioId: string;
   readonly sourceReviewId: string;
   readonly sourceContextRevision: number;
+  readonly stepsTotal?: number;
+  readonly returnedSteps?: number;
+  readonly stepsTruncated?: boolean;
+  readonly steps?: readonly MigrationPlanStep[];
+}
+
+export type MigrationPlanStepKind =
+  | "VALIDATE_BREAKING_CHANGE"
+  | "REVIEW_REQUIREMENT"
+  | "RESOLVE_REQUIREMENT_METADATA"
+  | "SECURITY_ADVISORY_REVIEW"
+  | "CRITICAL_PATH_COORDINATION";
+
+export interface MigrationPlanSourceFacts {
+  readonly versionExposureStatus?: string;
+  readonly rawRequirement?: string;
+  readonly breakingChangeTypes?: readonly string[];
+  readonly criticalPathId?: string;
+  readonly advisoryIds?: readonly string[];
+}
+
+export interface MigrationPlanStep {
+  readonly stepId: string;
+  readonly kind: MigrationPlanStepKind;
+  readonly entityId: string;
+  readonly priority: HumanReviewPriority;
+  readonly rationale: string;
+  readonly sourceFacts?: MigrationPlanSourceFacts;
+  readonly criticalPathHopCount?: number;
 }
 
 export interface WarRoomGraphEvidence {

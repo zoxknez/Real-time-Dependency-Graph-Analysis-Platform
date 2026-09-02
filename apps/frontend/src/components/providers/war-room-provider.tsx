@@ -33,7 +33,7 @@ import {
   createApolloPackageCatalogPort,
   createApolloGraphQueryPort,
   createProductionScenarioAnalysisPort,
-  createUnavailableMigrationPlanningPort,
+  createDeterministicMigrationPlanningPort,
   WarRoomApolloClient,
 } from "@/lib/war-room";
 
@@ -70,7 +70,7 @@ export function WarRoomProvider({ children, initialRuntime }: WarRoomProviderPro
       const packageCatalogPort = createApolloPackageCatalogPort(client);
       const graphQueryPort = createApolloGraphQueryPort(client, projectionStore);
       const scenarioAnalysisPort = createProductionScenarioAnalysisPort();
-      const migrationPlanningPort = createUnavailableMigrationPlanningPort();
+      const migrationPlanningPort = createDeterministicMigrationPlanningPort();
 
       const actions = createWarRoomActions({
         statePort,

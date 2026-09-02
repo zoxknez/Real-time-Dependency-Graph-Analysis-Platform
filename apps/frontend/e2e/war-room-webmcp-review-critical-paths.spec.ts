@@ -8,7 +8,7 @@
  * - Excluded entity truthful tagging without fabricating risk scores
  * - Output budgeting (<= 1500 chars)
  * - Channel convergence (human and agent share identical action authority)
- * - WebMCP catalog matrix: 16 canonical tools (14 EXECUTABLE, 2 DEFERRED, 16 FROZEN)
+ * - WebMCP catalog matrix: 16 canonical tools (16 EXECUTABLE, 0 DEFERRED, 16 FROZEN)
  */
 
 import { test, expect } from "@playwright/test";
@@ -370,7 +370,7 @@ test.describe("WMCP-10: Human Business Review & Critical Paths Matrix", () => {
   // 4. WEBMCP CATALOG INTEGRITY (POST WMCP-10)
   // ─────────────────────────────────────────────────────────────
 
-  test("10-T20. Exactly 16 canonical tools: 14 EXECUTABLE, 2 DEFERRED, 16 FROZEN", () => {
+  test("10-T20. Exactly 16 canonical tools: 16 EXECUTABLE, 0 DEFERRED, 16 FROZEN", () => {
     expect(ALL_CANONICAL_ACTION_NAMES).toHaveLength(16);
 
     const executable: string[] = [];
@@ -387,12 +387,12 @@ test.describe("WMCP-10: Human Business Review & Critical Paths Matrix", () => {
       if (entry.schemaStatus === "PENDING_DOMAIN_CONTRACT") pending.push(name);
     }
 
-    expect(executable).toHaveLength(14);
-    expect(deferred).toHaveLength(2);
+    expect(executable).toHaveLength(16);
+    expect(deferred).toHaveLength(0);
     expect(frozen).toHaveLength(16);
     expect(pending).toHaveLength(0);
 
-    expect(deferred).toEqual(["generate_migration_plan", "focus_critical_path"]);
+    expect(deferred).toEqual([]);
     expect(executable).toContain("set_scenario_priority");
     expect(executable).toContain("set_scenario_exclusion");
     expect(executable).toContain("inspect_critical_paths");
