@@ -224,3 +224,20 @@ export function validateCalculateBlastRadiusRequest(
   return null;
 }
 
+export function validateFocusGraphNodesRequest(
+  request: import("./types").FocusGraphNodesRequest
+): WarRoomDomainError | null {
+  if (!request || !Array.isArray(request.nodeIds)) {
+    return invalidInputError("Request must contain nodeIds array");
+  }
+  if (request.nodeIds.length < 1 || request.nodeIds.length > 20) {
+    return invalidInputError(`nodeIds count must be between 1 and 20, received ${request.nodeIds.length}`);
+  }
+  for (const id of request.nodeIds) {
+    if (typeof id !== "string" || id.trim() === "") {
+      return invalidInputError("Every node ID must be a non-empty string");
+    }
+  }
+  return null;
+}
+

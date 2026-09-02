@@ -585,6 +585,39 @@ export function reduceWarRoomState(
       return { ok: true, changed: true, state: nextState };
     }
 
+    case "VISUAL_FOCUS_CHANGED": {
+      if (
+        state.phase !== "GRAPH_READY" &&
+        state.phase !== "NODE_SELECTED" &&
+        state.phase !== "SIMULATION_READY" &&
+        state.phase !== "HUMAN_REVIEW" &&
+        state.phase !== "PLAN_READY"
+      ) {
+        return {
+          ok: false,
+          changed: false,
+          state,
+          error: invalidStateError(
+            `VISUAL_FOCUS_CHANGED is only valid when a graph is loaded, current phase is ${state.phase}`
+          ),
+        };
+      }
+
+      const visualEvidence = {
+        focusedPackageIds: event.payload.focusedPackageIds,
+        highlightedPackageIds: state.visualEvidence?.highlightedPackageIds ?? [],
+        highlightedPathIds: state.visualEvidence?.highlightedPathIds ?? [],
+      };
+
+      const nextState = {
+        ...state,
+        contextRevision: state.contextRevision + 1,
+        visualEvidence,
+      };
+
+      return { ok: true, changed: true, state: nextState };
+    }
+
     default: {
       const _exhaustiveCheck: never = event;
       return {

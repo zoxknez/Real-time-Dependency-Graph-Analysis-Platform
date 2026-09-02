@@ -115,3 +115,10 @@ export interface WarRoomMigrationPlanningPort {
     signal?: AbortSignal
   ): Promise<WarRoomServiceResult<WarRoomPlanRef>>;
 }
+
+export interface WarRoomEvidencePort {
+  getPackageEvidence(
+    coordinate: import("../domain/evidence").PackageEvidenceCoordinate,
+    signal?: AbortSignal
+  ): Promise<import("../domain/evidence").PackageEvidence>;
+}

@@ -33,6 +33,7 @@ import {
   validateTraceDependencyPathInput,
   validateSimulateApiChangesInput,
   validateCalculateBlastRadiusInput,
+  validateFocusGraphNodesInput,
 } from "./adaptive-validation";
 import {
   validateSearchPackagesInput,
@@ -45,6 +46,7 @@ import {
   buildBudgetedOpenGraphOutput,
   buildBudgetedScenarioOutput,
   buildBudgetedBlastRadiusOutput,
+  buildBudgetedFocusOutput,
 } from "./output";
 import {
   captureExecutionSnapshot,
@@ -328,6 +330,52 @@ export function createAdaptiveToolDefinition(
       };
     }
 
+    case "focus_graph_nodes": {
+      return {
+        name: "focus_graph_nodes",
+        description: entry.description,
+        inputSchema: entry.inputSchema,
+        annotations: entry.annotations,
+        execute: async (input: Record<string, unknown>, execContext?: WebMcpPlatformExecutionContext) => {
+          const snapshot = captureExecutionSnapshot(statePort);
+          const admission = checkExecutionAdmission("focus_graph_nodes", snapshot, platformAdapter);
+          if (!admission.admitted) {
+            return admission.failureOutput;
+          }
+
+          if (execContext?.signal?.aborted) {
+            return formatToolFailure("focus_graph_nodes", snapshot.contextRevision, "CANCELLED", "Operation was cancelled before execution");
+          }
+
+          const valRes = validateFocusGraphNodesInput(input);
+          if (!valRes.ok) {
+            return formatToolFailure("focus_graph_nodes", snapshot.contextRevision, "INVALID_INPUT", valRes.error);
+          }
+
+          const signal = execContext?.signal;
+          const invocation: WarRoomInvocationContext = {
+            channel: "AGENT",
+            capturedContextRevision: snapshot.contextRevision,
+            signal,
+          };
+
+          try {
+            const actionRes = await actions.focusGraphNodes(invocation, valRes.value);
+            if (!actionRes.ok) {
+              return formatToolFailure("focus_graph_nodes", actionRes.contextRevision, actionRes.error.code, actionRes.error.message);
+            }
+
+            return buildBudgetedFocusOutput("focus_graph_nodes", actionRes.contextRevision, actionRes.data);
+          } catch (err: unknown) {
+            if (signal?.aborted || (err instanceof Error && err.name === "AbortError")) {
+              return formatToolFailure("focus_graph_nodes", snapshot.contextRevision, "CANCELLED", "Operation was cancelled");
+            }
+            return formatToolFailure("focus_graph_nodes", snapshot.contextRevision, "INTERNAL_ERROR", "Failed to focus graph nodes");
+          }
+        },
+      };
+    }
+
     case "trace_dependency_path": {
       return {
         name: "trace_dependency_path",
@@ -454,6 +502,18 @@ export function createAdaptiveToolDefinition(
               return formatToolFailure("inspect_selected_package", actionRes.contextRevision, actionRes.error.code, actionRes.error.message);
             }
 
+            const evidenceData = actionRes.data.evidence ? {
+              evidenceStatus: actionRes.data.evidence.status,
+              provider: actionRes.data.evidence.provider,
+              fetchedAt: actionRes.data.evidence.fetchedAt,
+              advisoriesTotal: actionRes.data.evidence.advisoriesTotal,
+              advisoriesReturned: actionRes.data.evidence.advisoriesReturned,
+              advisories: actionRes.data.evidence.advisories.slice(0, 5).map(a => ({
+                id: a.id,
+                summary: a.summary ? a.summary.slice(0, 80) : undefined,
+              })),
+            } : undefined;
+
             return formatToolSuccess("inspect_selected_package", actionRes.changed, actionRes.contextRevision, {
               packageId,
               name: actionRes.data.package.name,
@@ -461,6 +521,7 @@ export function createAdaptiveToolDefinition(
               version: actionRes.data.package.version,
               dependenciesCount: actionRes.data.directDependencyIds.length,
               dependentsCount: actionRes.data.directDependentIds.length,
+              ...(evidenceData ? { evidence: evidenceData } : {}),
             });
           } catch (err: unknown) {
             return formatToolFailure(

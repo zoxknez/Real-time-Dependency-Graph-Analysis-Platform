@@ -718,7 +718,7 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B / WMCP-3B-R1)", () =>
         const tools = (window as any).__registeredWebMcpTools;
         return (
           Array.isArray(tools) &&
-          tools.length === 4 &&
+          tools.length === 5 &&
           tools.some((t: any) => t.name === "summarize_graph")
         );
       },
@@ -728,7 +728,7 @@ test.describe("War Room WebMCP Agent UI Workflows (WMCP-3B / WMCP-3B-R1)", () =>
 
     const updatedTools: any = await page.evaluate(() => (window as any).__registeredWebMcpTools);
     const updatedNames = updatedTools.map((t: any) => t.name).sort();
-    expect(updatedNames).toEqual(["calculate_blast_radius", "open_package_graph", "summarize_graph", "trace_dependency_path"]);
+    expect(updatedNames).toEqual(["calculate_blast_radius", "focus_graph_nodes", "open_package_graph", "summarize_graph", "trace_dependency_path"]);
     expect(updatedNames).not.toContain("search_packages");
   });
 });

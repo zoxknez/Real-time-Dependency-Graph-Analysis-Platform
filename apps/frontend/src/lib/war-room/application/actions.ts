@@ -50,6 +50,7 @@ import {
   WarRoomGraphQueryPort,
   WarRoomScenarioAnalysisPort,
   WarRoomMigrationPlanningPort,
+  WarRoomEvidencePort,
 } from "./ports";
 import {
   validateInvocationContext,
@@ -60,8 +61,13 @@ import {
   validateOpenPackageGraphRequest,
   validateSelectPackageRequest,
   validateCalculateBlastRadiusRequest,
+  validateFocusGraphNodesRequest,
   validateGraphServiceOutput,
 } from "./validation";
+import {
+  FocusGraphNodesRequest,
+  FocusGraphNodesResult,
+} from "./types";
 
 export interface WarRoomActionsDependencies {
   readonly statePort: WarRoomStatePort;
@@ -71,6 +77,7 @@ export interface WarRoomActionsDependencies {
   readonly graphQueryPort: WarRoomGraphQueryPort;
   readonly scenarioAnalysisPort: WarRoomScenarioAnalysisPort;
   readonly migrationPlanningPort: WarRoomMigrationPlanningPort;
+  readonly evidencePort?: WarRoomEvidencePort;
 }
 
 export interface WarRoomActions {
@@ -149,6 +156,11 @@ export interface WarRoomActions {
     invocation: WarRoomInvocationContext,
     request: CalculateBlastRadiusRequest
   ): Promise<WarRoomActionResult<VersionAwareExposureResult>>;
+
+  focusGraphNodes(
+    invocation: WarRoomInvocationContext,
+    request: FocusGraphNodesRequest
+  ): Promise<WarRoomActionResult<FocusGraphNodesResult>>;
 }
 
 function isAbortFailure(err: unknown, signal?: AbortSignal): boolean {
@@ -304,7 +316,23 @@ export function createWarRoomActions(
       );
       if (!serviceRes.ok) return createActionFailure(serviceRes.error, currentRevision());
 
-      return createActionSuccess(serviceRes.data, false, currentRevision());
+      let evidence: import("../domain/evidence").PackageEvidence | undefined;
+      if (deps.evidencePort && serviceRes.data.package) {
+        try {
+          evidence = await deps.evidencePort.getPackageEvidence(
+            {
+              ecosystem: serviceRes.data.package.ecosystem,
+              packageName: serviceRes.data.package.name,
+              packageVersion: serviceRes.data.package.version,
+            },
+            invocation.signal
+          );
+        } catch {
+          // Evidence fetch failure does not fail package inspection (B17)
+        }
+      }
+
+      return createActionSuccess({ ...serviceRes.data, evidence }, false, currentRevision());
     },
 
     async traceDependencyPath(
@@ -1038,6 +1066,71 @@ export function createWarRoomActions(
       });
 
       return createActionSuccess(exposureResult, false, currentRevision());
+    },
+
+    async focusGraphNodes(
+      invocation: WarRoomInvocationContext,
+      request: FocusGraphNodesRequest
+    ): Promise<WarRoomActionResult<FocusGraphNodesResult>> {
+      const invErr = validateInvocationContext(invocation);
+      if (invErr) return createActionFailure(invErr, currentRevision());
+
+      const reqErr = validateFocusGraphNodesRequest(request);
+      if (reqErr) return createActionFailure(reqErr, currentRevision());
+
+      const state = statePort.getState();
+      if (
+        state.phase !== "GRAPH_READY" &&
+        state.phase !== "NODE_SELECTED" &&
+        state.phase !== "SIMULATION_READY" &&
+        state.phase !== "HUMAN_REVIEW" &&
+        state.phase !== "PLAN_READY"
+      ) {
+        return createActionFailure(
+          createDomainError("INVALID_STATE", `focusGraphNodes requires an active graph, current phase is ${state.phase}`),
+          currentRevision()
+        );
+      }
+
+      // Validate all requested nodeIds exist in current graph context (B23)
+      const graphNodeIds = new Set(state.graph.packageIds);
+      for (const id of request.nodeIds) {
+        if (!graphNodeIds.has(id)) {
+          return createActionFailure(
+            createDomainError("INVALID_INPUT", `Node '${id}' does not exist in current graph`),
+            currentRevision()
+          );
+        }
+      }
+
+      const secRes = await resolveSecurity(securityContextPort, invocation.signal);
+      if (!secRes.ok) return createActionFailure(secRes.error, currentRevision());
+
+      const authRes = await callPort(invocation.signal, () =>
+        authorizationPort.authorize(
+          { securityContext: secRes.data, action: "FOCUS_GRAPH_NODES" },
+          invocation.signal
+        )
+      );
+      if (!authRes.ok) return createActionFailure(authRes.error, currentRevision());
+
+      const commitRes = statePort.commitContextBound(
+        invocation.capturedContextRevision,
+        {
+          type: "VISUAL_FOCUS_CHANGED",
+          payload: { focusedPackageIds: request.nodeIds },
+        }
+      );
+
+      if (!commitRes.ok) {
+        return createActionFailure(commitRes.error, currentRevision());
+      }
+
+      return createActionSuccess(
+        { focusedCount: request.nodeIds.length, focusedNodeIds: request.nodeIds },
+        true,
+        currentRevision()
+      );
     },
   };
 }

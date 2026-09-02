@@ -134,10 +134,20 @@ export interface HumanReviewBinding {
   readonly targetEntityId: string;
 }
 
+export type HumanReviewPriority = "P0" | "P1" | "P2" | "P3";
+
+export interface HumanReviewItem {
+  readonly entityId: string;
+  readonly priority?: HumanReviewPriority;
+  readonly excluded?: boolean;
+  readonly exclusionReason?: string;
+}
+
 export interface WarRoomHumanReview {
   readonly id: string;
   readonly scenarioId: string;
   readonly bindings: readonly HumanReviewBinding[];
+  readonly items?: readonly HumanReviewItem[];
 }
 
 export interface WarRoomPlanRef {
@@ -305,6 +315,13 @@ export interface PlanResetEvent {
   readonly type: "PLAN_RESET";
 }
 
+export interface VisualFocusChangedEvent {
+  readonly type: "VISUAL_FOCUS_CHANGED";
+  readonly payload: {
+    readonly focusedPackageIds: readonly string[];
+  };
+}
+
 export type WarRoomEvent =
   | AppInitializedEvent
   | GraphOpenedEvent
@@ -318,7 +335,8 @@ export type WarRoomEvent =
   | HumanAnnotatedEvent
   | AnnotationChangedEvent
   | PlanGeneratedEvent
-  | PlanResetEvent;
+  | PlanResetEvent
+  | VisualFocusChangedEvent;
 
 export interface TransitionSuccess {
   readonly ok: true;
@@ -347,3 +365,10 @@ export type {
   VersionAwareExposureResult,
   EvaluateExposureInput,
 } from "./version-exposure-engine";
+
+export type {
+  PackageAdvisoryFact,
+  PackageEvidenceStatus,
+  PackageEvidenceCoordinate,
+  PackageEvidence,
+} from "./evidence";

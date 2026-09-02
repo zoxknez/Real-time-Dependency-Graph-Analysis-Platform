@@ -203,6 +203,21 @@ export const SIMULATE_API_CHANGES_SCHEMA = {
   additionalProperties: false,
 } as const;
 
+export const FOCUS_GRAPH_NODES_SCHEMA = {
+  type: "object",
+  properties: {
+    nodeIds: {
+      type: "array",
+      items: { type: "string" },
+      minItems: 1,
+      maxItems: 20,
+      description: "Array of between 1 and 20 package node IDs present in the active graph.",
+    },
+  },
+  required: ["nodeIds"],
+  additionalProperties: false,
+} as const;
+
 export const INSPECT_SCENARIO_SCHEMA = {
   type: "object",
   properties: {},
@@ -340,15 +355,15 @@ export const WEB_MCP_TOOL_CATALOG: Record<WebMcpActionName, WebMcpToolCatalogEnt
     name: "focus_graph_nodes",
     title: "Focus Graph Nodes",
     description: "Updates the shared visual graph projection to focus and highlight specific package nodes.",
-    schemaStatus: "PENDING_DOMAIN_CONTRACT",
+    schemaStatus: "FROZEN",
+    inputSchema: FOCUS_GRAPH_NODES_SCHEMA,
     annotations: {
-      readOnlyHint: true,
+      readOnlyHint: false,
       untrustedContentHint: true,
     },
-    authority: "Visual Focus Projection Integration",
-    classification: "FUTURE_DETERMINISTIC_CAPABILITY",
-    bindingStatus: "DEFERRED",
-    futureDependency: "WMCP-12 (Visual Focus Integration; exact projection focus contract pending authoritative UI integration)",
+    authority: "WarRoomActions.focusGraphNodes",
+    classification: "EXISTING_ACTION",
+    bindingStatus: "EXECUTABLE",
   },
   inspect_selected_package: {
     name: "inspect_selected_package",

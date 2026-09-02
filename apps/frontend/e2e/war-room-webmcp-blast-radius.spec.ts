@@ -532,7 +532,7 @@ test.describe("WMCP-8: Version-Aware Dependency Exposure Matrix", () => {
     }
   });
 
-  test("8-T33, 8-T34, 8-T35. WebMCP Tool Vocabulary: 16 canonical tools, 10 executable, 6 deferred", () => {
+  test("8-T33, 8-T34, 8-T35. WebMCP Tool Vocabulary: 16 canonical tools, 11 executable, 5 deferred", () => {
     expect(ALL_CANONICAL_ACTION_NAMES.length).toBe(16);
 
     const executable = ALL_CANONICAL_ACTION_NAMES.filter(
@@ -542,11 +542,12 @@ test.describe("WMCP-8: Version-Aware Dependency Exposure Matrix", () => {
       (name) => WEB_MCP_TOOL_CATALOG[name].bindingStatus === "DEFERRED"
     );
 
-    expect(executable.length).toBe(10);
-    expect(deferred.length).toBe(6);
+    expect(executable.length).toBe(11);
+    expect(deferred.length).toBe(5);
 
     expect(executable.sort()).toEqual([
       "calculate_blast_radius",
+      "focus_graph_nodes",
       "inspect_migration_plan",
       "inspect_scenario",
       "inspect_selected_package",
@@ -560,7 +561,6 @@ test.describe("WMCP-8: Version-Aware Dependency Exposure Matrix", () => {
 
     expect(deferred.sort()).toEqual([
       "focus_critical_path",
-      "focus_graph_nodes",
       "generate_migration_plan",
       "inspect_critical_paths",
       "set_scenario_exclusion",

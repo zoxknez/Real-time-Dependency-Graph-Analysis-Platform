@@ -381,4 +381,50 @@ export function buildBudgetedBlastRadiusOutput(
   );
 }
 
+export interface WebMcpFocusResultData {
+  readonly focusedCount: number;
+  readonly focusedNodeIds: readonly string[];
+}
+
+export function buildBudgetedFocusOutput(
+  tool: string,
+  contextRevision: number,
+  data: WebMcpFocusResultData
+): WebMcpToolOutputEnvelope<WebMcpFocusResultData> {
+  const envelope: WebMcpToolSuccessEnvelope<WebMcpFocusResultData> = {
+    ok: true,
+    tool,
+    changed: true,
+    contextRevision,
+    data,
+  };
+
+  if (JSON.stringify(envelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+    return envelope;
+  }
+
+  const truncatedNodeIds = data.focusedNodeIds.slice(0, 5);
+  const compactEnvelope: WebMcpToolSuccessEnvelope<WebMcpFocusResultData> = {
+    ok: true,
+    tool,
+    changed: true,
+    contextRevision,
+    data: {
+      focusedCount: data.focusedCount,
+      focusedNodeIds: truncatedNodeIds,
+    },
+  };
+
+  if (JSON.stringify(compactEnvelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+    return compactEnvelope;
+  }
+
+  return formatToolFailure(
+    tool,
+    contextRevision,
+    "INTERNAL_ERROR",
+    "Tool result exceeded the safe output budget"
+  );
+}
+
 

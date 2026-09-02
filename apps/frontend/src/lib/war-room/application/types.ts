@@ -47,6 +47,7 @@ export type WarRoomActionName =
   | "GENERATE_MIGRATION_PLAN"
   | "RESET_MIGRATION_PLAN"
   | "CALCULATE_BLAST_RADIUS"
+  | "FOCUS_GRAPH_NODES"
   | "APP_INITIALIZE";
 
 export type WarRoomServiceResult<T> =
@@ -82,6 +83,7 @@ export interface WarRoomPackageInspection {
   readonly package: WarRoomPackageRef;
   readonly directDependencyIds: readonly string[];
   readonly directDependentIds: readonly string[];
+  readonly evidence?: import("../domain/evidence").PackageEvidence;
 }
 
 export interface WarRoomDependencyPath {
@@ -135,5 +137,14 @@ export interface ChangeHumanReviewRequest {
 export interface CalculateBlastRadiusRequest {
   readonly targetPackageId?: string;
   readonly proposedVersion?: string;
+}
+
+export interface FocusGraphNodesRequest {
+  readonly nodeIds: readonly string[];
+}
+
+export interface FocusGraphNodesResult {
+  readonly focusedCount: number;
+  readonly focusedNodeIds: readonly string[];
 }
 

@@ -342,4 +342,45 @@ export function validateCalculateBlastRadiusInput(
   return { ok: true, value: { proposedVersion } };
 }
 
+export interface ValidatedFocusGraphNodesInput {
+  readonly nodeIds: readonly string[];
+}
+
+export function validateFocusGraphNodesInput(
+  input: unknown
+): AdaptiveValidationResult<ValidatedFocusGraphNodesInput> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "focus_graph_nodes input must be a JSON object" };
+  }
+  const obj = input as Record<string, unknown>;
+  const secError = rejectForbiddenKeys(obj);
+  if (secError) return { ok: false, error: secError };
+
+  const allowedKeys = new Set(["nodeIds"]);
+  for (const key of Object.keys(obj)) {
+    if (!allowedKeys.has(key)) {
+      return { ok: false, error: `Unexpected property '${key}' in focus_graph_nodes input` };
+    }
+  }
+
+  if (!Array.isArray(obj.nodeIds)) {
+    return { ok: false, error: "focus_graph_nodes requires a 'nodeIds' array" };
+  }
+
+  if (obj.nodeIds.length < 1 || obj.nodeIds.length > 20) {
+    return { ok: false, error: `nodeIds count must be between 1 and 20, received ${obj.nodeIds.length}` };
+  }
+
+  const nodeIds: string[] = [];
+  for (let i = 0; i < obj.nodeIds.length; i++) {
+    const item = obj.nodeIds[i];
+    if (typeof item !== "string" || item.trim().length === 0 || item.length > 256) {
+      return { ok: false, error: `nodeIds[${i}] must be a non-empty string <= 256 characters` };
+    }
+    nodeIds.push(item.trim());
+  }
+
+  return { ok: true, value: { nodeIds } };
+}
+
 
