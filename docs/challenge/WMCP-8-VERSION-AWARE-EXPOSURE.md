@@ -2,12 +2,16 @@
 
 ## 1. Executive Summary
 
+### Final closure amendment
+
+The final submission no longer exposes or reports `topologicalReachabilityCount` through the WMCP-8 War Room result. Final application/UI truth is direct dependency exposure only: direct dependents are classified as `DECLARED_RANGE_EXPOSED`, `DECLARED_RANGE_BLOCKED`, or typed `UNKNOWN_*` states. `directDependentsTotal` is not inferred or presented as transitive compatibility or topological reachability. Historical phase text below that describes a separately preserved topology count refers to the earlier WMCP-8 implementation and was narrowed during final closure at `d74fe501699c765efddef720848274e8b0707c35`.
+
 WMCP-8 establishes deterministic, multi-ecosystem, version-aware dependency exposure evaluation across the War Room platform. Prior to WMCP-8, graph queries reported purely topological reachability (all reverse dependents traversed without version evaluation), and the `calculate_blast_radius` WebMCP tool was factory-deferred.
 
 WMCP-8 implements:
 1. Deterministic version constraint parsing and evaluation across `NPM` (SemVer 2.0), `CARGO` (Cargo SemVer with bare version caret semantics), and `PY_PI` (PEP 440 comparison, compatible release, and prefix rules).
 2. Domain version exposure evaluator (`evaluateVersionAwareExposure`) classifying direct dependents into `DECLARED_RANGE_EXPOSED`, `DECLARED_RANGE_BLOCKED`, or typed `UNKNOWN_*` states.
-3. Strict separation between **direct constraint exposure** and **topological reachability count**.
+3. Historical WMCP-8 phase snapshot: strict separation between **direct constraint exposure** and the earlier **topological reachability count**.
 4. Shared read-only application action (`WarRoomActions.calculateBlastRadius`) providing identical authority to Human and Agent callers without mutating canonical state or incrementing context revisions.
 5. WebMCP promotion of `calculate_blast_radius` to `EXECUTABLE` with strict JSON schema, `STRICT_CONTEXT_READ` execution policy, and bounded output ($\le 1500$ UTF-16 code units, top 5 exposed dependents).
 
@@ -47,7 +51,7 @@ WMCP-8 implements:
 | - VersionAwareExposureEngine: evaluateVersionAwareExposure                     |
 |   * Classifies direct dependents only (no transitive constraint claims)       |
 |   * Distinguishes exposed range from confirmed downstream breakage            |
-|   * Preserves topological reachability count separately                       |
+|   * Earlier phase preserved topological reachability count separately          |
 |   * Deterministic sorting: package ID ascending, then requirement             |
 |   * Output bounding & truncation flags                                        |
 +-------------------------------------------------------------------------------+

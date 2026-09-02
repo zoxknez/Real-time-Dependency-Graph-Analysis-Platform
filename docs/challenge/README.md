@@ -22,7 +22,15 @@ All functionality classified as pre-existing in WMCP-0A existed at or before: `8
 
 ---
 
-## Phase Status Summary
+## Current Final Submission Status
+
+For the challenge submission path, WMCP-0 through WMCP-15 are CLOSED. The authoritative implementation code closure immediately before this documentation-only correction is:
+
+`d74fe501699c765efddef720848274e8b0707c35`
+
+The detailed phase table below is retained as historical development evidence where it records individual phase milestones; it is not a current closure status report.
+
+## Historical Phase Status Snapshot
 
 - **WMCP-0A (Baseline Freeze & Truth Inventory):** CLOSED at `bea51b53289bfab8596e8fd660ef22f38a7eb403`
 - **WMCP-0B (Challenge Contract, Architecture Invariants & Evidence Boundary):** CLOSED at `da6fb242c11a2dd70c54ed2072f9558a36875906`
@@ -37,8 +45,8 @@ All functionality classified as pre-existing in WMCP-0A existed at or before: `8
 - **WMCP-2 (War Room Domain State & Action Layer):** PASS - CLOSED at `1ae87969743e1d9f2a71cc0d89402090c133f0d8`
 - **WMCP-3A (WebMCP Platform Contract, Capability Detection & Type Boundary):** CLOSED at `993fb4b10dbb1a060424494a1adad081020f782a`
 - **WMCP-3B (Primitive Registration Adapter & Tool Execution Bridge):** CLOSED at `565c7a80a30eaf1fc5296921d0be32e8a5acebc3`
-- **WMCP-3R (WebMCP Foundation Final Review):** IMPLEMENTED - PENDING INDEPENDENT VERIFICATION
-- **WMCP-3 (WebMCP Platform & Tool Foundation):** NOT CLOSED
+- **WMCP-3R (WebMCP Foundation Final Review):** IMPLEMENTED - historical snapshot; final challenge-path closure is recorded above
+- **WMCP-3 (WebMCP Platform & Tool Foundation):** historical snapshot; final challenge-path closure is recorded above
 
 ---
 

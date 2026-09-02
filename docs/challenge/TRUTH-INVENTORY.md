@@ -85,20 +85,22 @@ The implementation remains honest about the repository-wide limitations listed b
 ## 9. Technical Debt Relevant to the Challenge Path
 
 - AST snapshots stored on filesystem-local storage lack a shared durable repository across distributed workers.
-- Package-level graph projections (`DEPENDS_ON_PKG`) discard SemVer range requirements, impeding precise counterfactual simulation.
+- **Baseline observation retained; resolved for the final challenge path:** Package-level graph projections (`DEPENDS_ON_PKG`) historically discarded SemVer range requirements; the direct WMCP-8 propagation path is resolved at `d74fe501699c765efddef720848274e8b0707c35`.
 - Legacy Gemini hackathon code is coupled to custom JSON prompts rather than standard WebMCP protocol tools.
 
 ---
 
-## 10. Items That MUST Be Resolved Before Submission
+## 10. Baseline Pre-Submission Findings and Final Disposition
 
-1. Replace hard-coded Scorecard GraphQL resolver with live OpenSSF evaluation (WMCP-9).
-2. Wire real threat enrichment (EPSS, KEV, Exploit signals) into vulnerability models (WMCP-9).
-3. Revalidate and upgrade SBOM output against current stable specifications (SPDX 3.0.1 and CycloneDX 1.7) and clean branding during WMCP-13.
-4. Implement durable snapshot persistence for AST analysis (WMCP-6).
-5. Retain version requirements on graph projections to support counterfactual scenario simulation (WMCP-7, WMCP-8).
-6. Implement true WebMCP capability registry and tool surfaces (WMCP-3, WMCP-4).
-7. Harden CI quality gates by removing `continue-on-error` and `|| true` bypasses (WMCP-14).
+The following are dispositions, not an open submission checklist. Historical repository limitations remain explicitly disclosed where they were not part of the final challenge path.
+
+1. **OPEN LEGACY / OUTSIDE CHALLENGE PATH:** Replace the hard-coded Scorecard GraphQL resolver with live OpenSSF evaluation.
+2. **OPEN LEGACY / OUTSIDE CHALLENGE PATH:** Wire real threat enrichment (EPSS, KEV, exploit signals) into vulnerability models.
+3. **OPEN LEGACY / OUTSIDE CHALLENGE PATH:** Revalidate SBOM specifications and clean legacy branding.
+4. **REPOSITORY-WIDE LIMITATION RETAINED:** AST snapshots remain filesystem-local rather than shared durable storage.
+5. **RESOLVED FOR CHALLENGE PATH:** Direct version requirements now propagate through the package projection and WMCP-8 GraphQL path at `d74fe501699c765efddef720848274e8b0707c35`.
+6. **RESOLVED FOR CHALLENGE PATH:** WebMCP capability registration, shared action authority, and final challenge tools are implemented and verified.
+7. **OPEN LEGACY / OUTSIDE CHALLENGE PATH:** CI quality gates retain the documented fail-open configuration; local final verification is not GitHub CI.
 
 ---
 
@@ -148,6 +150,7 @@ The implementation remains honest about the repository-wide limitations listed b
 - **Why it matters:** Queries traversing package-level graphs lack the constraint context needed to evaluate whether a new version breaks downstream dependencies.
 - **Hypothesis Classification:** CONFIRMED
 - **Recommended future phase:** WMCP-8 - Version-aware exposure
+- **Final disposition:** **RESOLVED FOR DIRECT WMCP-8 CHALLENGE PATH** at `d74fe501699c765efddef720848274e8b0707c35`. Final authority is manifest/raw requirement -> `DEPENDS_ON_PKG.version_constraint` -> GraphQL `PackageEdge.rawRequirement` -> `DirectDependentRecord.rawRequirement` -> `VersionConstraintEngine`. Transitive version compatibility is not computed.
 
 ### TRUTH-006 (HYPOTHESIS F): Impact Traversal Represents Topological Reachability
 - **Severity:** HIGH
@@ -175,6 +178,7 @@ The implementation remains honest about the repository-wide limitations listed b
 - **Why it matters:** Pull request builds can succeed even when frontend lint errors or E2E browser tests fail.
 - **Hypothesis Classification:** CONFIRMED
 - **Recommended future phase:** WMCP-14 - Evals and hardening
+- **Final disposition:** **OPEN LEGACY / OUTSIDE CHALLENGE PATH.** The fail-open CI configuration remains true. Local Rust, Docker/API, build, and E2E verification lanes are separate evidence and must not be called GitHub CI.
 
 ### TRUTH-009: Pre-Existing Gemini Agent Architecture Differs from Challenge WebMCP Design
 - **Severity:** HIGH
