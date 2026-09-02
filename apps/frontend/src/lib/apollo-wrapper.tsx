@@ -40,6 +40,7 @@ declare module "@apollo/client" {
 
 const GRAPHQL_ENDPOINT = process.env.NEXT_PUBLIC_GRAPHQL_ENDPOINT || "http://localhost:8000/graphql";
 const WS_ENDPOINT = process.env.NEXT_PUBLIC_WS_ENDPOINT || "ws://localhost:8000/graphql/ws";
+const API_HEALTH_ENDPOINT = GRAPHQL_ENDPOINT.replace(/\/graphql\/?$/, "/health");
 
 // ═══════════════════════════════════════════════════════════════
 // CIRCUIT BREAKER - Prevents request flooding when API is down
@@ -495,6 +496,42 @@ export function useCircuitBreakerStatus() {
     }, 1000);
 
     return () => clearInterval(interval);
+  }, []);
+
+  return status;
+}
+
+export type ApiHealthStatus = "checking" | "online" | "unavailable";
+
+/** Check the actual API health endpoint instead of inferring health from the circuit breaker. */
+export function useApiHealthStatus(): ApiHealthStatus {
+  const [status, setStatus] = useState<ApiHealthStatus>("checking");
+
+  useEffect(() => {
+    let active = true;
+    let controller: AbortController | null = null;
+
+    const checkHealth = async () => {
+      controller?.abort();
+      controller = new AbortController();
+      try {
+        const response = await fetch(API_HEALTH_ENDPOINT, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (active) setStatus(response.ok ? "online" : "unavailable");
+      } catch {
+        if (active) setStatus("unavailable");
+      }
+    };
+
+    void checkHealth();
+    const interval = window.setInterval(checkHealth, 30000);
+    return () => {
+      active = false;
+      controller?.abort();
+      window.clearInterval(interval);
+    };
   }, []);
 
   return status;

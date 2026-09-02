@@ -85,7 +85,7 @@ function SystemStatus() {
         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
         <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
       </div>
-      <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">System Online</span>
+      <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-widest">Demo Environment Online</span>
     </div>
   );
 }
@@ -197,11 +197,11 @@ export default function DashboardPage() {
         {/* Bottom Status Bar */}
         <div className="border-t theme-border bg-black/[0.01] dark:bg-white/[0.02] px-8 py-4 flex items-center justify-between text-xs font-mono text-surface-700 dark:text-surface-300">
           <div className="flex items-center gap-8">
-            <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> KAFKA: CONNECTED</span>
-            <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> DB: ONLINE</span>
+            <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> DATASET: SEEDED</span>
+            <span className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> API: HEALTH-CHECKED</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="animate-pulse">INGESTING LIVE SIGNALS...</span>
+            <span>LIVE INGESTION: DISABLED</span>
           </div>
         </div>
       </motion.div>

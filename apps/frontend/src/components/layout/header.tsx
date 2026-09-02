@@ -15,6 +15,7 @@ import {
   Star,
   AlertTriangle,
   CheckCircle2,
+  Loader2,
   Menu,
   X,
 } from "lucide-react";
@@ -23,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { NotificationCenter } from "@/components/ui/notification-center";
 import { FavoritesPanel } from "@/components/ui/favorites-panel";
 import { useHistoryStore } from "@/lib/stores";
-import { useCircuitBreakerStatus } from "@/lib/apollo-wrapper";
+import { useApiHealthStatus, useCircuitBreakerStatus } from "@/lib/apollo-wrapper";
 import { navigation } from "@/components/layout/sidebar";
 
 export function Header() {
@@ -36,6 +37,7 @@ export function Header() {
   const router = useRouter();
   const { addToHistory } = useHistoryStore();
   const circuit = useCircuitBreakerStatus();
+  const apiHealth = useApiHealthStatus();
 
   const pathname = usePathname();
   const hideSearch = pathname === "/" || pathname === "/explore";
@@ -134,25 +136,37 @@ export function Header() {
         <div
           className={cn(
             "hidden md:flex items-center gap-2 px-2.5 py-1 rounded-full border text-[11px] font-medium",
-            circuit.isOpen
+            apiHealth === "unavailable" || circuit.isOpen
               ? "border-red-500/30 bg-red-500/10 text-red-200"
+              : apiHealth === "checking"
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
               : "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
           )}
           title={
-            circuit.isOpen
+            apiHealth === "unavailable"
+              ? "The API health check is unavailable."
+              : circuit.isOpen
               ? `Circuit breaker open after ${circuit.failures} failures. Retrying in ${circuit.nextRetryIn}s.`
-              : "API healthy"
+              : apiHealth === "checking"
+                ? "Checking the API health endpoint."
+                : "API health endpoint responded successfully."
           }
         >
-          {circuit.isOpen ? (
+          {apiHealth === "unavailable" || circuit.isOpen ? (
             <AlertTriangle className="w-3.5 h-3.5" />
+          ) : apiHealth === "checking" ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : (
             <CheckCircle2 className="w-3.5 h-3.5" />
           )}
           <span>
-            {circuit.isOpen
-              ? `API Paused (${circuit.nextRetryIn}s)`
-              : "API OK"}
+            {apiHealth === "unavailable"
+              ? "API Unavailable"
+              : circuit.isOpen
+                ? `API Paused (${circuit.nextRetryIn}s)`
+                : apiHealth === "checking"
+                  ? "Checking API..."
+                  : "API Online"}
           </span>
         </div>
 
