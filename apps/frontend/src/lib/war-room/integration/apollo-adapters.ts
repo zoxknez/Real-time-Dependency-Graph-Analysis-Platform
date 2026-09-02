@@ -24,6 +24,7 @@ import {
   WarRoomGraphContext,
   WarRoomPackageRef,
   PackageEcosystem,
+  DirectDependentRecord,
 } from "../domain/types";
 import {
   createDomainError,
@@ -480,6 +481,69 @@ export function createApolloGraphQueryPort(
         return {
           ok: false,
           error: createDomainError("UNAVAILABLE", "Failed to trace dependency path"),
+        };
+      }
+    },
+
+    getDirectDependents: async (
+      _securityContext: WarRoomSecurityContext,
+      request: import("../application/ports").GetDirectDependentsRequest,
+      signal?: AbortSignal
+    ): Promise<WarRoomServiceResult<readonly DirectDependentRecord[]>> => {
+      try {
+        if (signal?.aborted) {
+          return { ok: false, error: createDomainError("CANCELLED", "Graph query cancelled") };
+        }
+
+        const revRes = await client.query<GetReverseDependentsResponse>({
+          query: GET_REVERSE_DEPENDENTS,
+          variables: {
+            packageId: request.packageId,
+            maxDepth: 1,
+            first: 100,
+          },
+          context: { fetchOptions: { signal } },
+          errorPolicy: "all",
+        });
+
+        if (signal?.aborted) {
+          return { ok: false, error: createDomainError("CANCELLED", "Graph query cancelled") };
+        }
+
+        if (hasApolloExecutionError(revRes)) {
+          return {
+            ok: false,
+            error: createDomainError("UNAVAILABLE", "Failed to retrieve reverse dependents from graph service"),
+          };
+        }
+
+        if (!revRes.data?.reverseDependents?.edges) {
+          return { ok: true, data: [] };
+        }
+
+        const records: DirectDependentRecord[] = [];
+        for (const edge of revRes.data.reverseDependents.edges) {
+          const node = edge?.node;
+          if (!node || !node.id) continue;
+          const ecosystem = parsePackageEcosystem(node.ecosystem);
+          if (!ecosystem) continue;
+          records.push({
+            dependentPackageId: node.id,
+            name: node.name ?? node.id,
+            ecosystem,
+            rawRequirement: (edge as unknown as { rawRequirement?: string })?.rawRequirement,
+            depth: edge.depth ?? 1,
+          });
+        }
+
+        return { ok: true, data: records };
+      } catch (err: unknown) {
+        if (signal?.aborted || isAbortError(err)) {
+          return { ok: false, error: createDomainError("CANCELLED", "Query cancelled") };
+        }
+        return {
+          ok: false,
+          error: createDomainError("UNAVAILABLE", "Failed to query direct dependents"),
         };
       }
     },

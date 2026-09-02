@@ -334,3 +334,16 @@ export interface TransitionFailure {
 }
 
 export type TransitionResult = TransitionSuccess | TransitionFailure;
+
+export type {
+  VersionConstraintStatus,
+  VersionConstraintEvaluation,
+} from "./version-constraint-engine";
+
+export type {
+  VersionAwareExposureStatus,
+  DirectDependentRecord,
+  VersionAwareDependentDetail,
+  VersionAwareExposureResult,
+  EvaluateExposureInput,
+} from "./version-exposure-engine";

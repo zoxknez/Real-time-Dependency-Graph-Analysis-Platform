@@ -14,12 +14,14 @@ export interface WarRoomProjectionNode {
   readonly ecosystem: PackageEcosystem;
   readonly depth: number;
   readonly isRoot: boolean;
+  readonly rawRequirement?: string;
 }
 
 export interface WarRoomProjectionLink {
   readonly source: string;
   readonly target: string;
   readonly kind: "REVERSE_REACHABILITY";
+  readonly rawRequirement?: string;
 }
 
 export interface WarRoomGraphProjection {

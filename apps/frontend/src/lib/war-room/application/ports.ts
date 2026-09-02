@@ -60,6 +60,10 @@ export interface WarRoomPackageCatalogPort {
   ): Promise<WarRoomServiceResult<WarRoomPackageInspection>>;
 }
 
+export interface GetDirectDependentsRequest {
+  readonly packageId: string;
+}
+
 export interface WarRoomGraphQueryPort {
   loadPackageGraph(
     securityContext: WarRoomSecurityContext,
@@ -72,6 +76,12 @@ export interface WarRoomGraphQueryPort {
     request: TraceDependencyPathRequest,
     signal?: AbortSignal
   ): Promise<WarRoomServiceResult<WarRoomDependencyPath>>;
+
+  getDirectDependents?(
+    securityContext: WarRoomSecurityContext,
+    request: GetDirectDependentsRequest,
+    signal?: AbortSignal
+  ): Promise<WarRoomServiceResult<readonly import("../domain/types").DirectDependentRecord[]>>;
 }
 
 export interface RecalculateScenarioInput {

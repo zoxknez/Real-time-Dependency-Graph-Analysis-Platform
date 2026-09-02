@@ -205,6 +205,7 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
       "search_packages",
       "open_package_graph",
       "summarize_graph",
+      "calculate_blast_radius",
       "trace_dependency_path",
       "inspect_selected_package",
       "simulate_api_changes",
@@ -214,7 +215,6 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
     ];
 
     const expectedDeferred: WebMcpActionName[] = [
-      "calculate_blast_radius",
       "focus_graph_nodes",
       "set_scenario_priority",
       "set_scenario_exclusion",
@@ -232,8 +232,8 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
 
     expect(actualExecutable.sort()).toEqual([...expectedExecutable].sort());
     expect(actualDeferred.sort()).toEqual([...expectedDeferred].sort());
-    expect(actualExecutable.length).toBe(9);
-    expect(actualDeferred.length).toBe(7);
+    expect(actualExecutable.length).toBe(10);
+    expect(actualDeferred.length).toBe(6);
   });
 
   test("R2-T7, R2-T8, R2-T9. Schema Readiness: Exactly 13 FROZEN vs 3 PENDING_DOMAIN_CONTRACT", () => {
@@ -301,7 +301,6 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
     const harness = setupTestHarness();
 
     const deferredTools: WebMcpActionName[] = [
-      "calculate_blast_radius",
       "focus_graph_nodes",
       "set_scenario_priority",
       "set_scenario_exclusion",
@@ -513,7 +512,6 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
       "babel",
       "acorn",
       "semver",
-      "calculateBlastRadius",
       "synthesizePlan",
       "evaluateConflict",
     ];

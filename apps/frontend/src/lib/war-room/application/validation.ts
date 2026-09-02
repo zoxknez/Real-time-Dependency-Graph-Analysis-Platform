@@ -204,3 +204,23 @@ export function validateGraphServiceOutput(
 
   return null;
 }
+
+export function validateCalculateBlastRadiusRequest(
+  request: import("./types").CalculateBlastRadiusRequest
+): WarRoomDomainError | null {
+  if (!request) {
+    return invalidInputError("Request must not be null or undefined");
+  }
+  if (request.targetPackageId !== undefined) {
+    if (typeof request.targetPackageId !== "string" || request.targetPackageId.trim() === "") {
+      return invalidInputError("targetPackageId, if specified, must not be empty");
+    }
+  }
+  if (request.proposedVersion !== undefined) {
+    if (typeof request.proposedVersion !== "string" || request.proposedVersion.trim() === "" || request.proposedVersion.length > 128) {
+      return invalidInputError("proposedVersion, if specified, must be a non-empty string <= 128 characters");
+    }
+  }
+  return null;
+}
+

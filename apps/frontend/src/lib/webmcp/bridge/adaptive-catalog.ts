@@ -67,17 +67,11 @@ export const SUMMARIZE_GRAPH_SCHEMA = {
 export const CALCULATE_BLAST_RADIUS_SCHEMA = {
   type: "object",
   properties: {
-    packageId: {
-      type: "string",
-      minLength: 1,
-      maxLength: 256,
-      description: "Optional target package ID. Defaults to currently selected package.",
-    },
-    targetVersion: {
+    proposedVersion: {
       type: "string",
       minLength: 1,
       maxLength: 128,
-      description: "Proposed version string to evaluate blast radius against.",
+      description: "Proposed version string to evaluate dependency constraint exposure against.",
     },
   },
   additionalProperties: false,
@@ -123,6 +117,12 @@ export const SIMULATE_API_CHANGES_SCHEMA = {
       minLength: 1,
       maxLength: 128,
       description: "Exact authoritative base version revision matching a committed Package-scope snapshot.",
+    },
+    proposedVersion: {
+      type: "string",
+      minLength: 1,
+      maxLength: 128,
+      description: "Optional proposed version string for subsequent version-aware dependency constraint evaluation.",
     },
     operations: {
       type: "array",
@@ -311,17 +311,16 @@ export const WEB_MCP_TOOL_CATALOG: Record<WebMcpActionName, WebMcpToolCatalogEnt
   calculate_blast_radius: {
     name: "calculate_blast_radius",
     title: "Calculate Blast Radius",
-    description: "Calculates the version-aware transitive blast radius for a dependency change.",
+    description: "Calculates the deterministic version-aware dependency exposure for a proposed package version.",
     schemaStatus: "FROZEN",
     inputSchema: CALCULATE_BLAST_RADIUS_SCHEMA,
     annotations: {
       readOnlyHint: true,
       untrustedContentHint: true,
     },
-    authority: "Version-aware Blast Radius Engine",
-    classification: "FUTURE_DETERMINISTIC_CAPABILITY",
-    bindingStatus: "DEFERRED",
-    futureDependency: "WMCP-8 (Version-Aware Blast Radius Engine)",
+    authority: "WarRoomActions.calculateBlastRadius",
+    classification: "EXISTING_ACTION",
+    bindingStatus: "EXECUTABLE",
   },
   trace_dependency_path: {
     name: "trace_dependency_path",

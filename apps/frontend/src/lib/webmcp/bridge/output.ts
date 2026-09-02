@@ -11,12 +11,14 @@ import {
   WarRoomPackageRef,
   WarRoomAnalysisRef,
   WarRoomScenario,
+  VersionAwareExposureResult,
 } from "../../war-room";
 import {
   WebMcpOpenGraphResultData,
   WebMcpSearchPackagesResultData,
   WebMcpScenarioFindingSummary,
   WebMcpScenarioResultData,
+  WebMcpBlastRadiusResultData,
   WebMcpToolFailureEnvelope,
   WebMcpToolOutputEnvelope,
   WebMcpToolSuccessEnvelope,
@@ -322,4 +324,61 @@ export function buildBudgetedScenarioOutput(
     "Tool result exceeded the safe output budget"
   );
 }
+
+export function buildBudgetedBlastRadiusOutput(
+  tool: string,
+  contextRevision: number,
+  result: VersionAwareExposureResult
+): WebMcpToolOutputEnvelope<WebMcpBlastRadiusResultData> {
+  const exposedList = result.dependents.filter(
+    (d) => d.status === "DECLARED_RANGE_EXPOSED"
+  );
+
+  const maxItems = Math.min(5, exposedList.length);
+
+  for (let k = maxItems; k >= 0; k--) {
+    const selected = exposedList.slice(0, k).map((d) => ({
+      packageId: d.dependentPackageId,
+      ecosystem: d.ecosystem,
+      rawRequirement: d.rawRequirement,
+      reason: sliceUtf16Safe(d.reason, 120),
+    }));
+
+    const outputTruncated = k < exposedList.length;
+
+    const data: WebMcpBlastRadiusResultData = {
+      targetPackageId: result.targetPackageId,
+      proposedVersion: result.proposedVersion,
+      breakingCandidate: result.breakingCandidate,
+      directDependentsTotal: result.directDependentsTotal,
+      declaredRangeExposed: result.declaredRangeExposed,
+      declaredRangeBlocked: result.declaredRangeBlocked,
+      unknownTotal: result.unknownTotal,
+      topologicalReachabilityCount: result.topologicalReachabilityCount,
+      topExposedDependents: selected,
+      exposedDependentsDisplayedCount: selected.length,
+      outputTruncated,
+    };
+
+    const envelope: WebMcpToolSuccessEnvelope<WebMcpBlastRadiusResultData> = {
+      ok: true,
+      tool,
+      changed: false,
+      contextRevision,
+      data,
+    };
+
+    if (JSON.stringify(envelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+      return envelope;
+    }
+  }
+
+  return formatToolFailure(
+    tool,
+    contextRevision,
+    "INTERNAL_ERROR",
+    "Tool result exceeded the safe output budget"
+  );
+}
+
 

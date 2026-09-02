@@ -46,6 +46,7 @@ export type WarRoomActionName =
   | "CHANGE_HUMAN_REVIEW"
   | "GENERATE_MIGRATION_PLAN"
   | "RESET_MIGRATION_PLAN"
+  | "CALCULATE_BLAST_RADIUS"
   | "APP_INITIALIZE";
 
 export type WarRoomServiceResult<T> =
@@ -130,3 +131,9 @@ export interface AttachHumanReviewRequest {
 export interface ChangeHumanReviewRequest {
   readonly review: WarRoomHumanReview;
 }
+
+export interface CalculateBlastRadiusRequest {
+  readonly targetPackageId?: string;
+  readonly proposedVersion?: string;
+}
+

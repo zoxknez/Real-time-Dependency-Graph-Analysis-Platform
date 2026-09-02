@@ -123,6 +123,7 @@ export interface RawSimulateOperation {
 
 export interface ValidatedSimulateApiChangesInput {
   readonly baseVersion: string;
+  readonly proposedVersion?: string;
   readonly operations: readonly RawSimulateOperation[];
 }
 
@@ -136,7 +137,7 @@ export function validateSimulateApiChangesInput(
   const secError = rejectForbiddenKeys(obj);
   if (secError) return { ok: false, error: secError };
 
-  const allowedTopKeys = new Set(["baseVersion", "operations"]);
+  const allowedTopKeys = new Set(["baseVersion", "proposedVersion", "operations"]);
   for (const key of Object.keys(obj)) {
     if (!allowedTopKeys.has(key)) {
       return { ok: false, error: `Unexpected property '${key}' in simulate_api_changes input` };
@@ -150,6 +151,14 @@ export function validateSimulateApiChangesInput(
     return { ok: false, error: "baseVersion must be a non-empty string <= 128 characters" };
   }
   const baseVersion = obj.baseVersion.trim();
+
+  let proposedVersion: string | undefined;
+  if (obj.proposedVersion !== undefined && obj.proposedVersion !== null) {
+    if (typeof obj.proposedVersion !== "string" || obj.proposedVersion.trim().length === 0 || obj.proposedVersion.length > 128) {
+      return { ok: false, error: "proposedVersion must be a non-empty string <= 128 characters" };
+    }
+    proposedVersion = obj.proposedVersion.trim();
+  }
 
   if (!Array.isArray(obj.operations)) {
     return { ok: false, error: "operations must be an array of patch operations" };
@@ -295,8 +304,42 @@ export function validateSimulateApiChangesInput(
     ok: true,
     value: {
       baseVersion,
+      proposedVersion,
       operations: validatedOps,
     },
   };
 }
+
+export interface ValidatedCalculateBlastRadiusInput {
+  readonly proposedVersion?: string;
+}
+
+export function validateCalculateBlastRadiusInput(
+  input: unknown
+): AdaptiveValidationResult<ValidatedCalculateBlastRadiusInput> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return { ok: false, error: "calculate_blast_radius input must be a JSON object" };
+  }
+  const obj = input as Record<string, unknown>;
+  const secError = rejectForbiddenKeys(obj);
+  if (secError) return { ok: false, error: secError };
+
+  const allowedKeys = new Set(["proposedVersion"]);
+  for (const key of Object.keys(obj)) {
+    if (!allowedKeys.has(key)) {
+      return { ok: false, error: `Unexpected property '${key}' in calculate_blast_radius input` };
+    }
+  }
+
+  let proposedVersion: string | undefined;
+  if (obj.proposedVersion !== undefined && obj.proposedVersion !== null) {
+    if (typeof obj.proposedVersion !== "string" || obj.proposedVersion.trim().length === 0 || obj.proposedVersion.length > 128) {
+      return { ok: false, error: "proposedVersion must be a non-empty string <= 128 characters" };
+    }
+    proposedVersion = obj.proposedVersion.trim();
+  }
+
+  return { ok: true, value: { proposedVersion } };
+}
+
 

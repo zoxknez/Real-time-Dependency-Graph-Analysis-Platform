@@ -36,7 +36,13 @@ import {
   ChangeScenarioPatchRequest,
   AttachHumanReviewRequest,
   ChangeHumanReviewRequest,
+  CalculateBlastRadiusRequest,
 } from "./types";
+import {
+  evaluateVersionAwareExposure,
+  DirectDependentRecord,
+  VersionAwareExposureResult,
+} from "../domain/version-exposure-engine";
 import {
   WarRoomSecurityContextPort,
   WarRoomAuthorizationPort,
@@ -53,6 +59,7 @@ import {
   validateTraceDependencyPathRequest,
   validateOpenPackageGraphRequest,
   validateSelectPackageRequest,
+  validateCalculateBlastRadiusRequest,
   validateGraphServiceOutput,
 } from "./validation";
 
@@ -137,6 +144,11 @@ export interface WarRoomActions {
   resetMigrationPlan(
     invocation: WarRoomInvocationContext
   ): Promise<WarRoomActionResult<void>>;
+
+  calculateBlastRadius(
+    invocation: WarRoomInvocationContext,
+    request: CalculateBlastRadiusRequest
+  ): Promise<WarRoomActionResult<VersionAwareExposureResult>>;
 }
 
 function isAbortFailure(err: unknown, signal?: AbortSignal): boolean {
@@ -910,6 +922,122 @@ export function createWarRoomActions(
       if (!transitionRes.ok) return createActionFailure(transitionRes.error, finalRev);
 
       return createActionSuccess(undefined, transitionRes.changed, finalRev);
+    },
+
+    calculateBlastRadius: async (
+      invocation: WarRoomInvocationContext,
+      request: CalculateBlastRadiusRequest
+    ): Promise<WarRoomActionResult<VersionAwareExposureResult>> => {
+      const invErr = validateInvocationContext(invocation);
+      if (invErr) return createActionFailure(invErr, currentRevision());
+
+      const reqErr = validateCalculateBlastRadiusRequest(request);
+      if (reqErr) return createActionFailure(reqErr, currentRevision());
+
+      const secRes = await resolveSecurity(securityContextPort, invocation.signal);
+      if (!secRes.ok) return createActionFailure(secRes.error, currentRevision());
+
+      const authRes = await callPort(invocation.signal, () =>
+        authorizationPort.authorize(
+          { securityContext: secRes.data, action: "CALCULATE_BLAST_RADIUS" },
+          invocation.signal
+        )
+      );
+      if (!authRes.ok) return createActionFailure(authRes.error, currentRevision());
+
+      if (invocation.signal?.aborted) {
+        return createActionFailure(createDomainError("CANCELLED", "Operation was cancelled"), currentRevision());
+      }
+
+      // Check context state and target package authority
+      const state = statePort.getState();
+      let targetPackageId: string;
+      let activeProposedVersion: string | undefined;
+      let breakingCandidate = false;
+
+      if (state.phase === "SIMULATION_READY" || state.phase === "HUMAN_REVIEW" || state.phase === "PLAN_READY") {
+        targetPackageId = state.scenario.targetPackageId;
+        activeProposedVersion = state.scenario.proposedVersion;
+        breakingCandidate = (state.analysis?.totalBreakingChanges ?? 0) > 0;
+      } else if (state.phase === "NODE_SELECTED") {
+        targetPackageId = state.selection.package.id;
+      } else if (state.phase === "GRAPH_READY") {
+        targetPackageId = state.graph.rootPackage.id;
+      } else {
+        return createActionFailure(
+          createDomainError("INVALID_STATE", "No package target available in current phase"),
+          currentRevision()
+        );
+      }
+
+      // Target override check
+      if (request.targetPackageId && request.targetPackageId !== targetPackageId) {
+        return createActionFailure(
+          createDomainError("INVALID_INPUT", `targetPackageId '${request.targetPackageId}' does not match authoritative context target '${targetPackageId}'`),
+          currentRevision()
+        );
+      }
+
+      // Proposed version resolution
+      let proposedVersion = request.proposedVersion?.trim();
+      if (activeProposedVersion) {
+        if (proposedVersion && proposedVersion !== activeProposedVersion) {
+          return createActionFailure(
+            createDomainError("INVALID_INPUT", `Contradictory proposedVersion: request '${proposedVersion}' does not match active scenario proposedVersion '${activeProposedVersion}'`),
+            currentRevision()
+          );
+        }
+        proposedVersion = activeProposedVersion;
+      }
+
+      if (!proposedVersion || proposedVersion.length === 0) {
+        return createActionFailure(
+          createDomainError("INVALID_INPUT", "Proposed version must be explicitly provided"),
+          currentRevision()
+        );
+      }
+
+      // Query direct dependents
+      let directDependents: readonly DirectDependentRecord[] = [];
+      let topologicalReachabilityCount = 0;
+
+      if (typeof graphQueryPort.getDirectDependents === "function") {
+        const directRes = await callPort(invocation.signal, () =>
+          graphQueryPort.getDirectDependents!(
+            secRes.data,
+            { packageId: targetPackageId },
+            invocation.signal
+          )
+        );
+        if (!directRes.ok) return createActionFailure(directRes.error, currentRevision());
+        directDependents = directRes.data;
+        topologicalReachabilityCount = directDependents.length;
+      } else if ("graph" in state && state.graph) {
+        // Fallback: extract from graph context if getDirectDependents is not implemented
+        const pids = state.graph.packageIds.filter((id: string) => id !== targetPackageId);
+        topologicalReachabilityCount = pids.length;
+        directDependents = pids.map((id: string) => ({
+          dependentPackageId: id,
+          name: id,
+          ecosystem: state.graph.rootPackage.ecosystem,
+          rawRequirement: undefined,
+          depth: 1,
+        }));
+      }
+
+      if (invocation.signal?.aborted) {
+        return createActionFailure(createDomainError("CANCELLED", "Operation was cancelled"), currentRevision());
+      }
+
+      const exposureResult = evaluateVersionAwareExposure({
+        targetPackageId,
+        proposedVersion,
+        breakingCandidate,
+        directDependents,
+        topologicalReachabilityCount,
+      });
+
+      return createActionSuccess(exposureResult, false, currentRevision());
     },
   };
 }

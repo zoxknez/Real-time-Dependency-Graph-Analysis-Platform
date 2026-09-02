@@ -254,9 +254,8 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
     expect(recalc.classification).toBe("EXISTING_ACTION");
   });
 
-  test("7C-T4: Exactly seven tools remain DEFERRED", () => {
+  test("7C-T4: Exactly six tools remain DEFERRED in WMCP-8", () => {
     const expectedDeferred = [
-      "calculate_blast_radius",
       "focus_graph_nodes",
       "set_scenario_priority",
       "set_scenario_exclusion",
@@ -270,12 +269,12 @@ test.describe("WMCP-7C: WebMCP Scenario Tool Exposure", () => {
     );
 
     expect(actualDeferred.sort()).toEqual(expectedDeferred.sort());
-    expect(actualDeferred.length).toBe(7);
+    expect(actualDeferred.length).toBe(6);
 
     const actualExecutable = ALL_CANONICAL_ACTION_NAMES.filter(
       (name) => WEB_MCP_TOOL_CATALOG[name].bindingStatus === "EXECUTABLE"
     );
-    expect(actualExecutable.length).toBe(9);
+    expect(actualExecutable.length).toBe(10);
   });
 
   // ─────────────────────────────────────────────────────────────

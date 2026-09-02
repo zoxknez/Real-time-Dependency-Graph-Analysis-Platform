@@ -346,7 +346,7 @@ test.describe("WebMCP Live Adaptive Registration Lifecycle (WMCP-4D)", () => {
     expect(logical.toolNames.has("focus_graph_nodes")).toBe(true);
 
     const registrable = deriveRegistrableToolSurface(logical);
-    expect(registrable.toolNames.has("calculate_blast_radius")).toBe(false);
+    expect(registrable.toolNames.has("calculate_blast_radius")).toBe(true);
     expect(registrable.toolNames.has("focus_graph_nodes")).toBe(false);
     expect(registrable.toolNames.has("summarize_graph")).toBe(true);
     expect(registrable.toolNames.has("trace_dependency_path")).toBe(true);
@@ -368,19 +368,19 @@ test.describe("WebMCP Live Adaptive Registration Lifecycle (WMCP-4D)", () => {
   test("4D-T4. Exact GRAPH_READY Registrable Surface", () => {
     const logical = deriveDesiredToolSurface({ phase: "GRAPH_READY", contextRevision: 2, webMcpAvailability: "AVAILABLE" });
     const registrable = deriveRegistrableToolSurface(logical);
-    expect(Array.from(registrable.toolNames).sort()).toEqual(["open_package_graph", "summarize_graph", "trace_dependency_path"]);
+    expect(Array.from(registrable.toolNames).sort()).toEqual(["calculate_blast_radius", "open_package_graph", "summarize_graph", "trace_dependency_path"]);
   });
 
   test("4D-T5. Exact NODE_SELECTED Registrable Surface", () => {
     const logical = deriveDesiredToolSurface({ phase: "NODE_SELECTED", contextRevision: 3, webMcpAvailability: "AVAILABLE" });
     const registrable = deriveRegistrableToolSurface(logical);
-    expect(Array.from(registrable.toolNames).sort()).toEqual(["inspect_selected_package", "simulate_api_changes", "trace_dependency_path"]);
+    expect(Array.from(registrable.toolNames).sort()).toEqual(["calculate_blast_radius", "inspect_selected_package", "simulate_api_changes", "trace_dependency_path"]);
   });
 
   test("4D-T6. Exact SIMULATION_READY Registrable Surface", () => {
     const logical = deriveDesiredToolSurface({ phase: "SIMULATION_READY", contextRevision: 4, webMcpAvailability: "AVAILABLE" });
     const registrable = deriveRegistrableToolSurface(logical);
-    expect(Array.from(registrable.toolNames).sort()).toEqual(["inspect_scenario", "trace_dependency_path"]);
+    expect(Array.from(registrable.toolNames).sort()).toEqual(["calculate_blast_radius", "inspect_scenario", "trace_dependency_path"]);
   });
 
   test("4D-T7. Exact HUMAN_REVIEW Registrable Surface Contains recalculate_scenario", () => {
@@ -912,6 +912,7 @@ test.describe("WebMCP Live Adaptive Registration Lifecycle (WMCP-4D)", () => {
 
     // Live registration surface automatically updated to GRAPH_READY surface!
     expect(Array.from(harness.platformSpies.registeredTools.keys()).sort()).toEqual([
+      "calculate_blast_radius",
       "open_package_graph",
       "summarize_graph",
       "trace_dependency_path",
@@ -942,6 +943,7 @@ test.describe("WebMCP Live Adaptive Registration Lifecycle (WMCP-4D)", () => {
 
     // Live registration surface automatically updated to NODE_SELECTED surface!
     expect(Array.from(harness.platformSpies.registeredTools.keys()).sort()).toEqual([
+      "calculate_blast_radius",
       "inspect_selected_package",
       "simulate_api_changes",
       "trace_dependency_path",

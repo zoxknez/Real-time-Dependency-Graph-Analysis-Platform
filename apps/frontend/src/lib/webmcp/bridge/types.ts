@@ -76,3 +76,25 @@ export interface WebMcpScenarioResultData {
   readonly outputTruncated: boolean;
 }
 
+export interface WebMcpBlastRadiusExposedDependentSummary {
+  readonly packageId: string;
+  readonly ecosystem: string;
+  readonly rawRequirement?: string;
+  readonly reason: string;
+}
+
+export interface WebMcpBlastRadiusResultData {
+  readonly targetPackageId: string;
+  readonly proposedVersion: string;
+  readonly breakingCandidate: boolean;
+  readonly directDependentsTotal: number;
+  readonly declaredRangeExposed: number;
+  readonly declaredRangeBlocked: number;
+  readonly unknownTotal: number;
+  readonly topologicalReachabilityCount: number;
+  readonly topExposedDependents: readonly WebMcpBlastRadiusExposedDependentSummary[];
+  readonly exposedDependentsDisplayedCount: number;
+  readonly outputTruncated: boolean;
+}
+
+

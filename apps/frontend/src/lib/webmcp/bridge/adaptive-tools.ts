@@ -32,6 +32,7 @@ import {
   validateEmptyObjectInput,
   validateTraceDependencyPathInput,
   validateSimulateApiChangesInput,
+  validateCalculateBlastRadiusInput,
 } from "./adaptive-validation";
 import {
   validateSearchPackagesInput,
@@ -43,6 +44,7 @@ import {
   buildBudgetedSearchOutput,
   buildBudgetedOpenGraphOutput,
   buildBudgetedScenarioOutput,
+  buildBudgetedBlastRadiusOutput,
 } from "./output";
 import {
   captureExecutionSnapshot,
@@ -264,6 +266,64 @@ export function createAdaptiveToolDefinition(
             packageCount: graph.packageIds.length,
             contextRevision: snapshot.contextRevision,
           });
+        },
+      };
+    }
+
+    case "calculate_blast_radius": {
+      return {
+        name: "calculate_blast_radius",
+        description: entry.description,
+        inputSchema: entry.inputSchema,
+        annotations: entry.annotations,
+        execute: async (input: Record<string, unknown>, execContext?: WebMcpPlatformExecutionContext) => {
+          const snapshot = captureExecutionSnapshot(statePort);
+          const admission = checkExecutionAdmission("calculate_blast_radius", snapshot, platformAdapter);
+          if (!admission.admitted) {
+            return admission.failureOutput;
+          }
+
+          if (execContext?.signal?.aborted) {
+            return formatToolFailure("calculate_blast_radius", snapshot.contextRevision, "CANCELLED", "Operation was cancelled before execution");
+          }
+
+          const valRes = validateCalculateBlastRadiusInput(input);
+          if (!valRes.ok) {
+            return formatToolFailure("calculate_blast_radius", snapshot.contextRevision, "INVALID_INPUT", valRes.error);
+          }
+
+          const signal = execContext?.signal;
+          const invocation: WarRoomInvocationContext = {
+            channel: "AGENT",
+            capturedContextRevision: snapshot.contextRevision,
+            signal,
+          };
+
+          try {
+            const actionRes = await actions.calculateBlastRadius(invocation, {
+              proposedVersion: valRes.value.proposedVersion,
+            });
+
+            if (signal?.aborted) {
+              return formatToolFailure("calculate_blast_radius", snapshot.contextRevision, "CANCELLED", "Operation was cancelled");
+            }
+
+            if (!actionRes.ok) {
+              return formatToolFailure(
+                "calculate_blast_radius",
+                actionRes.contextRevision,
+                actionRes.error.code,
+                actionRes.error.message
+              );
+            }
+
+            return buildBudgetedBlastRadiusOutput("calculate_blast_radius", actionRes.contextRevision, actionRes.data);
+          } catch (err: unknown) {
+            if (signal?.aborted || (err instanceof Error && err.name === "AbortError")) {
+              return formatToolFailure("calculate_blast_radius", snapshot.contextRevision, "CANCELLED", "Operation was cancelled");
+            }
+            return formatToolFailure("calculate_blast_radius", snapshot.contextRevision, "INTERNAL_ERROR", "Failed to calculate blast radius");
+          }
         },
       };
     }
@@ -505,7 +565,7 @@ export function createAdaptiveToolDefinition(
             targetPackageId,
             patchOperations,
             baseVersion,
-            proposedVersion: `${baseVersion}-hypothetical`,
+            proposedVersion: valRes.value.proposedVersion ?? `${baseVersion}-hypothetical`,
           };
 
           const signal = execContext?.signal;
