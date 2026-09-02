@@ -444,7 +444,13 @@ function GraphPageContent() {
   // Initial camera transition
   useEffect(() => {
     if (graphData.nodes.length > 0 && graphRef.current) {
-      graphRef.current.zoomToFit(1000);
+      // The 3D engine can finish measuring its container one frame after the
+      // data arrives. Fit twice so the first render never clips the graph.
+      graphRef.current.zoomToFit(700, 80);
+      const fitTimer = window.setTimeout(() => {
+        graphRef.current?.zoomToFit(500, 80);
+      }, 250);
+      return () => window.clearTimeout(fitTimer);
     }
   }, [graphData.nodes.length]);
 
@@ -515,7 +521,7 @@ function GraphPageContent() {
 
   return (
     <div
-      className="h-[calc(100vh-8rem)] flex flex-col gap-4"
+      className="min-h-[calc(100vh-8rem)] flex flex-col gap-4 pb-4"
       data-war-room-phase={canonicalPhase}
       data-war-room-revision={canonicalRevision}
       data-war-room-root-package={activePackageId || undefined}
@@ -569,7 +575,7 @@ function GraphPageContent() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
         onMouseMove={handleMouseMove}
-        className={`flex-1 relative graph-container ${isFullscreen ? "theme-graph-bg" : ""}`}
+        className={`flex-1 min-h-[560px] lg:min-h-[600px] relative graph-container ${isFullscreen ? "theme-graph-bg" : ""}`}
       >
         {/* 3D Graph Canvas */}
         {graphData.nodes.length > 0 ? (
@@ -678,7 +684,7 @@ function GraphPageContent() {
 
         {/* Live Update Indicator */}
         {activePackageId && showLiveUpdates && (
-          <div className="absolute top-4 left-4 z-20">
+          <div className="absolute top-4 right-4 z-20">
             <LiveUpdateIndicator
               updates={liveUpdates}
               isConnected={isConnected}
@@ -701,6 +707,31 @@ function GraphPageContent() {
             isPaused={isPaused}
             onPlayPauseToggle={() => setIsPaused(!isPaused)}
           />
+        )}
+
+        {/* Graph Legend */}
+        {graphStats && (
+          <div className="absolute bottom-4 right-4 z-20 hidden sm:block glass-card px-4 py-3 shadow-2xl border-white/10 backdrop-blur-xl">
+            <div className="flex items-center justify-between gap-5 mb-2">
+              <span className="text-[10px] theme-text-faint uppercase font-bold tracking-wider">Graph key</span>
+              <span className="text-[10px] theme-text-faint">Click a node to inspect</span>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {graphStats.ecosystems.map((eco) => (
+                <div key={eco} className="flex items-center gap-2 text-xs theme-text-secondary">
+                  <span
+                    className="h-2.5 w-2.5 rounded-full shadow-[0_0_10px_currentColor]"
+                    style={{ backgroundColor: getEcosystemColor(eco), color: getEcosystemColor(eco) }}
+                  />
+                  {formatEcosystemName(eco)}
+                </div>
+              ))}
+              <div className="flex items-center gap-2 text-xs theme-text-secondary">
+                <span className="h-px w-5 bg-primary-400/70" />
+                Dependency edge
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Graph Statistics Card */}

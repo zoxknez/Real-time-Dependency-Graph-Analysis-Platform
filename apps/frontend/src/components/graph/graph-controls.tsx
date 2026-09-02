@@ -35,7 +35,7 @@ export function GraphControls({
     <motion.div
       initial={{ opacity: 0, x: -20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="absolute top-20 left-6 flex flex-col gap-3 z-40"
+      className="absolute top-4 left-4 flex flex-col gap-3 z-40"
     >
       {/* Zoom Controls */}
       <div className="glass-card p-1.5 flex flex-col gap-1.5 shadow-2xl border-white/10 backdrop-blur-xl">
