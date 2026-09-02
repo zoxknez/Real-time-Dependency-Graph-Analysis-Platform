@@ -6,10 +6,17 @@
  * stacks, causes, raw DOMExceptions, or internal details.
  */
 
-import { WarRoomErrorCode, WarRoomPackageRef } from "../../war-room";
+import {
+  WarRoomErrorCode,
+  WarRoomPackageRef,
+  WarRoomAnalysisRef,
+  WarRoomScenario,
+} from "../../war-room";
 import {
   WebMcpOpenGraphResultData,
   WebMcpSearchPackagesResultData,
+  WebMcpScenarioFindingSummary,
+  WebMcpScenarioResultData,
   WebMcpToolFailureEnvelope,
   WebMcpToolOutputEnvelope,
   WebMcpToolSuccessEnvelope,
@@ -223,3 +230,77 @@ export function buildBudgetedOpenGraphOutput(
     "Tool result exceeded the safe output budget"
   );
 }
+
+export function buildBudgetedScenarioOutput(
+  tool: string,
+  contextRevision: number,
+  changed: boolean,
+  analysis: WarRoomAnalysisRef,
+  scenario: WarRoomScenario
+): WebMcpToolOutputEnvelope<WebMcpScenarioResultData> {
+  const totalBreaking = analysis.totalBreakingChanges ?? 0;
+  const returnedBreaking =
+    analysis.returnedBreakingChanges ?? (analysis.breakingChanges?.length ?? 0);
+  const serverTruncated = analysis.breakingChangesTruncated ?? false;
+
+  const baselinePrefix = analysis.baselineSurfaceHash
+    ? `${analysis.baselineSurfaceHash.slice(0, 12)}...`
+    : undefined;
+  const candidatePrefix = analysis.candidateSurfaceHash
+    ? `${analysis.candidateSurfaceHash.slice(0, 12)}...`
+    : undefined;
+
+  const rawFindings = analysis.breakingChanges ?? [];
+  const maxDisplayFindings = 5;
+
+  for (let count = Math.min(rawFindings.length, maxDisplayFindings); count >= 0; count--) {
+    const selectedFindings: WebMcpScenarioFindingSummary[] = rawFindings
+      .slice(0, count)
+      .map((f) => ({
+        changeType: f.changeType,
+        symbolPath: f.symbolPath,
+        description: sanitizeErrorMessage(f.description),
+        severity: f.severity,
+        oldSignature: f.oldSignature,
+        newSignature: f.newSignature,
+      }));
+
+    const outputTruncated = count < returnedBreaking || count < totalBreaking;
+
+    const data: WebMcpScenarioResultData = {
+      scenarioId: scenario.id,
+      targetPackageId: scenario.targetPackageId,
+      baseVersion: scenario.baseVersion,
+      changed: analysis.changed ?? changed,
+      baselineSurfaceHashPrefix: baselinePrefix,
+      candidateSurfaceHashPrefix: candidatePrefix,
+      totalBreakingChanges: totalBreaking,
+      returnedBreakingChanges: returnedBreaking,
+      serverTruncated,
+      topFindings: selectedFindings,
+      findingsDisplayedCount: selectedFindings.length,
+      outputTruncated,
+    };
+
+    const envelope: WebMcpToolSuccessEnvelope<WebMcpScenarioResultData> = {
+      ok: true,
+      tool,
+      changed,
+      contextRevision,
+      data,
+    };
+
+    if (JSON.stringify(envelope).length <= MAX_TOTAL_OUTPUT_CHARS) {
+      return envelope;
+    }
+  }
+
+  // Hard fail-closed fallback
+  return formatToolFailure(
+    tool,
+    contextRevision,
+    "INTERNAL_ERROR",
+    "Tool result exceeded the safe output budget"
+  );
+}
+

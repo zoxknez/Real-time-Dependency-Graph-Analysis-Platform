@@ -26,7 +26,9 @@ export const EXECUTABLE_TOOL_POLICIES: Record<
   | "summarize_graph"
   | "trace_dependency_path"
   | "inspect_selected_package"
+  | "simulate_api_changes"
   | "inspect_scenario"
+  | "recalculate_scenario"
   | "inspect_migration_plan",
   WebMcpExecutionPolicy
 > = {
@@ -37,6 +39,8 @@ export const EXECUTABLE_TOOL_POLICIES: Record<
   inspect_scenario: "STRICT_CONTEXT_READ",
   inspect_migration_plan: "STRICT_CONTEXT_READ",
   open_package_graph: "ACTION_COMMIT_GUARDED_MUTATION",
+  simulate_api_changes: "ACTION_COMMIT_GUARDED_MUTATION",
+  recalculate_scenario: "ACTION_COMMIT_GUARDED_MUTATION",
 };
 
 export interface WebMcpExecutionSnapshot {

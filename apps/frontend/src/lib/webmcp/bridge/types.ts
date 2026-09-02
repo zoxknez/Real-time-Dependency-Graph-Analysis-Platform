@@ -51,3 +51,28 @@ export type WebMcpOpenGraphResultData =
       readonly compact: true;
       readonly projectionActivated: boolean;
     };
+
+export interface WebMcpScenarioFindingSummary {
+  readonly changeType: string;
+  readonly symbolPath: string;
+  readonly description: string;
+  readonly severity?: string;
+  readonly oldSignature?: string;
+  readonly newSignature?: string;
+}
+
+export interface WebMcpScenarioResultData {
+  readonly scenarioId: string;
+  readonly targetPackageId: string;
+  readonly baseVersion?: string;
+  readonly changed: boolean;
+  readonly baselineSurfaceHashPrefix?: string;
+  readonly candidateSurfaceHashPrefix?: string;
+  readonly totalBreakingChanges: number;
+  readonly returnedBreakingChanges: number;
+  readonly serverTruncated: boolean;
+  readonly topFindings: readonly WebMcpScenarioFindingSummary[];
+  readonly findingsDisplayedCount: number;
+  readonly outputTruncated: boolean;
+}
+

@@ -15,6 +15,11 @@ import { WarRoomActions } from "../../war-room/application/actions";
 import { WarRoomGraphProjectionStore } from "../../war-room/integration/graph-projection";
 import { WarRoomInvocationContext } from "../../war-room/application/types";
 import {
+  ScenarioPatchOperation,
+  ScenarioVisibility,
+  WarRoomScenario,
+} from "../../war-room/domain/types";
+import {
   WebMcpPlatformToolDefinition,
   WebMcpPlatformExecutionContext,
   WebMcpPlatformAdapter,
@@ -26,6 +31,7 @@ import {
 import {
   validateEmptyObjectInput,
   validateTraceDependencyPathInput,
+  validateSimulateApiChangesInput,
 } from "./adaptive-validation";
 import {
   validateSearchPackagesInput,
@@ -36,6 +42,7 @@ import {
   formatToolSuccess,
   buildBudgetedSearchOutput,
   buildBudgetedOpenGraphOutput,
+  buildBudgetedScenarioOutput,
 } from "./output";
 import {
   captureExecutionSnapshot,
@@ -407,6 +414,164 @@ export function createAdaptiveToolDefinition(
       };
     }
 
+    case "simulate_api_changes": {
+      return {
+        name: "simulate_api_changes",
+        description: entry.description,
+        inputSchema: entry.inputSchema,
+        annotations: entry.annotations,
+        execute: async (input: Record<string, unknown>, execContext?: WebMcpPlatformExecutionContext) => {
+          const snapshot = captureExecutionSnapshot(statePort);
+          const admission = checkExecutionAdmission("simulate_api_changes", snapshot, platformAdapter);
+          if (!admission.admitted) {
+            return admission.failureOutput;
+          }
+
+          if (execContext?.signal?.aborted) {
+            return formatToolFailure("simulate_api_changes", snapshot.contextRevision, "CANCELLED", "Operation was cancelled before execution");
+          }
+
+          const valRes = validateSimulateApiChangesInput(input);
+          if (!valRes.ok) {
+            return formatToolFailure("simulate_api_changes", snapshot.contextRevision, "INVALID_INPUT", valRes.error);
+          }
+
+          if (!("selection" in snapshot.state) || !snapshot.state.selection) {
+            return formatToolFailure(
+              "simulate_api_changes",
+              snapshot.contextRevision,
+              "INVALID_STATE",
+              "No package is currently selected in the graph. Select a package first."
+            );
+          }
+
+          const targetPackage = snapshot.state.selection.package;
+          const targetPackageId = targetPackage.id;
+
+          const baseVersion = valRes.value.baseVersion ?? targetPackage.version;
+          if (!baseVersion || baseVersion.trim().length === 0) {
+            return formatToolFailure(
+              "simulate_api_changes",
+              snapshot.contextRevision,
+              "INVALID_STATE",
+              "No exact baseline version available for selected package. Specify baseVersion or select a versioned package."
+            );
+          }
+
+          const patchOperations: ScenarioPatchOperation[] = valRes.value.operations.map((op, idx) => {
+            const operationId = `wmcp-agent-op-${snapshot.contextRevision}-${idx}`;
+            switch (op.kind) {
+              case "REMOVE_SYMBOL":
+                return {
+                  kind: "REMOVE_SYMBOL" as const,
+                  operationId,
+                  symbolPath: op.symbolPath,
+                };
+              case "RENAME_SYMBOL":
+                return {
+                  kind: "RENAME_SYMBOL" as const,
+                  operationId,
+                  symbolPath: op.symbolPath,
+                  newSymbolPath: op.newSymbolPath!,
+                };
+              case "CHANGE_RETURN_TYPE":
+                return {
+                  kind: "CHANGE_RETURN_TYPE" as const,
+                  operationId,
+                  symbolPath: op.symbolPath,
+                  newReturnType: op.newReturnType!,
+                };
+              case "CHANGE_PARAMETER_TYPE":
+                return {
+                  kind: "CHANGE_PARAMETER_TYPE" as const,
+                  operationId,
+                  symbolPath: op.symbolPath,
+                  parameterName: op.parameterName!,
+                  newType: op.newType!,
+                };
+              case "ADD_REQUIRED_PARAMETER":
+                return {
+                  kind: "ADD_REQUIRED_PARAMETER" as const,
+                  operationId,
+                  symbolPath: op.symbolPath,
+                  parameterName: op.parameterName!,
+                  parameterType: op.parameterType!,
+                };
+              case "CHANGE_VISIBILITY":
+                return {
+                  kind: "CHANGE_VISIBILITY" as const,
+                  operationId,
+                  symbolPath: op.symbolPath,
+                  newVisibility: op.newVisibility! as ScenarioVisibility,
+                };
+              default:
+                throw new Error(`Unexpected operation kind: ${op.kind}`);
+            }
+          });
+
+          const scenario: WarRoomScenario = {
+            id: `wmcp-agent-scenario-${snapshot.contextRevision}`,
+            targetPackageId,
+            patchOperations,
+            baseVersion,
+            proposedVersion: `${baseVersion}-hypothetical`,
+          };
+
+          const signal = execContext?.signal;
+
+          try {
+            // 1. Create scenario
+            const createRes = await actions.createScenario(
+              {
+                channel: "AGENT",
+                capturedContextRevision: snapshot.contextRevision,
+                signal,
+              },
+              { scenario }
+            );
+
+            if (signal?.aborted) {
+              return formatToolFailure("simulate_api_changes", snapshot.contextRevision, "CANCELLED", "Operation was cancelled");
+            }
+
+            if (!createRes.ok) {
+              return formatToolFailure("simulate_api_changes", createRes.contextRevision, createRes.error.code, createRes.error.message);
+            }
+
+            // 2. Recalculate scenario using newly returned contextRevision from createScenario
+            const recalcRes = await actions.recalculateScenario({
+              channel: "AGENT",
+              capturedContextRevision: createRes.contextRevision,
+              signal,
+            });
+
+            if (signal?.aborted) {
+              return formatToolFailure("simulate_api_changes", createRes.contextRevision, "CANCELLED", "Operation was cancelled");
+            }
+
+            if (!recalcRes.ok) {
+              return formatToolFailure("simulate_api_changes", recalcRes.contextRevision, recalcRes.error.code, recalcRes.error.message);
+            }
+
+            return buildBudgetedScenarioOutput(
+              "simulate_api_changes",
+              recalcRes.contextRevision,
+              recalcRes.changed,
+              recalcRes.data,
+              scenario
+            );
+          } catch (err: unknown) {
+            return formatToolFailure(
+              "simulate_api_changes",
+              snapshot.contextRevision,
+              "INTERNAL_ERROR",
+              err instanceof Error ? err.message : "Unexpected error"
+            );
+          }
+        },
+      };
+    }
+
     case "inspect_scenario": {
       return {
         name: "inspect_scenario",
@@ -450,13 +615,100 @@ export function createAdaptiveToolDefinition(
             );
           }
 
+          const analysis =
+            "analysis" in snapshot.state &&
+            snapshot.state.analysis &&
+            snapshot.state.analysis.scenarioId === scenario.id
+              ? snapshot.state.analysis
+              : undefined;
+
+          if (analysis) {
+            return buildBudgetedScenarioOutput(
+              "inspect_scenario",
+              snapshot.contextRevision,
+              false,
+              analysis,
+              scenario
+            );
+          }
+
           return formatToolSuccess("inspect_scenario", false, snapshot.contextRevision, {
             scenarioId: scenario.id,
             targetPackageId: scenario.targetPackageId,
+            baseVersion: scenario.baseVersion,
             proposedVersion: scenario.proposedVersion,
             patchCount: scenario.patchOperations.length,
+            hasAnalysis: false,
             contextRevision: snapshot.contextRevision,
           });
+        },
+      };
+    }
+
+    case "recalculate_scenario": {
+      return {
+        name: "recalculate_scenario",
+        description: entry.description,
+        inputSchema: entry.inputSchema,
+        annotations: entry.annotations,
+        execute: async (input: Record<string, unknown>, execContext?: WebMcpPlatformExecutionContext) => {
+          const snapshot = captureExecutionSnapshot(statePort);
+          const admission = checkExecutionAdmission("recalculate_scenario", snapshot, platformAdapter);
+          if (!admission.admitted) {
+            return admission.failureOutput;
+          }
+
+          if (execContext?.signal?.aborted) {
+            return formatToolFailure("recalculate_scenario", snapshot.contextRevision, "CANCELLED", "Operation was cancelled before execution");
+          }
+
+          const valRes = validateEmptyObjectInput(input, "recalculate_scenario");
+          if (!valRes.ok) {
+            return formatToolFailure("recalculate_scenario", snapshot.contextRevision, "INVALID_INPUT", valRes.error);
+          }
+
+          if (!("scenario" in snapshot.state) || !snapshot.state.scenario) {
+            return formatToolFailure(
+              "recalculate_scenario",
+              snapshot.contextRevision,
+              "INVALID_STATE",
+              "No simulation scenario is currently active."
+            );
+          }
+
+          const scenario = snapshot.state.scenario;
+          const signal = execContext?.signal;
+
+          try {
+            const actionRes = await actions.recalculateScenario({
+              channel: "AGENT",
+              capturedContextRevision: snapshot.contextRevision,
+              signal,
+            });
+
+            if (signal?.aborted) {
+              return formatToolFailure("recalculate_scenario", snapshot.contextRevision, "CANCELLED", "Operation was cancelled");
+            }
+
+            if (!actionRes.ok) {
+              return formatToolFailure("recalculate_scenario", actionRes.contextRevision, actionRes.error.code, actionRes.error.message);
+            }
+
+            return buildBudgetedScenarioOutput(
+              "recalculate_scenario",
+              actionRes.contextRevision,
+              actionRes.changed,
+              actionRes.data,
+              scenario
+            );
+          } catch (err: unknown) {
+            return formatToolFailure(
+              "recalculate_scenario",
+              snapshot.contextRevision,
+              "INTERNAL_ERROR",
+              err instanceof Error ? err.message : "Unexpected error"
+            );
+          }
         },
       };
     }

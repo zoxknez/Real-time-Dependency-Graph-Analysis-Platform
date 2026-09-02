@@ -200,24 +200,24 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
     expect(catalogKeys.sort()).toEqual([...ALL_CANONICAL_ACTION_NAMES].sort());
   });
 
-  test("R2-T2 & R2-T3. Authority Matrix: Exactly 7 EXECUTABLE vs 9 DEFERRED tools", () => {
+  test("R2-T2 & R2-T3. Authority Matrix: Exactly 9 EXECUTABLE vs 7 DEFERRED tools", () => {
     const expectedExecutable: WebMcpActionName[] = [
       "search_packages",
       "open_package_graph",
       "summarize_graph",
       "trace_dependency_path",
       "inspect_selected_package",
+      "simulate_api_changes",
       "inspect_scenario",
+      "recalculate_scenario",
       "inspect_migration_plan",
     ];
 
     const expectedDeferred: WebMcpActionName[] = [
       "calculate_blast_radius",
       "focus_graph_nodes",
-      "simulate_api_changes",
       "set_scenario_priority",
       "set_scenario_exclusion",
-      "recalculate_scenario",
       "generate_migration_plan",
       "inspect_critical_paths",
       "focus_critical_path",
@@ -232,8 +232,8 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
 
     expect(actualExecutable.sort()).toEqual([...expectedExecutable].sort());
     expect(actualDeferred.sort()).toEqual([...expectedDeferred].sort());
-    expect(actualExecutable.length).toBe(7);
-    expect(actualDeferred.length).toBe(9);
+    expect(actualExecutable.length).toBe(9);
+    expect(actualDeferred.length).toBe(7);
   });
 
   test("R2-T7, R2-T8, R2-T9. Schema Readiness: Exactly 13 FROZEN vs 3 PENDING_DOMAIN_CONTRACT", () => {
@@ -291,11 +291,10 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
     expect(openEntry.inputSchema).toBe(OPEN_PACKAGE_GRAPH_SCHEMA);
   });
 
-  test("R2-T14. simulate_api_changes metadata includes WMCP-7 as implementation authority", () => {
+  test("R2-T14. simulate_api_changes authority reflects existing action orchestration", () => {
     const simEntry = getToolCatalogEntry("simulate_api_changes");
-    expect(simEntry.futureDependency).toBeDefined();
-    expect(simEntry.futureDependency).toContain("WMCP-7");
-    expect(simEntry.futureDependency).toContain("WMCP-5 -> WMCP-6 -> WMCP-7");
+    expect(simEntry.bindingStatus).toBe("EXECUTABLE");
+    expect(simEntry.authority).toBe("WarRoomActions.createScenario -> WarRoomActions.recalculateScenario");
   });
 
   test("R2-T4, R2-T5, R2-T6, R2-T10. Deferred & Pending Tool Factory: Fails closed on instantiation", () => {
@@ -304,10 +303,8 @@ test.describe("WebMCP Adaptive Tool Catalog & Authority Binding (WMCP-4B-R2)", (
     const deferredTools: WebMcpActionName[] = [
       "calculate_blast_radius",
       "focus_graph_nodes",
-      "simulate_api_changes",
       "set_scenario_priority",
       "set_scenario_exclusion",
-      "recalculate_scenario",
       "generate_migration_plan",
       "inspect_critical_paths",
       "focus_critical_path",

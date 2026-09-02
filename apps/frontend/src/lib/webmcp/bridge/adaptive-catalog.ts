@@ -118,20 +118,88 @@ export const INSPECT_SELECTED_PACKAGE_SCHEMA = {
 export const SIMULATE_API_CHANGES_SCHEMA = {
   type: "object",
   properties: {
-    packageId: {
-      type: "string",
-      minLength: 1,
-      maxLength: 256,
-      description: "Optional target package ID. Defaults to currently selected package.",
-    },
-    proposedVersion: {
+    baseVersion: {
       type: "string",
       minLength: 1,
       maxLength: 128,
-      description: "Proposed version string to analyze breaking API changes against.",
+      description: "Optional exact base version revision to evaluate changes against. Defaults to the selected package version.",
+    },
+    operations: {
+      type: "array",
+      minItems: 1,
+      maxItems: 32,
+      description: "List of 1 to 32 public API patch operations to simulate.",
+      items: {
+        oneOf: [
+          {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["REMOVE_SYMBOL"] },
+              symbolPath: { type: "string", minLength: 1, maxLength: 512 },
+            },
+            required: ["kind", "symbolPath"],
+            additionalProperties: false,
+          },
+          {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["RENAME_SYMBOL"] },
+              symbolPath: { type: "string", minLength: 1, maxLength: 512 },
+              newSymbolPath: { type: "string", minLength: 1, maxLength: 512 },
+            },
+            required: ["kind", "symbolPath", "newSymbolPath"],
+            additionalProperties: false,
+          },
+          {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["CHANGE_RETURN_TYPE"] },
+              symbolPath: { type: "string", minLength: 1, maxLength: 512 },
+              newReturnType: { type: "string", minLength: 1, maxLength: 512 },
+            },
+            required: ["kind", "symbolPath", "newReturnType"],
+            additionalProperties: false,
+          },
+          {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["CHANGE_PARAMETER_TYPE"] },
+              symbolPath: { type: "string", minLength: 1, maxLength: 512 },
+              parameterName: { type: "string", minLength: 1, maxLength: 256 },
+              newType: { type: "string", minLength: 1, maxLength: 512 },
+            },
+            required: ["kind", "symbolPath", "parameterName", "newType"],
+            additionalProperties: false,
+          },
+          {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["ADD_REQUIRED_PARAMETER"] },
+              symbolPath: { type: "string", minLength: 1, maxLength: 512 },
+              parameterName: { type: "string", minLength: 1, maxLength: 256 },
+              parameterType: { type: "string", minLength: 1, maxLength: 512 },
+            },
+            required: ["kind", "symbolPath", "parameterName", "parameterType"],
+            additionalProperties: false,
+          },
+          {
+            type: "object",
+            properties: {
+              kind: { type: "string", enum: ["CHANGE_VISIBILITY"] },
+              symbolPath: { type: "string", minLength: 1, maxLength: 512 },
+              newVisibility: {
+                type: "string",
+                enum: ["public", "private", "protected", "internal", "crate", "super"],
+              },
+            },
+            required: ["kind", "symbolPath", "newVisibility"],
+            additionalProperties: false,
+          },
+        ],
+      },
     },
   },
-  required: ["proposedVersion"],
+  required: ["operations"],
   additionalProperties: false,
 } as const;
 
@@ -300,17 +368,16 @@ export const WEB_MCP_TOOL_CATALOG: Record<WebMcpActionName, WebMcpToolCatalogEnt
   simulate_api_changes: {
     name: "simulate_api_changes",
     title: "Simulate API Changes",
-    description: "Analyzes AST-level breaking API changes between versions of a dependency.",
+    description: "Simulates hypothetical public API changes for the currently selected package against its committed baseline.",
     schemaStatus: "FROZEN",
     inputSchema: SIMULATE_API_CHANGES_SCHEMA,
     annotations: {
       readOnlyHint: false,
       untrustedContentHint: true,
     },
-    authority: "AST Breaking Change Analyzer",
-    classification: "FUTURE_DETERMINISTIC_CAPABILITY",
-    bindingStatus: "DEFERRED",
-    futureDependency: "WMCP-5 -> WMCP-6 -> WMCP-7 (Public API Extraction -> Persistence -> Counterfactual Breaking Detector)",
+    authority: "WarRoomActions.createScenario -> WarRoomActions.recalculateScenario",
+    classification: "EXISTING_ACTION",
+    bindingStatus: "EXECUTABLE",
   },
   inspect_scenario: {
     name: "inspect_scenario",
@@ -357,17 +424,16 @@ export const WEB_MCP_TOOL_CATALOG: Record<WebMcpActionName, WebMcpToolCatalogEnt
   recalculate_scenario: {
     name: "recalculate_scenario",
     title: "Recalculate Scenario",
-    description: "Re-runs scenario impact analysis against the current graph and package selections.",
+    description: "Recalculates the active hypothetical API scenario after its patch or review state changed.",
     schemaStatus: "FROZEN",
     inputSchema: RECALCULATE_SCENARIO_SCHEMA,
     annotations: {
       readOnlyHint: false,
       untrustedContentHint: true,
     },
-    authority: "Scenario Analysis Engine",
-    classification: "FUTURE_DETERMINISTIC_CAPABILITY",
-    bindingStatus: "DEFERRED",
-    futureDependency: "WMCP-7 / WMCP-8 (Counterfactual Scenario Analysis & Exposure Engine)",
+    authority: "WarRoomActions.recalculateScenario",
+    classification: "EXISTING_ACTION",
+    bindingStatus: "EXECUTABLE",
   },
   generate_migration_plan: {
     name: "generate_migration_plan",

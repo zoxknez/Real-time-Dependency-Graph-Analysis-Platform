@@ -374,7 +374,7 @@ test.describe("WebMCP Live Adaptive Registration Lifecycle (WMCP-4D)", () => {
   test("4D-T5. Exact NODE_SELECTED Registrable Surface", () => {
     const logical = deriveDesiredToolSurface({ phase: "NODE_SELECTED", contextRevision: 3, webMcpAvailability: "AVAILABLE" });
     const registrable = deriveRegistrableToolSurface(logical);
-    expect(Array.from(registrable.toolNames).sort()).toEqual(["inspect_selected_package", "trace_dependency_path"]);
+    expect(Array.from(registrable.toolNames).sort()).toEqual(["inspect_selected_package", "simulate_api_changes", "trace_dependency_path"]);
   });
 
   test("4D-T6. Exact SIMULATION_READY Registrable Surface", () => {
@@ -383,16 +383,16 @@ test.describe("WebMCP Live Adaptive Registration Lifecycle (WMCP-4D)", () => {
     expect(Array.from(registrable.toolNames).sort()).toEqual(["inspect_scenario", "trace_dependency_path"]);
   });
 
-  test("4D-T7. Exact HUMAN_REVIEW Registrable Surface is Empty", () => {
+  test("4D-T7. Exact HUMAN_REVIEW Registrable Surface Contains recalculate_scenario", () => {
     const logical = deriveDesiredToolSurface({ phase: "HUMAN_REVIEW", contextRevision: 5, webMcpAvailability: "AVAILABLE" });
     const registrable = deriveRegistrableToolSurface(logical);
-    expect(Array.from(registrable.toolNames)).toEqual([]);
+    expect(Array.from(registrable.toolNames)).toEqual(["recalculate_scenario"]);
   });
 
   test("4D-T8. Exact PLAN_READY Registrable Surface", () => {
     const logical = deriveDesiredToolSurface({ phase: "PLAN_READY", contextRevision: 6, webMcpAvailability: "AVAILABLE" });
     const registrable = deriveRegistrableToolSurface(logical);
-    expect(Array.from(registrable.toolNames)).toEqual(["inspect_migration_plan"]);
+    expect(Array.from(registrable.toolNames).sort()).toEqual(["inspect_migration_plan", "recalculate_scenario"]);
   });
 
   test("4D-T9. Deferred Factory is NEVER Called During Normal Reconciliation", async () => {
@@ -672,8 +672,8 @@ test.describe("WebMCP Live Adaptive Registration Lifecycle (WMCP-4D)", () => {
 
     expect(harness.statePort.getState().phase).toBe("HUMAN_REVIEW");
 
-    // All registrations must be cleanly removed; 0 tools active
-    expect(Array.from(harness.platformSpies.registeredTools.keys())).toEqual([]);
+    // HUMAN_REVIEW retains recalculate_scenario as the only executable tool
+    expect(Array.from(harness.platformSpies.registeredTools.keys())).toEqual(["recalculate_scenario"]);
 
     session.dispose();
   });
@@ -943,6 +943,7 @@ test.describe("WebMCP Live Adaptive Registration Lifecycle (WMCP-4D)", () => {
     // Live registration surface automatically updated to NODE_SELECTED surface!
     expect(Array.from(harness.platformSpies.registeredTools.keys()).sort()).toEqual([
       "inspect_selected_package",
+      "simulate_api_changes",
       "trace_dependency_path",
     ]);
 
