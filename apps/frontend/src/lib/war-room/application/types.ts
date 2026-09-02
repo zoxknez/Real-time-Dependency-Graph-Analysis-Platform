@@ -185,6 +185,7 @@ export interface InspectCriticalPathsResult {
   readonly targetEntityId: string;
   readonly totalPaths: number;
   readonly returnedPaths: number;
+  readonly excludedCandidatesCount: number;
   readonly truncated: boolean;
   readonly paths: readonly import("../domain/types").CriticalPathItem[];
 }

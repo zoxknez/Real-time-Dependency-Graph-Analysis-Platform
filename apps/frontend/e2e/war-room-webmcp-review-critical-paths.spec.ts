@@ -294,27 +294,26 @@ test.describe("WMCP-10: Human Business Review & Critical Paths Matrix", () => {
     expect(pathsRes.ok).toBe(true);
     if (pathsRes.ok) {
       expect(pathsRes.changed).toBe(false); // Pure read
-      expect(pathsRes.data.totalPaths).toBe(3);
+      expect(pathsRes.data.totalPaths).toBe(2);
+      expect(pathsRes.data.excludedCandidatesCount).toBe(1);
 
       const paths = pathsRes.data.paths;
-      expect(paths).toHaveLength(3);
+      expect(paths).toHaveLength(2);
 
       // Ordering check:
-      // Both pkg-c and pkg-b are P0. pkg-c has hopCount 1, pkg-b has hopCount 2.
-      // So pkg-c must come first, then pkg-b, then pkg-a (which is P1)!
-      expect(paths[0].sourceEntityId).toBe("npm:pkg-c");
+      // pkg-c was P0 but is excluded, so it is omitted from critical migration paths.
+      // pkg-b is P0 with hopCount 2.
+      // pkg-a is P1 with hopCount 1.
+      // So pkg-b comes first (P0), then pkg-a (P1).
+      expect(paths[0].sourceEntityId).toBe("npm:pkg-b");
       expect(paths[0].priority).toBe("P0");
-      expect(paths[0].hopCount).toBe(1);
-      expect(paths[0].isExcluded).toBe(true); // Tagged as excluded!
+      expect(paths[0].hopCount).toBe(2);
+      expect(paths[0].isExcluded).toBe(false);
 
-      expect(paths[1].sourceEntityId).toBe("npm:pkg-b");
-      expect(paths[1].priority).toBe("P0");
-      expect(paths[1].hopCount).toBe(2);
+      expect(paths[1].sourceEntityId).toBe("npm:pkg-a");
+      expect(paths[1].priority).toBe("P1");
+      expect(paths[1].hopCount).toBe(1);
       expect(paths[1].isExcluded).toBe(false);
-
-      expect(paths[2].sourceEntityId).toBe("npm:pkg-a");
-      expect(paths[2].priority).toBe("P1");
-      expect(paths[2].hopCount).toBe(1);
     }
   });
 

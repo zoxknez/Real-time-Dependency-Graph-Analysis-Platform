@@ -515,6 +515,7 @@ export interface WebMcpCriticalPathsResultData {
   readonly targetEntityId: string;
   readonly totalPaths: number;
   readonly returnedPaths: number;
+  readonly excludedCandidatesCount: number;
   readonly truncated: boolean;
   readonly paths: readonly import("../../war-room/domain/types").CriticalPathItem[];
 }

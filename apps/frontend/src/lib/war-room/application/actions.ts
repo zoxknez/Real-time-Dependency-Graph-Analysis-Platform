@@ -1376,7 +1376,12 @@ export function createWarRoomActions(
       const targetEntityId = state.scenario.targetPackageId;
       const existingReview = "review" in state ? (state.review as WarRoomHumanReview | undefined) : undefined;
       const reviewItems: readonly HumanReviewItem[] = existingReview?.items ?? [];
-      const prioritized = reviewItems.filter((i: HumanReviewItem) => i.priority !== undefined);
+      const candidateItems = reviewItems.filter(
+        (i: HumanReviewItem) => i.priority !== undefined && i.excluded !== true
+      );
+      const excludedCandidatesCount = reviewItems.filter(
+        (i: HumanReviewItem) => i.priority !== undefined && i.excluded === true
+      ).length;
 
       const priorityRanks: Record<string, number> = { P0: 0, P1: 1, P2: 2, P3: 3 };
 
@@ -1390,7 +1395,7 @@ export function createWarRoomActions(
         rank: number;
       }
 
-      const pathPromises: Promise<RawCriticalPath>[] = prioritized.map(async (item: HumanReviewItem) => {
+      const pathPromises: Promise<RawCriticalPath>[] = candidateItems.map(async (item: HumanReviewItem) => {
         let packageIds: readonly string[] = [item.entityId, targetEntityId];
         let hopCount = 1;
 
@@ -1420,7 +1425,7 @@ export function createWarRoomActions(
           priority: pri,
           hopCount,
           packageIds,
-          isExcluded: Boolean(item.excluded),
+          isExcluded: false,
           rank: priorityRanks[pri] ?? 99,
         };
       });
@@ -1454,6 +1459,7 @@ export function createWarRoomActions(
           targetEntityId,
           totalPaths,
           returnedPaths: criticalPaths.length,
+          excludedCandidatesCount,
           truncated,
           paths: criticalPaths,
         },
