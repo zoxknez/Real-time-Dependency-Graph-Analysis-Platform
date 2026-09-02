@@ -338,10 +338,14 @@ impl Config {
             cors: CorsConfig {
                 allowed_origins: env::var("CORS_ORIGINS")
                     .map(|s| {
-                        s.split(',')
-                            .map(|o| o.trim().to_lowercase().trim_end_matches('/').to_string())
-                            .filter(|s| !s.is_empty())
-                            .collect()
+                        if s.trim() == "*" {
+                            vec!["https://idp-hackathon-demo.vercel.app".to_string()]
+                        } else {
+                            s.split(',')
+                                .map(|o| o.trim().to_lowercase().trim_end_matches('/').to_string())
+                                .filter(|s| !s.is_empty())
+                                .collect()
+                        }
                     })
                     .unwrap_or_else(|_| vec!["http://localhost:3000".to_string()]),
                 allow_credentials: env::var("CORS_ALLOW_CREDENTIALS")
