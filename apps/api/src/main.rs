@@ -113,11 +113,14 @@ async fn main() -> Result<()> {
     // Build GraphQL schema (returns channels and clients)
     let (schema, channels, graph, cache) = gql::build_schema(&config).await?;
 
-    // Run graph migrations (indexes & backfill) in background
-    let migration_client = graph.clone();
-    tokio::spawn(async move {
-        crate::graph::migrations::run_migrations(&migration_client).await;
-    });
+    if env_flag("RUN_GRAPH_MIGRATIONS", false) {
+        let migration_client = graph.clone();
+        tokio::spawn(async move {
+            crate::graph::migrations::run_migrations(&migration_client).await;
+        });
+    } else {
+        info!("Graph migrations disabled for request-serving startup");
+    }
 
     // Wrap cache in Arc for sharing across components
     let cache_arc = cache.map(Arc::new);
@@ -128,14 +131,17 @@ async fn main() -> Result<()> {
         cache: cache_arc.clone(),
     };
 
-    // Start Kafka consumer for subscriptions in background
-    let kafka_config = config.kafka.clone();
-    let kafka_channels = channels.clone();
-    tokio::spawn(async move {
-        if let Err(e) = kafka::start_event_consumer(&kafka_config, kafka_channels).await {
-            tracing::error!("Kafka consumer error: {}", e);
-        }
-    });
+    if env_flag("LIVE_INGESTION_ENABLED", false) {
+        let kafka_config = config.kafka.clone();
+        let kafka_channels = channels.clone();
+        tokio::spawn(async move {
+            if let Err(e) = kafka::start_event_consumer(&kafka_config, kafka_channels).await {
+                tracing::error!("Kafka consumer error: {}", e);
+            }
+        });
+    } else {
+        info!("Live ingestion disabled; Kafka consumer not started");
+    }
 
     // Build CORS layer from configuration
     let cors = build_cors_layer(&config);
@@ -289,25 +295,44 @@ async fn health_handler() -> Json<handlers::HealthResponse> {
 }
 
 /// Readiness check endpoint
-async fn ready_handler(State(state): State<CombinedState>) -> Json<handlers::ReadinessResponse> {
-    let memgraph_ok = state.app_state.graph.health_check().await;
+async fn ready_handler(
+    State(state): State<CombinedState>,
+) -> (axum::http::StatusCode, Json<handlers::ReadinessResponse>) {
+    let memgraph_ok = state.app_state.graph.health_check_fast().await;
 
     let redis_ok = match &state.app_state.cache {
-        Some(cache) => cache.health_check().await,
+        Some(cache) => tokio::time::timeout(Duration::from_millis(750), cache.health_check())
+            .await
+            .unwrap_or(false),
         None => true,
     };
 
-    let status = if memgraph_ok && redis_ok {
-        "ready"
-    } else {
-        "degraded"
-    };
+    let ready = memgraph_ok;
+    let status = if ready { "ready" } else { "not_ready" };
 
-    Json(handlers::ReadinessResponse {
-        status,
-        memgraph: memgraph_ok,
-        redis: redis_ok,
-    })
+    (
+        if ready {
+            axum::http::StatusCode::OK
+        } else {
+            axum::http::StatusCode::SERVICE_UNAVAILABLE
+        },
+        Json(handlers::ReadinessResponse {
+            status,
+            memgraph: memgraph_ok,
+            redis: redis_ok,
+        }),
+    )
+}
+
+fn env_flag(name: &str, default: bool) -> bool {
+    std::env::var(name)
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(default)
 }
 
 /// Memgraph memory monitoring endpoint

@@ -13,7 +13,7 @@ interface LiveStatsCardProps {
 export function LiveStatsCard({ className }: LiveStatsCardProps) {
   const connectionStatus = useConnectionStatus();
   const { stats, history, loading: _loading } = useLiveStats({
-    paused: false,
+    paused: process.env.NEXT_PUBLIC_LIVE_INGESTION_ENABLED !== "true",
   });
 
   const isConnected = connectionStatus === "connected";
@@ -54,11 +54,11 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
             <span className="text-sm theme-text-muted">Events/min</span>
             <div className="flex items-center gap-2">
               <span className="text-2xl font-bold text-accent-400">
-                {(stats?.eventsPerMinute || 4.2).toFixed(1)}
+                {(((stats?.packagesLastHour || 0) + (stats?.versionsLastHour || 0)) / 60).toFixed(1)}
               </span>
               <TrendIndicator
-                current={stats?.eventsPerMinute || 4.2}
-                history={(history || []).map(h => h.eventsPerMinute)}
+                current={((stats?.packagesLastHour || 0) + (stats?.versionsLastHour || 0)) / 60}
+                history={(history || []).map(h => (h.packagesLastHour + h.versionsLastHour) / 60)}
               />
             </div>
           </div>
@@ -70,7 +70,7 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
               Active Users
             </span>
             <span className="text-lg font-semibold theme-text-primary">
-              {stats?.activeConnections || 12}
+              {stats?.activeSubscriptions || 0}
             </span>
           </div>
 
@@ -80,7 +80,7 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
               <span className="text-xs theme-text-faint">Activity Trend (last hour)</span>
             </div>
             <SparklineChart
-              data={history?.length > 0 ? history.map(h => h.eventsPerMinute) : [3.8, 4.1, 4.0, 4.2, 4.5, 4.3, 4.2]}
+              data={history?.length > 0 ? history.map(h => (h.packagesLastHour + h.versionsLastHour) / 60) : [0, 0, 0, 0, 0, 0, 0]}
               height={40}
             />
           </div>
@@ -102,11 +102,11 @@ export function LiveStatsCard({ className }: LiveStatsCardProps) {
             </div>
             <div className="space-y-2 max-h-[140px] overflow-hidden relative">
               <AnimatePresence mode="popLayout">
-                {(stats?.topEcosystems || [
-                  { ecosystem: "CARGO", count: 12 },
-                  { ecosystem: "PYPI", count: 8 },
-                  { ecosystem: "NPM", count: 15 },
-                  { ecosystem: "MAVEN", count: 5 }
+                {(stats?.ecosystemActivity || [
+                  { ecosystem: "CARGO", packagesAdded: 12, versionsAdded: 12, changeRatePercent: 0 },
+                  { ecosystem: "PY_PI", packagesAdded: 8, versionsAdded: 8, changeRatePercent: 0 },
+                  { ecosystem: "NPM", packagesAdded: 15, versionsAdded: 15, changeRatePercent: 0 },
+                  { ecosystem: "MAVEN", packagesAdded: 5, versionsAdded: 5, changeRatePercent: 0 }
                 ]).slice(0, 4).map((eco, i) => (
                   <motion.div
                     key={eco.ecosystem + i}

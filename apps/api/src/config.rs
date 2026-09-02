@@ -126,6 +126,10 @@ pub struct MemgraphConfig {
     pub username: Option<String>,
     pub password: Option<String>,
     pub pool_size: usize,
+    pub connect_timeout_secs: u64,
+    pub query_timeout_secs: u64,
+    pub max_retries: u32,
+    pub health_timeout_secs: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -272,10 +276,10 @@ impl Config {
 
         // CORS_ORIGINS must be set and not contain wildcard with credentials
         if let Ok(origins) = env::var("CORS_ORIGINS") {
-                if origins == "*" {
-                    let allow_creds = env::var("CORS_ALLOW_CREDENTIALS")
-                        .map(|v| v == "true" || v == "1")
-                        .unwrap_or(false);
+            if origins == "*" {
+                let allow_creds = env::var("CORS_ALLOW_CREDENTIALS")
+                    .map(|v| v == "true" || v == "1")
+                    .unwrap_or(false);
 
                 if allow_creds {
                     panic!(
@@ -312,11 +316,12 @@ impl Config {
         let optimal_pool_size = (cpu_count * 2) + 1;
 
         // Set stricter limits in production
-        let (max_depth, max_complexity, query_timeout) = if environment.is_production() {
-            (10, 500, 30)
-        } else {
-            (15, 1000, 60)
-        };
+        let (max_depth, max_complexity, query_timeout, request_timeout) =
+            if environment.is_production() {
+                (10, 500, 10, 15)
+            } else {
+                (15, 1000, 60, 60)
+            };
 
         Self {
             environment,
@@ -329,7 +334,7 @@ impl Config {
                 request_timeout_secs: env::var("REQUEST_TIMEOUT_SECS")
                     .ok()
                     .and_then(|s| s.parse().ok())
-                    .unwrap_or(query_timeout),
+                    .unwrap_or(request_timeout),
                 max_body_size: env::var("MAX_BODY_SIZE")
                     .ok()
                     .and_then(|s| s.parse().ok())
@@ -366,6 +371,26 @@ impl Config {
                     .ok()
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(optimal_pool_size),
+                connect_timeout_secs: env::var("MEMGRAPH_CONNECT_TIMEOUT_SECS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .filter(|v| (1..=30).contains(v))
+                    .unwrap_or(3),
+                query_timeout_secs: env::var("MEMGRAPH_QUERY_TIMEOUT_SECS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .filter(|v| (1..=15).contains(v))
+                    .unwrap_or(5),
+                max_retries: env::var("MEMGRAPH_MAX_RETRIES")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .map(|v: u32| v.min(3))
+                    .unwrap_or(0),
+                health_timeout_secs: env::var("MEMGRAPH_HEALTH_TIMEOUT_SECS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .filter(|v| (1..=10).contains(v))
+                    .unwrap_or(2),
             },
             redis: RedisConfig {
                 url: env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string()),
@@ -401,7 +426,9 @@ impl Config {
                     .map(|s| matches!(s.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
                     .unwrap_or(true),
                 url: env::var("QDRANT_URL").unwrap_or_else(|_| "http://127.0.0.1:6334".to_string()),
-                api_key: env::var("QDRANT_API_KEY").ok().filter(|key| !key.is_empty()),
+                api_key: env::var("QDRANT_API_KEY")
+                    .ok()
+                    .filter(|key| !key.is_empty()),
                 collection: env::var("QDRANT_COLLECTION")
                     .unwrap_or_else(|_| "package_embeddings".to_string()),
                 dimension: env::var("QDRANT_DIMENSION")

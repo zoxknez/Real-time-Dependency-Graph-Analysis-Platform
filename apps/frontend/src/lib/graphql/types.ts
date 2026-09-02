@@ -377,18 +377,20 @@ export interface BreakingChangeEvent {
 // Live stats types (matches backend)
 export interface EcosystemActivity {
   ecosystem: Ecosystem;
-  count: number;
-  change24h: number;
+  packagesAdded: number;
+  versionsAdded: number;
+  changeRatePercent: number;
 }
 
 export interface LiveStats {
   timestamp: string;
-  packagesIndexed: number;
-  versionsIndexed: number;
-  dependenciesTracked: number;
-  eventsPerMinute: number;
-  activeConnections: number;
-  topEcosystems: EcosystemActivity[];
+  totalPackages: number;
+  totalVersions: number;
+  packagesLastHour: number;
+  versionsLastHour: number;
+  activeSubscriptions: number;
+  processingQueueSize: number;
+  ecosystemActivity: EcosystemActivity[];
 }
 
 // Dependency impact types (matches backend)

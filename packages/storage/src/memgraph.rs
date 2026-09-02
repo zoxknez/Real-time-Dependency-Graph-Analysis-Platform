@@ -36,6 +36,8 @@ pub struct MemgraphConfig {
     pub query_timeout: Duration,
     /// Number of retries for failed queries
     pub max_retries: u32,
+    /// Maximum duration for the single-attempt readiness probe
+    pub health_timeout: Duration,
 }
 
 impl Default for MemgraphConfig {
@@ -48,6 +50,7 @@ impl Default for MemgraphConfig {
             connect_timeout: Duration::from_secs(30),
             query_timeout: Duration::from_secs(60),
             max_retries: 3,
+            health_timeout: Duration::from_secs(2),
         }
     }
 }
@@ -80,6 +83,13 @@ impl MemgraphConfig {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(3),
+            health_timeout: Duration::from_secs(
+                std::env::var("MEMGRAPH_HEALTH_TIMEOUT_SECS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .filter(|v| (1..=10).contains(v))
+                    .unwrap_or(2),
+            ),
         })
     }
 }
@@ -119,9 +129,13 @@ impl MemgraphClient {
             .fetch_size(500)
             .max_connections(config.max_connections);
 
-        let graph = Graph::connect(graph_config.build()?)
-            .await
-            .context("Failed to connect to Memgraph")?;
+        let graph = tokio::time::timeout(
+            config.connect_timeout,
+            Graph::connect(graph_config.build()?),
+        )
+        .await
+        .context("Timed out connecting to Memgraph")?
+        .context("Failed to connect to Memgraph")?;
 
         info!("Successfully connected to Memgraph");
 
@@ -273,14 +287,38 @@ impl MemgraphClient {
 
     /// Health check
     pub async fn health_check(&self) -> bool {
-        // We use execute() which now includes resilience
-        match self.execute(query("RETURN 1 AS health"), None).await {
-            Ok(_) => {
+        self.health_check_fast().await
+    }
+
+    /// Execute a bounded, single-attempt readiness probe.
+    ///
+    /// This intentionally bypasses retries and the application circuit breaker so
+    /// a dead or saturated database cannot make `/ready` hang for the full query
+    /// retry budget.
+    pub async fn health_check_fast(&self) -> bool {
+        let started = std::time::Instant::now();
+        let probe = async {
+            let mut result = self.graph.execute(query("RETURN 1 AS health")).await?;
+            let _ = result.next().await?;
+            anyhow::Ok(())
+        };
+
+        match tokio::time::timeout(self._config.health_timeout, probe).await {
+            Ok(Ok(())) => {
                 *self.healthy.write().await = true;
+                tracing::debug!(
+                    elapsed_ms = started.elapsed().as_millis(),
+                    "Memgraph readiness probe succeeded"
+                );
                 true
             }
+            Ok(Err(e)) => {
+                error!(elapsed_ms = started.elapsed().as_millis(), error = %e, "Memgraph readiness probe failed");
+                *self.healthy.write().await = false;
+                false
+            }
             Err(e) => {
-                error!(error = %e, "Memgraph health check failed");
+                error!(elapsed_ms = started.elapsed().as_millis(), error = %e, "Memgraph readiness probe timed out");
                 *self.healthy.write().await = false;
                 false
             }

@@ -26,6 +26,8 @@ import type {
   WatchPackagesVariables,
 } from "@/lib/graphql/types";
 
+const LIVE_INGESTION_ENABLED = process.env.NEXT_PUBLIC_LIVE_INGESTION_ENABLED === "true";
+
 function versionEventToLivePackageEvent(event: VersionEvent): LivePackageEvent {
   return {
     id: event.meta.eventId,
@@ -97,7 +99,7 @@ export function useLivePackageActivity(options: UseLivePackageActivityOptions = 
     NewVersionVariables
   >(LIVE_PACKAGE_ACTIVITY, {
     variables: { ecosystem },
-    skip: paused || skipForEventType,
+    skip: paused || skipForEventType || !LIVE_INGESTION_ENABLED,
     shouldResubscribe: true,
     onData: ({ data }) => {
       const versionEvent = data.data?.livePackageActivity;
@@ -183,7 +185,7 @@ export function useBreakingChanges(options: UseBreakingChangesOptions = {}) {
     BreakingChangeVariables
   >(BREAKING_CHANGE_DETECTED, {
     variables: { ecosystem, packageId, minSeverity },
-    skip: paused,
+    skip: paused || !LIVE_INGESTION_ENABLED,
     shouldResubscribe: true,
     onData: ({ data }) => {
       const event = data.data?.breakingChangeDetected;
@@ -232,7 +234,7 @@ export function useLiveStats(options: UseLiveStatsOptions = {}) {
   const { data: _data, loading, error } = useSubscription<{ liveStats: LiveStats }>(
     LIVE_STATS,
     {
-      skip: paused,
+      skip: paused || !LIVE_INGESTION_ENABLED,
       shouldResubscribe: true,
       onData: ({ data }) => {
         const newStats = data.data?.liveStats;

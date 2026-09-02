@@ -40,9 +40,10 @@ impl GraphClient {
             username: config.memgraph.username.clone(),
             password: config.memgraph.password.clone(),
             max_connections: pool_size,
-            connect_timeout: std::time::Duration::from_secs(30),
-            query_timeout: std::time::Duration::from_secs(60),
-            max_retries: 3,
+            connect_timeout: std::time::Duration::from_secs(config.memgraph.connect_timeout_secs),
+            query_timeout: std::time::Duration::from_secs(config.memgraph.query_timeout_secs),
+            max_retries: config.memgraph.max_retries,
+            health_timeout: std::time::Duration::from_secs(config.memgraph.health_timeout_secs),
         };
 
         let client = MemgraphClient::new(memgraph_config).await?;
@@ -86,6 +87,11 @@ impl GraphClient {
     /// Health check
     pub async fn health_check(&self) -> bool {
         self.client.health_check().await
+    }
+
+    /// Run the bounded, single-attempt readiness probe.
+    pub async fn health_check_fast(&self) -> bool {
+        self.client.health_check_fast().await
     }
 
     /// Get memory usage statistics for OOM prevention

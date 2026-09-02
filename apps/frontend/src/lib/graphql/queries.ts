@@ -520,15 +520,17 @@ export const LIVE_STATS = gql`
   subscription OnLiveStats {
     liveStats {
       timestamp
-      packagesIndexed
-      versionsIndexed
-      dependenciesTracked
-      eventsPerMinute
-      activeConnections
-      topEcosystems {
+      totalPackages
+      totalVersions
+      packagesLastHour
+      versionsLastHour
+      activeSubscriptions
+      processingQueueSize
+      ecosystemActivity {
         ecosystem
-        count
-        change24h
+        packagesAdded
+        versionsAdded
+        changeRatePercent
       }
     }
   }
